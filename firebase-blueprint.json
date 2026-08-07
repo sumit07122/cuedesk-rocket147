@@ -1,0 +1,159 @@
+{
+  "entities": {
+    "users": {
+      "title": "User Profile",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "clubId": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "lastLogin": { "type": "number" }
+      },
+      "required": ["uid", "clubId", "email", "role"]
+    },
+    "invitations": {
+      "title": "User Invitation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clubId": { "type": "string" },
+        "email": { "type": "string" },
+        "fullName": { "type": "string" },
+        "role": { "type": "string" },
+        "code": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["clubId", "email", "role", "code"]
+    },
+    "clubs": {
+      "title": "Club Workspace",
+      "type": "object",
+      "properties": {
+        "clubId": { "type": "string" },
+        "name": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "address": { "type": "string" },
+        "phone": { "type": "string" },
+        "currency": { "type": "string" },
+        "taxRate": { "type": "number" },
+        "createdAt": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["clubId", "name"]
+    },
+    "tables": {
+      "title": "Billiards / Pool Table",
+      "type": "object",
+      "properties": {
+        "tableId": { "type": "string" },
+        "clubId": { "type": "string" },
+        "tableNumber": { "type": "number" },
+        "name": { "type": "string" },
+        "status": { "type": "string" },
+        "hourlyRate": { "type": "number" },
+        "qrCodeUrl": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["tableId", "clubId", "tableNumber", "name", "status", "hourlyRate"]
+    },
+    "customers": {
+      "title": "Customer Profile",
+      "type": "object",
+      "properties": {
+        "customerId": { "type": "string" },
+        "clubId": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "totalVisits": { "type": "number" },
+        "totalHours": { "type": "number" },
+        "totalSpent": { "type": "number" },
+        "createdAt": { "type": "number" },
+        "lastVisit": { "type": "number" }
+      },
+      "required": ["customerId", "clubId", "name"]
+    },
+    "sessions": {
+      "title": "Table Session",
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string" },
+        "clubId": { "type": "string" },
+        "tableId": { "type": "string" },
+        "customerId": { "type": "string" },
+        "startedBy": { "type": "string" },
+        "startTime": { "type": "number" },
+        "endTime": { "type": "number" },
+        "duration": { "type": "number" },
+        "hourlyRate": { "type": "number" },
+        "status": { "type": "string" },
+        "totalAmount": { "type": "number" }
+      },
+      "required": ["sessionId", "clubId", "tableId", "status"]
+    },
+    "orders": {
+      "title": "Food & Beverage Order",
+      "type": "object",
+      "properties": {
+        "orderId": { "type": "string" },
+        "clubId": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "tableId": { "type": "string" },
+        "items": { "type": "array" },
+        "totalAmount": { "type": "number" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["orderId", "clubId", "tableId", "status"]
+    },
+    "payments": {
+      "title": "Payment Settlement",
+      "type": "object",
+      "properties": {
+        "paymentId": { "type": "string" },
+        "clubId": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "amount": { "type": "number" },
+        "method": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["paymentId", "clubId", "amount", "method", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/users" },
+      "description": "User profile collection"
+    },
+    "/invitations/{invitationId}": {
+      "schema": { "$ref": "#/entities/invitations" },
+      "description": "Staff invitation codes"
+    },
+    "/clubs/{clubId}": {
+      "schema": { "$ref": "#/entities/clubs" },
+      "description": "Club metadata and configuration"
+    },
+    "/clubs/{clubId}/tables/{tableId}": {
+      "schema": { "$ref": "#/entities/tables" },
+      "description": "Billiards / Pool tables and live status"
+    },
+    "/clubs/{clubId}/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/customers" },
+      "description": "Customer CRM collection"
+    },
+    "/clubs/{clubId}/history/{historyId}": {
+      "schema": { "$ref": "#/entities/sessions" },
+      "description": "Table session & invoice history"
+    },
+    "/clubs/{clubId}/foodOrders/{orderId}": {
+      "schema": { "$ref": "#/entities/orders" },
+      "description": "Food & beverage orders"
+    }
+  }
+}

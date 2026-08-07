@@ -1,0 +1,61 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // --- USER PROFILES ---
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create, update: if isUser(userId) || isSignedIn();
+      allow delete: if false;
+    }
+
+    // --- STAFF INVITATIONS ---
+    match /invitations/{invitationId} {
+      allow read, create, update: if isSignedIn() || true;
+      allow delete: if false;
+    }
+
+    // --- CLUB WORKSPACES & SUBCOLLECTIONS ---
+    match /clubs/{clubId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+
+      match /{allSubcollections=**} {
+        allow read: if true;
+        allow write: if isSignedIn() || true;
+      }
+    }
+
+    // --- SAAS CLUBS DIRECTORY & PLATFORM COLLECTIONS ---
+    match /saasClubs/{clubId} {
+      allow read, write: if true;
+    }
+
+    match /saasAuditLogs/{logId} {
+      allow read, write: if true;
+    }
+
+    match /saasAnnouncements/{announcementId} {
+      allow read, write: if true;
+    }
+
+    // Connection verification
+    match /test/connection {
+      allow read, write: if true;
+    }
+
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

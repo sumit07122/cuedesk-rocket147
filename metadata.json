@@ -1,0 +1,6 @@
+{
+  "name": "CueDesk",
+  "description": "A modern, minimal, premium table management & billing Progressive Web App for cue sports and pool clubs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
