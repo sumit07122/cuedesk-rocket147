@@ -20,7 +20,8 @@ import {
   CreditCard,
   PlusCircle,
   ShieldAlert,
-  Wallet
+  Wallet,
+  Eye
 } from 'lucide-react';
 import { TopCustomer, BusinessConfig, UdhaarTransaction } from '../../types';
 import { Card } from '../ui/Card';
@@ -53,6 +54,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Partial<TopCustomer> | null>(null);
   const [viewingLedgerCustomer, setViewingLedgerCustomer] = useState<TopCustomer | null>(null);
+  const [viewingProfileCustomer, setViewingProfileCustomer] = useState<TopCustomer | null>(null);
 
   // Settlement Modal State
   const [settlingCustomer, setSettlingCustomer] = useState<TopCustomer | null>(null);
@@ -238,6 +240,143 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
   };
 
   return (
+    <div className="flex flex-col gap-4 sm:gap-6 p-3 sm:p-6 max-w-7xl mx-auto w-full pb-28 lg:pb-8">
+
+      {/* ===== CUSTOMER PROFILE DRAWER ===== */}
+      {viewingProfileCustomer && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex justify-end">
+          <div className="bg-white w-full max-w-md h-full flex flex-col overflow-hidden shadow-2xl">
+            {/* Drawer Header */}
+            <div className="bg-neutral-900 text-white p-5 flex items-start justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500 flex items-center justify-center font-extrabold text-xl text-white shrink-0">
+                  {viewingProfileCustomer.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold">{viewingProfileCustomer.name}</h3>
+                  <p className="text-xs text-neutral-300">{viewingProfileCustomer.phone}</p>
+                  <div className="mt-1">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                      viewingProfileCustomer.membershipStatus === 'VIP' ? 'bg-amber-400 text-black'
+                      : viewingProfileCustomer.membershipStatus === 'Platinum' ? 'bg-purple-400 text-white'
+                      : viewingProfileCustomer.membershipStatus === 'Gold' ? 'bg-yellow-400 text-black'
+                      : 'bg-neutral-600 text-white'
+                    }`}>{viewingProfileCustomer.membershipStatus || 'Regular'}</span>
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setViewingProfileCustomer(null)} className="p-2 rounded-xl hover:bg-white/10 transition-colors cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Lifetime Stats Grid */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-2xl text-center">
+                  <div className="text-xl font-black text-neutral-900">{viewingProfileCustomer.sessionsCount || 0}</div>
+                  <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mt-0.5">Total Sessions</div>
+                </div>
+                <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-2xl text-center">
+                  <div className="text-xl font-black text-neutral-900">{viewingProfileCustomer.totalHoursPlayed?.toFixed(1) || '0'}h</div>
+                  <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mt-0.5">Hours Played</div>
+                </div>
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-center">
+                  <div className="text-xl font-black text-emerald-700">{formatCurrency(viewingProfileCustomer.totalSpent || 0, config.currencySymbol)}</div>
+                  <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mt-0.5">Lifetime Spent</div>
+                </div>
+                <div className={`p-3 rounded-2xl border text-center ${
+                  (viewingProfileCustomer.outstandingDue || 0) > 0 ? 'bg-rose-50 border-rose-200' : 'bg-neutral-50 border-neutral-200'
+                }`}>
+                  <div className={`text-xl font-black ${ (viewingProfileCustomer.outstandingDue || 0) > 0 ? 'text-rose-700' : 'text-neutral-400' }`}>
+                    {formatCurrency(viewingProfileCustomer.outstandingDue || 0, config.currencySymbol)}
+                  </div>
+                  <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mt-0.5">Credit Due</div>
+                </div>
+              </div>
+
+              {/* Credit Usage Progress Bar */}
+              {(viewingProfileCustomer.creditLimit || 0) > 0 && (
+                <div className="p-4 bg-white border border-neutral-200 rounded-2xl space-y-2">
+                  <div className="flex justify-between text-xs font-bold">
+                    <span className="text-neutral-700">Credit Usage</span>
+                    <span className={`${ ((viewingProfileCustomer.outstandingDue || 0) / (viewingProfileCustomer.creditLimit || 1)) > 0.8 ? 'text-rose-600' : 'text-neutral-500' }`}>
+                      {formatCurrency(viewingProfileCustomer.outstandingDue || 0, config.currencySymbol)} / {formatCurrency(viewingProfileCustomer.creditLimit || 0, config.currencySymbol)}
+                    </span>
+                  </div>
+                  <div className="w-full bg-neutral-100 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        ((viewingProfileCustomer.outstandingDue || 0) / (viewingProfileCustomer.creditLimit || 1)) > 0.8 ? 'bg-rose-500'
+                        : ((viewingProfileCustomer.outstandingDue || 0) / (viewingProfileCustomer.creditLimit || 1)) > 0.5 ? 'bg-amber-500'
+                        : 'bg-emerald-500'
+                      }`}
+                      style={{ width: `${Math.min(100, ((viewingProfileCustomer.outstandingDue || 0) / (viewingProfileCustomer.creditLimit || 1)) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Quick Info */}
+              <div className="p-4 bg-white border border-neutral-200 rounded-2xl space-y-2 text-xs">
+                <h4 className="font-extrabold text-neutral-800 uppercase tracking-wider text-[10px]">Profile Info</h4>
+                <div className="flex justify-between"><span className="text-neutral-500">Member Since</span><span className="font-semibold text-neutral-900">{viewingProfileCustomer.dateJoined || 'N/A'}</span></div>
+                <div className="flex justify-between"><span className="text-neutral-500">Last Visit</span><span className="font-semibold text-neutral-900">{viewingProfileCustomer.lastVisit || 'N/A'}</span></div>
+                <div className="flex justify-between"><span className="text-neutral-500">Credit Limit</span><span className="font-semibold text-neutral-900">{formatCurrency(viewingProfileCustomer.creditLimit || DEFAULT_CREDIT_LIMIT, config.currencySymbol)}</span></div>
+                {viewingProfileCustomer.notes && (
+                  <div className="pt-2 border-t border-neutral-100">
+                    <span className="text-neutral-500 block mb-1">Notes</span>
+                    <p className="text-neutral-800 font-medium leading-relaxed">{viewingProfileCustomer.notes}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Credit Ledger History */}
+              <div className="p-4 bg-white border border-neutral-200 rounded-2xl space-y-3">
+                <h4 className="font-extrabold text-neutral-800 uppercase tracking-wider text-[10px]">Credit Ledger History ({(viewingProfileCustomer.udhaarLedger || []).length} transactions)</h4>
+                {(viewingProfileCustomer.udhaarLedger || []).length === 0 ? (
+                  <p className="text-xs text-neutral-400 text-center py-3">No credit transactions yet</p>
+                ) : (
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {(viewingProfileCustomer.udhaarLedger || []).map((tx) => (
+                      <div key={tx.id} className={`flex items-center justify-between p-2.5 rounded-xl border text-xs ${
+                        tx.type === 'payment_received' ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'
+                      }`}>
+                        <div>
+                          <span className={`font-bold ${ tx.type === 'payment_received' ? 'text-emerald-700' : 'text-rose-700' }`}>
+                            {tx.type === 'payment_received' ? '✓ Paid' : '+ Due Added'}
+                          </span>
+                          <p className="text-[10px] text-neutral-500 mt-0.5">{tx.description}</p>
+                          <p className="text-[9px] text-neutral-400">{new Date(tx.timestamp).toLocaleString('en-IN')}</p>
+                        </div>
+                        <span className={`font-extrabold text-sm ${ tx.type === 'payment_received' ? 'text-emerald-700' : 'text-rose-700' }`}>
+                          {tx.type === 'payment_received' ? '-' : '+'}{formatCurrency(tx.amount, config.currencySymbol)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Drawer Footer Actions */}
+            <div className="p-4 border-t border-neutral-200 bg-neutral-50 grid grid-cols-2 gap-2 shrink-0">
+              <button
+                onClick={() => { setSettlingCustomer(viewingProfileCustomer); setViewingProfileCustomer(null); }}
+                className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Wallet className="w-3.5 h-3.5" /> Settle Credit
+              </button>
+              <button
+                onClick={() => { handleOpenEditModal(viewingProfileCustomer); setViewingProfileCustomer(null); }}
+                className="py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Edit className="w-3.5 h-3.5" /> Edit Profile
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     <div className="flex flex-col gap-6">
       {/* Top Header Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-neutral-200/80 shadow-xs">
@@ -447,6 +586,12 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
 
                 <div className="flex items-center justify-between pt-1 gap-1.5 flex-wrap">
                   <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setViewingProfileCustomer(cust)}
+                      className="px-2.5 py-1.5 bg-neutral-900 hover:bg-neutral-700 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                    >
+                      <Eye className="w-3 h-3" /> Profile
+                    </button>
                     {dueAmt > 0 && (
                       <button
                         onClick={() => {
@@ -467,12 +612,6 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                       className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer"
                     >
                       <PlusCircle className="w-3 h-3" /> Charge
-                    </button>
-                    <button
-                      onClick={() => setViewingLedgerCustomer(cust)}
-                      className="px-2.5 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer"
-                    >
-                      <FileText className="w-3 h-3" /> Audit
                     </button>
                   </div>
 
@@ -603,6 +742,16 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
 
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {/* View Profile Button */}
+                          <button
+                            onClick={() => setViewingProfileCustomer(cust)}
+                            className="px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-700 text-white text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer"
+                            title="View Full Profile"
+                          >
+                            <Eye className="w-3 h-3" />
+                            Profile
+                          </button>
+
                           {/* Settle Dues Button */}
                           {dueAmt > 0 && (
                             <button
@@ -639,15 +788,6 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                               <Send className="w-4 h-4" />
                             </button>
                           )}
-
-                          {/* Audit Trail Button */}
-                          <button
-                            onClick={() => setViewingLedgerCustomer(cust)}
-                            className="p-1.5 text-neutral-500 hover:text-neutral-900 rounded-lg hover:bg-neutral-100 transition-colors cursor-pointer"
-                            title="View Audit Trail"
-                          >
-                            <FileText className="w-4 h-4" />
-                          </button>
 
                           {/* Edit Button */}
                           <button
@@ -1013,6 +1153,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 };

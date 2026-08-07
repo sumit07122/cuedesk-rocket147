@@ -14,9 +14,11 @@ import {
   AlertTriangle,
   X,
   Eye,
-  EyeOff
+  EyeOff,
+  Bell,
+  ChefHat
 } from 'lucide-react';
-import { TableItem, TableType, SessionRequest, DashboardWidgetConfig } from '../../types';
+import { TableItem, TableType, SessionRequest, DashboardWidgetConfig, NotificationItem } from '../../types';
 import { StatCard } from './StatCard';
 import { TableCard } from './TableCard';
 import { SessionRequestsPanel } from './SessionRequestsPanel';
@@ -35,10 +37,12 @@ interface DashboardViewProps {
   lowStockCount?: number;
   netProfitToday?: number;
   sessionRequests?: SessionRequest[];
+  notifications?: NotificationItem[];
   widgetConfig?: DashboardWidgetConfig;
   onUpdateWidgetConfig?: (config: DashboardWidgetConfig) => void;
   onApproveRequest?: (req: SessionRequest) => void;
   onRejectRequest?: (requestId: string) => void;
+  onMarkNotificationRead?: (id: string) => void;
   onShowQRCode?: (table: TableItem) => void;
   onSelectTable: (table: TableItem) => void;
   onStartSession: (table: TableItem) => void;
@@ -58,6 +62,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   lowStockCount = 0,
   netProfitToday = revenueToday * 0.7,
   sessionRequests = [],
+  notifications = [],
   widgetConfig = {
     showRevenue: true,
     showActiveTables: true,
@@ -71,6 +76,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onUpdateWidgetConfig,
   onApproveRequest,
   onRejectRequest,
+  onMarkNotificationRead,
   onShowQRCode,
   onSelectTable,
   onStartSession,
@@ -117,7 +123,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {/* Top Controls & Widget Customizer Trigger */}
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-base sm:text-xl font-extrabold text-neutral-900 tracking-tight">Arena Dashboard</h2>
+          <h2 className="text-base sm:text-xl font-extrabold text-neutral-900 tracking-tight">Club Dashboard</h2>
           <p className="hidden sm:block text-xs text-neutral-500">Live table monitoring, session checkout, and club revenue statistics</p>
         </div>
 
@@ -139,6 +145,56 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           onReject={onRejectRequest}
           onEndTableSession={onEndSession}
         />
+      )}
+
+      {/* 🛎️ Live Cue Boy / Staff Assistance Alerts */}
+      {notifications.filter((n) => n.title?.includes('Cue Boy')).length > 0 && (
+        <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 flex flex-col gap-2 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
+                <Bell className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-xs font-extrabold text-amber-900">🛎️ Cue Boy Assistance Requests ({notifications.filter((n) => n.title?.includes('Cue Boy')).length})</h4>
+                <p className="text-[11px] text-amber-700">Customers are requesting staff attention at their tables</p>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+            {notifications.filter((n) => n.title?.includes('Cue Boy')).map((n) => (
+              <div key={n.id} className="flex items-center justify-between bg-white border border-amber-200 rounded-xl px-3 py-2 text-xs">
+                <div>
+                  <span className="font-bold text-amber-900">{n.title}</span>
+                  <p className="text-[10px] text-neutral-500 mt-0.5">{n.message}</p>
+                </div>
+                {onMarkNotificationRead && (
+                  <button
+                    onClick={() => onMarkNotificationRead(n.id)}
+                    className="ml-2 px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold rounded-lg transition-colors cursor-pointer shrink-0"
+                  >
+                    ✓ Done
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 🍳 Live Pending Kitchen Orders Alert */}
+      {notifications.filter((n) => n.type === 'food_order').length > 0 && (
+        <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+              <ChefHat className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="text-xs font-extrabold text-emerald-900">{notifications.filter((n) => n.type === 'food_order').length} Kitchen Order(s) Queued</h4>
+              <p className="text-[11px] text-emerald-700">New food/drink orders waiting in the kitchen queue</p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Top Header Metrics — 2-col on mobile, 3 on md, 6 on desktop */}

@@ -559,12 +559,14 @@ function CueDeskApp() {
         {/* Dynamic Page Views */}
         <main className="flex-1">
           {activePage === 'dashboard' ? (
-            <DashboardView
+          <DashboardView
               tables={tables}
               revenueToday={revenueToday}
               pendingPaymentsTotal={pendingPaymentsTotal}
               currencySymbol={config.currencySymbol}
               sessionRequests={sessionRequests}
+              notifications={notifications}
+              onMarkNotificationRead={markNotificationRead}
               onApproveRequest={(req) => handleApproveRequest(req.id, req.tableId, req.customerName, req.customerPhone)}
               onRejectRequest={(reqId) => handleRejectRequest(reqId)}
               onShowQRCode={(table) => setQrModalTable(table)}

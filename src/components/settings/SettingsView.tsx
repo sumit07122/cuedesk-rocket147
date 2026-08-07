@@ -22,6 +22,7 @@ import {
   ShieldAlert,
   RefreshCw,
   Crown,
+  ChefHat,
   Sliders,
   CheckCircle2,
   UserPlus,
@@ -153,6 +154,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         shiftClosure: true,
         dataReset: false,
       }
+    },
+    {
+      id: 'kitchen',
+      title: 'KITCHEN STAFF',
+      description: 'Kitchen access only. Can view and manage the Kitchen Display System (KDS), update order statuses, and manage food & inventory stock levels.',
+      baseRole: 'kitchen' as const,
+      isCustom: false,
+      permissions: {
+        tableOps: false,
+        billingCheckout: false,
+        applyDiscount: false,
+        foodInventory: true,
+        customerCredit: false,
+        reportsAnalytics: false,
+        clubSettings: false,
+        shiftClosure: false,
+        dataReset: false,
+      }
     }
   ]);
 
@@ -160,12 +179,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     { id: '1', name: 'Club Owner', email: 'owner@rocket147.com', role: 'owner', status: 'Active', access: 'Full Admin' },
     { id: '2', name: 'Duty Manager', email: 'manager@rocket147.com', role: 'manager', status: 'Active', access: 'Operational' },
     { id: '3', name: 'Front Counter Cashier', email: 'cashier@rocket147.com', role: 'cashier', status: 'Active', access: 'Counter Only' },
+    { id: '4', name: 'Kitchen Staff', email: 'kitchen@rocket147.com', role: 'kitchen', status: 'Active', access: 'KDS & Inventory' },
   ]);
 
   const [showAddRoleModal, setShowAddRoleModal] = useState(false);
   const [newRoleTitle, setNewRoleTitle] = useState('');
   const [newRoleDesc, setNewRoleDesc] = useState('');
-  const [newRoleBase, setNewRoleBase] = useState<'owner' | 'manager' | 'cashier'>('cashier');
+  const [newRoleBase, setNewRoleBase] = useState<'owner' | 'manager' | 'cashier' | 'kitchen'>('cashier');
 
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
   const [newStaffName, setNewStaffName] = useState('');
@@ -1155,12 +1175,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               Role Privileges & Feature Access Control
             </h4>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               {rolesList.map((r) => {
                 const isOwnerRole = r.id === 'owner';
-                const roleBorderColor = r.baseRole === 'owner' ? 'border-amber-300 bg-amber-50/30' : r.baseRole === 'manager' ? 'border-emerald-300 bg-emerald-50/30' : 'border-blue-300 bg-blue-50/30';
-                const roleHeaderColor = r.baseRole === 'owner' ? 'text-amber-900' : r.baseRole === 'manager' ? 'text-emerald-900' : 'text-blue-900';
-                const RoleIcon = r.baseRole === 'owner' ? Crown : r.baseRole === 'manager' ? ShieldCheck : Users;
+                const roleBorderColor = r.baseRole === 'owner' ? 'border-amber-300 bg-amber-50/30' : r.baseRole === 'manager' ? 'border-emerald-300 bg-emerald-50/30' : r.baseRole === 'kitchen' ? 'border-purple-300 bg-purple-50/30' : 'border-blue-300 bg-blue-50/30';
+                const roleHeaderColor = r.baseRole === 'owner' ? 'text-amber-900' : r.baseRole === 'manager' ? 'text-emerald-900' : r.baseRole === 'kitchen' ? 'text-purple-900' : 'text-blue-900';
+                const RoleIcon = r.baseRole === 'owner' ? Crown : r.baseRole === 'manager' ? ShieldCheck : r.baseRole === 'kitchen' ? ChefHat : Users;
 
                 const togglePerm = (permKey: keyof typeof r.permissions) => {
                   if (isOwnerRole) return; // Owner permissions cannot be revoked
@@ -1188,7 +1208,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <div>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <RoleIcon className={`w-5 h-5 ${r.baseRole === 'owner' ? 'text-amber-600' : r.baseRole === 'manager' ? 'text-emerald-600' : 'text-blue-600'}`} />
+                          <RoleIcon className={`w-5 h-5 ${r.baseRole === 'owner' ? 'text-amber-600' : r.baseRole === 'manager' ? 'text-emerald-600' : r.baseRole === 'kitchen' ? 'text-purple-600' : 'text-blue-600'}`} />
                           <h4 className={`font-extrabold text-sm ${roleHeaderColor}`}>{r.title}</h4>
                         </div>
                         {r.isCustom && (
@@ -1294,7 +1314,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                   ? {
                                       ...item,
                                       role: newR,
-                                      access: newR === 'owner' ? 'Full Admin' : newR === 'manager' ? 'Operational' : 'Counter Only',
+                                      access: newR === 'owner' ? 'Full Admin' : newR === 'manager' ? 'Operational' : newR === 'kitchen' ? 'KDS & Inventory' : 'Counter Only',
                                     }
                                   : item
                               )
