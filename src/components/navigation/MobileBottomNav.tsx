@@ -39,7 +39,6 @@ const moreItems = [
   { id: 'expenses' as PageView, label: 'Expenses & Profit', icon: TrendingUp },
   { id: 'reports' as PageView, label: 'Reports & Analytics', icon: BarChart3 },
   { id: 'maintenance' as PageView, label: 'Table Maintenance', icon: Wrench },
-  { id: 'customer-qr' as PageView, label: 'Customer QR View', icon: QrCode },
   { id: 'settings' as PageView, label: 'Club Settings', icon: Settings },
 ];
 

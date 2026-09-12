@@ -4,7 +4,7 @@ import { TableItem } from '../../types';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
-import { formatCurrency } from '../../utils/formatters';
+import { formatCurrency, formatPerMinuteRate } from '../../utils/formatters';
 
 interface StartSessionModalProps {
   isOpen: boolean;
@@ -80,7 +80,7 @@ export const StartSessionModal: React.FC<StartSessionModalProps> = ({
           >
             {availableTables.map((t) => (
               <option key={t.id} value={t.id}>
-                Table #{t.number.toString().padStart(2, '0')} — {t.name} ({formatCurrency(t.hourlyRate, currencySymbol)}/hr)
+                Table #{t.number.toString().padStart(2, '0')} — {t.name} ({formatPerMinuteRate(t.perMinuteRate ? t.perMinuteRate * 60 : t.hourlyRate, currencySymbol)} • {formatCurrency(t.hourlyRate, currencySymbol)}/hr)
               </option>
             ))}
           </select>
@@ -124,14 +124,19 @@ export const StartSessionModal: React.FC<StartSessionModalProps> = ({
         {/* Hourly Rate Option & Custom Input */}
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold text-neutral-700">Hourly Rate ({currencySymbol}/hr)</label>
+            <label className="text-xs font-semibold text-neutral-700">Session Rate</label>
             <span className="text-[11px] font-mono text-neutral-500 font-semibold">
-              Current: {currencySymbol}{customRate || activeTargetTable?.hourlyRate || 0}/hr
+              Current: {formatPerMinuteRate((customRate || activeTargetTable?.hourlyRate || 0), currencySymbol)} ({currencySymbol}{customRate || activeTargetTable?.hourlyRate || 0}/hr)
             </span>
           </div>
 
-          <div className="grid grid-cols-5 gap-1.5">
-            {[180, 220, 250, 320, 400].map((rate) => (
+          <div className="grid grid-cols-4 gap-1.5">
+            {[
+              { label: '₹2/min', rate: 120 },
+              { label: '₹2.50/min', rate: 150 },
+              { label: '₹4.33/min', rate: 260 },
+              { label: '₹5/min', rate: 300 },
+            ].map(({ label, rate }) => (
               <button
                 type="button"
                 key={rate}
@@ -142,13 +147,13 @@ export const StartSessionModal: React.FC<StartSessionModalProps> = ({
                     : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-50'
                 }`}
               >
-                {currencySymbol}{rate}
+                {label}
               </button>
             ))}
           </div>
 
           <Input
-            placeholder="Or enter custom rate per hour..."
+            placeholder="Or enter custom hourly rate (e.g. 300 for ₹5/min)..."
             type="number"
             value={customRate !== undefined ? customRate.toString() : ''}
             onChange={(e) => {

@@ -11,6 +11,11 @@ export function formatCurrency(amount: number, symbol: any = '₹'): string {
   return `${sym}${safeNum.toFixed(2)}`;
 }
 
+export function formatPerMinuteRate(hourlyRate: number, symbol: string = '₹'): string {
+  const perMin = (hourlyRate || 0) / 60;
+  return `${symbol}${perMin.toFixed(2)}/min`;
+}
+
 export function calculateSessionSeconds(session: SessionData, currentTime: number = Date.now()): number {
   if (!session) return 0;
   

@@ -21,7 +21,6 @@ import {
 import { TableItem, TableType, SessionRequest, DashboardWidgetConfig, NotificationItem } from '../../types';
 import { StatCard } from './StatCard';
 import { TableCard } from './TableCard';
-import { SessionRequestsPanel } from './SessionRequestsPanel';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { EmptyState } from '../ui/EmptyState';
@@ -136,19 +135,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </button>
       </div>
 
-      {/* Live Customer QR Session Requests Panel */}
-      {widgetConfig.showTodaysBookings && sessionRequests && sessionRequests.length > 0 && onApproveRequest && onRejectRequest && (
-        <SessionRequestsPanel
-          requests={sessionRequests}
-          tables={tables}
-          onApprove={onApproveRequest}
-          onReject={onRejectRequest}
-          onEndTableSession={onEndSession}
-        />
-      )}
+
 
       {/* 🛎️ Live Cue Boy / Staff Assistance Alerts */}
-      {notifications.filter((n) => n.title?.includes('Cue Boy')).length > 0 && (
+      {notifications.filter((n) => !n.read && n.title?.includes('Cue Boy')).length > 0 && (
         <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 flex flex-col gap-2 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -156,13 +146,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <Bell className="w-4 h-4" />
               </div>
               <div>
-                <h4 className="text-xs font-extrabold text-amber-900">🛎️ Cue Boy Assistance Requests ({notifications.filter((n) => n.title?.includes('Cue Boy')).length})</h4>
+                <h4 className="text-xs font-extrabold text-amber-900">🛎️ Cue Boy Assistance Requests ({notifications.filter((n) => !n.read && n.title?.includes('Cue Boy')).length})</h4>
                 <p className="text-[11px] text-amber-700">Customers are requesting staff attention at their tables</p>
               </div>
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-            {notifications.filter((n) => n.title?.includes('Cue Boy')).map((n) => (
+            {notifications.filter((n) => !n.read && n.title?.includes('Cue Boy')).map((n) => (
               <div key={n.id} className="flex items-center justify-between bg-white border border-amber-200 rounded-xl px-3 py-2 text-xs">
                 <div>
                   <span className="font-bold text-amber-900">{n.title}</span>
@@ -171,7 +161,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {onMarkNotificationRead && (
                   <button
                     onClick={() => onMarkNotificationRead(n.id)}
-                    className="ml-2 px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold rounded-lg transition-colors cursor-pointer shrink-0"
+                    className="ml-2 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold rounded-lg transition-colors cursor-pointer shrink-0"
                   >
                     ✓ Done
                   </button>
@@ -273,9 +263,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             { id: 'available', label: `⚪ Free (${availableCount})` },
             { id: 'snooker', label: '🔴 Snooker' },
             { id: 'pool', label: '🎱 Pool' },
-            { id: 'pickleball', label: '🏓 Pickle' },
+            { id: 'american_pool', label: '🎱 American Pool' },
+            { id: 'table_tennis', label: '🏓 Table Tennis' },
             { id: 'ps5', label: '🎮 PS5' },
-            { id: 'vip', label: '👑 VIP' },
+            { id: 'ps4', label: '🎮 PS4' },
+            { id: 'magnet_table', label: '🧲 Magnet Board' },
           ].map((tab) => (
             <button
               key={tab.id}

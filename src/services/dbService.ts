@@ -191,7 +191,22 @@ export const subscribeTables = (
   const tablesRef = collection(db, 'clubs', clubId, 'tables');
   const q = query(tablesRef, orderBy('number', 'asc'));
 
-  return onSnapshot(q, (snapshot) => {
+  return onSnapshot(q, async (snapshot) => {
+    if (snapshot.empty) {
+      const batch = writeBatch(db);
+      initialTables.forEach((tbl) => {
+        const tblRef = doc(db, 'clubs', clubId, 'tables', tbl.id);
+        batch.set(tblRef, { ...tbl, clubId });
+      });
+      try {
+        await batch.commit();
+      } catch (e) {
+        console.warn('Auto seed initialTables error:', e);
+      }
+      callback(initialTables);
+      return;
+    }
+
     const tables: TableItem[] = [];
     snapshot.forEach((docSnap) => {
       tables.push({ id: docSnap.id, ...docSnap.data() } as TableItem);
@@ -655,11 +670,7 @@ export const subscribeNotifications = (
     snapshot.forEach((docSnap) => {
       list.push({ id: docSnap.id, ...docSnap.data() } as NotificationItem);
     });
-    if (list.length === 0) {
-      callback(initialNotifications as NotificationItem[]);
-    } else {
-      callback(list);
-    }
+    callback(list);
   }, (err) => console.warn('subscribeNotifications error:', err));
 };
 

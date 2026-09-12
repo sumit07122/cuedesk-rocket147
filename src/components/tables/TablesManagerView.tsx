@@ -116,9 +116,11 @@ export const TablesManagerView: React.FC<TablesManagerViewProps> = ({
             { id: 'available', label: `Available (${availableCount})` },
             { id: 'snooker', label: '🔴 Snooker' },
             { id: 'pool', label: '🎱 Pool' },
-            { id: 'vip', label: '👑 VIP' },
-            { id: 'carom', label: '⚪ Carom' },
+            { id: 'american_pool', label: '🎱 American Pool' },
+            { id: 'table_tennis', label: '🏓 Table Tennis' },
             { id: 'ps5', label: '🎮 PS5' },
+            { id: 'ps4', label: '🎮 PS4' },
+            { id: 'magnet_table', label: '🧲 Magnet Table' },
           ].map((tab) => (
             <button
               key={tab.id}

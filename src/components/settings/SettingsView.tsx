@@ -6,7 +6,6 @@ import {
   Utensils, 
   Users, 
   Percent, 
-  QrCode, 
   Building2, 
   Plus, 
   Trash2, 
@@ -36,11 +35,12 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
-import { formatCurrency } from '../../utils/formatters';
+import { formatCurrency, formatPerMinuteRate } from '../../utils/formatters';
 import { exportClubBackup, downloadBackupFile, restoreClubBackup, ClubBackupSnapshot } from '../../utils/backupService';
+import { getAvailableAutoSnapshots, restoreAutoSnapshot, performDailyAutoSnapshot } from '../../utils/autoSnapshot';
 import { clearHistoryAndAnalytics } from '../../services/dbService';
 import { getRecentMonitoringEvents } from '../../utils/monitoring';
-import { QRCodeComponent } from '../common/QRCodeComponent';
+import { FirebaseConnectSection } from './FirebaseConnectSection';
 
 interface SettingsViewProps {
   config: BusinessConfig;
@@ -51,7 +51,6 @@ interface SettingsViewProps {
   onDeleteTable: (tableId: string) => void;
   onAddMenuItem: (item: Omit<MenuItem, 'id'>) => void;
   onDeleteMenuItem: (itemId: string) => void;
-  onShowQRCode?: (table: TableItem) => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -63,11 +62,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onDeleteTable,
   onAddMenuItem,
   onDeleteMenuItem,
-  onShowQRCode,
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'business' | 'crm_rules' | 'tables' | 'rates' | 'menu' | 'employees' | 'qr' | 'backup'
-  >('business');
+    'tables' | 'crm_rules' | 'rates' | 'menu' | 'employees' | 'backup' | 'database'
+  >('tables');
 
   const [isClearingHistory, setIsClearingHistory] = useState(false);
   const [clearSuccess, setClearSuccess] = useState(false);
@@ -176,10 +174,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   ]);
 
   const [staffAccounts, setStaffAccounts] = useState([
-    { id: '1', name: 'Club Owner', email: 'owner@rocket147.com', role: 'owner', status: 'Active', access: 'Full Admin' },
-    { id: '2', name: 'Duty Manager', email: 'manager@rocket147.com', role: 'manager', status: 'Active', access: 'Operational' },
-    { id: '3', name: 'Front Counter Cashier', email: 'cashier@rocket147.com', role: 'cashier', status: 'Active', access: 'Counter Only' },
-    { id: '4', name: 'Kitchen Staff', email: 'kitchen@rocket147.com', role: 'kitchen', status: 'Active', access: 'KDS & Inventory' },
+    { id: '1', name: 'Club Owner', email: 'owner@oneshotsnooker.com', role: 'owner', status: 'Active', access: 'Full Admin' },
+    { id: '2', name: 'Duty Manager', email: 'manager@oneshotsnooker.com', role: 'manager', status: 'Active', access: 'Operational' },
+    { id: '3', name: 'Front Counter Cashier', email: 'cashier@oneshotsnooker.com', role: 'cashier', status: 'Active', access: 'Counter Only' },
+    { id: '4', name: 'Kitchen Staff', email: 'kitchen@oneshotsnooker.com', role: 'kitchen', status: 'Active', access: 'KDS & Inventory' },
   ]);
 
   const [showAddRoleModal, setShowAddRoleModal] = useState(false);
@@ -272,14 +270,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* Settings Navigation Bar */}
       <div className="bg-white rounded-2xl border border-neutral-200/80 p-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar shadow-2xs">
         {[
-          { id: 'business', label: 'Club Info', icon: Building2 },
-          { id: 'crm_rules', label: 'CRM & Credit Rules', icon: Users },
-          { id: 'tables', label: 'Manage Tables', icon: Grid2X2 },
-          { id: 'rates', label: 'Hourly Pricing', icon: DollarSign },
+          { id: 'tables', label: 'Manage Tables & Stations', icon: Grid2X2 },
+          { id: 'rates', label: 'Hourly & Minute Rates', icon: DollarSign },
           { id: 'menu', label: 'Food & Drinks Menu', icon: Utensils },
-          { id: 'employees', label: 'Staff Roles', icon: Users },
-          { id: 'qr', label: 'QR Codes Generator', icon: QrCode },
-          { id: 'backup', label: 'Backup & Security', icon: Database },
+          { id: 'employees', label: 'Staff Roles & Credentials', icon: Users },
+          { id: 'crm_rules', label: 'CRM & Credit Rules', icon: Users },
+          { id: 'database', label: 'Cloud Database (Firebase)', icon: Database },
+          { id: 'backup', label: 'Backup & Security', icon: ShieldCheck },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -300,148 +297,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         })}
       </div>
 
-      {/* TAB 1: Business Information & Taxes */}
-      {activeTab === 'business' && (
-        <Card>
-          <form onSubmit={handleSaveConfig} className="flex flex-col gap-5 max-w-2xl">
-            <div className="border-b border-neutral-100 pb-4">
-              <h3 className="text-base font-bold text-neutral-900">Club Information</h3>
-              <p className="text-xs text-neutral-500">All details appear on receipts and QR codes</p>
-            </div>
 
-            {/* Row 1: Club Name & Tagline */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Input
-                label="Club Name"
-                value={businessForm.clubName}
-                onChange={(e) => setBusinessForm({ ...businessForm, clubName: e.target.value })}
-                required
-              />
-              <Input
-                label="Tagline / Motto"
-                value={businessForm.tagline}
-                onChange={(e) => setBusinessForm({ ...businessForm, tagline: e.target.value })}
-              />
-            </div>
 
-            {/* Row 2: Phone & WhatsApp */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Input
-                label="Phone Number"
-                value={businessForm.phone}
-                onChange={(e) => setBusinessForm({ ...businessForm, phone: e.target.value })}
-              />
-              <Input
-                label="WhatsApp Number (for bill sharing)"
-                value={businessForm.whatsappNumber || ''}
-                onChange={(e) => setBusinessForm({ ...businessForm, whatsappNumber: e.target.value })}
-                placeholder="+91 98765 43210"
-              />
-            </div>
-
-            {/* Row 3: Address & Operating Hours */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Input
-                label="Physical Address"
-                value={businessForm.address}
-                onChange={(e) => setBusinessForm({ ...businessForm, address: e.target.value })}
-              />
-              <Input
-                label="Operating Hours"
-                value={businessForm.operatingHours || ''}
-                onChange={(e) => setBusinessForm({ ...businessForm, operatingHours: e.target.value })}
-                placeholder="10:00 AM – 11:00 PM"
-              />
-            </div>
-
-            {/* Row 4: Currency, Rounding, Discount Limit */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <Input
-                label="Currency Symbol"
-                value={businessForm.currencySymbol}
-                onChange={(e) => setBusinessForm({ ...businessForm, currencySymbol: e.target.value })}
-              />
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-neutral-700">Bill Rounding Rule</label>
-                <select
-                  value={businessForm.roundingRule || 'nearest_1'}
-                  onChange={(e) => setBusinessForm({ ...businessForm, roundingRule: e.target.value as any })}
-                  className="bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-xs font-medium text-neutral-900 outline-none focus:border-neutral-900"
-                >
-                  <option value="none">Exact (No Rounding)</option>
-                  <option value="nearest_1">Nearest ₹1</option>
-                  <option value="nearest_5">Nearest ₹5</option>
-                  <option value="round_up">Round Up Always</option>
-                </select>
-              </div>
-              <Input
-                label="Max Cashier Discount Limit (%)"
-                type="number"
-                value={businessForm.maxCashierDiscountPercent || 10}
-                onChange={(e) => setBusinessForm({ ...businessForm, maxCashierDiscountPercent: parseFloat(e.target.value) || 0 })}
-              />
-            </div>
-
-            {/* Row 5: UPI */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Input
-                label="UPI ID for Payments"
-                value={businessForm.upiId}
-                onChange={(e) => setBusinessForm({ ...businessForm, upiId: e.target.value })}
-              />
-              <Input
-                label="UPI Merchant Name"
-                value={businessForm.upiName}
-                onChange={(e) => setBusinessForm({ ...businessForm, upiName: e.target.value })}
-              />
-            </div>
-
-            {/* Row 6: Pricing multipliers & min charge */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-2xl bg-neutral-50 border border-neutral-200">
-              <Input
-                label="Weekend Rate Multiplier (e.g. 1.25 = +25%)"
-                type="number"
-                step="0.05"
-                value={businessForm.weekendRateMultiplier || 1.2}
-                onChange={(e) => setBusinessForm({ ...businessForm, weekendRateMultiplier: parseFloat(e.target.value) || 1.0 })}
-              />
-              <Input
-                label="Happy Hour Multiplier (e.g. 0.8 = -20%)"
-                type="number"
-                step="0.05"
-                value={businessForm.happyHourRateMultiplier || 0.8}
-                onChange={(e) => setBusinessForm({ ...businessForm, happyHourRateMultiplier: parseFloat(e.target.value) || 1.0 })}
-              />
-              <Input
-                label="Minimum Charge (minutes)"
-                type="number"
-                value={businessForm.minimumChargeMinutes || 30}
-                onChange={(e) => setBusinessForm({ ...businessForm, minimumChargeMinutes: parseInt(e.target.value) || 0 })}
-                placeholder="30"
-              />
-            </div>
-
-            {/* Receipt Footer */}
-            <Input
-              label="Receipt Footer Message"
-              value={businessForm.receiptFooterMsg}
-              onChange={(e) => setBusinessForm({ ...businessForm, receiptFooterMsg: e.target.value })}
-            />
-
-            <div className="flex items-center justify-between pt-4 border-t border-neutral-100">
-              {isSaved ? (
-                <span className="text-xs font-semibold text-emerald-600 flex items-center gap-1.5">
-                  <Check className="w-4 h-4" /> Settings Saved Successfully!
-                </span>
-              ) : (
-                <span className="text-xs text-neutral-400">Changes take effect immediately</span>
-              )}
-              <Button type="submit" variant="primary" leftIcon={<Save className="w-4 h-4" />}>
-                Save Configuration
-              </Button>
-            </div>
-          </form>
-        </Card>
+      {/* TAB: Cloud Database (Firebase Direct Connect) */}
+      {activeTab === 'database' && (
+        <FirebaseConnectSection currentClubId={config.id || 'club-royal-cue'} />
       )}
 
       {/* TAB: CRM & Membership Credit Rules */}
@@ -605,16 +465,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   onChange={(e) => setNewTableType(e.target.value as any)}
                   className="w-full bg-white border border-neutral-300 rounded-xl px-3 py-2 text-xs outline-none"
                 >
-                  <option value="pool">Pool 9ft</option>
-                  <option value="snooker">Snooker Pro</option>
-                  <option value="carom">Carom</option>
-                  <option value="vip">VIP Lounge</option>
+                  <option value="snooker">🔴 Snooker</option>
+                  <option value="pool">🎱 Pool</option>
+                  <option value="american_pool">🎱 American Pool</option>
+                  <option value="table_tennis">🏓 Table Tennis</option>
+                  <option value="ps5">🎮 PS5 Lounge</option>
+                  <option value="ps4">🎮 PS4 Station</option>
+                  <option value="magnet_table">🧲 Magnet Table</option>
+                  <option value="carom">⚪ Carom</option>
+                  <option value="vip">👑 VIP Lounge</option>
                 </select>
               </div>
               <div className="w-full sm:w-32">
                 <Input
-                  label="Rate/hr"
+                  label="Rate (Hourly ₹)"
                   type="number"
+                  placeholder="e.g. 300 for ₹5/min"
                   value={newTableRate}
                   onChange={(e) => setNewTableRate(parseFloat(e.target.value) || 0)}
                 />
@@ -624,7 +490,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   Cancel
                 </Button>
                 <Button type="submit" variant="primary" size="sm">
-                  Save Table
+                  Save Station
                 </Button>
               </div>
             </form>
@@ -642,8 +508,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </span>
                   </div>
                   <p className="font-semibold text-neutral-800 mt-0.5 truncate max-w-[160px]">{t.name}</p>
-                  <span className="text-neutral-500 font-mono mt-1 block">
-                    {formatCurrency(t.hourlyRate, config.currencySymbol)}/hr
+                  <span className="text-neutral-500 font-mono mt-1 block font-extrabold text-neutral-900">
+                    {formatPerMinuteRate(t.perMinuteRate ? t.perMinuteRate * 60 : t.hourlyRate, config.currencySymbol)}
+                    <span className="text-[10px] font-normal text-neutral-400 ml-1">({formatCurrency(t.hourlyRate, config.currencySymbol)}/hr)</span>
                   </span>
                 </div>
 
@@ -754,55 +621,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </Card>
       )}
 
-      {/* TAB 4: QR Code Generator */}
-      {activeTab === 'qr' && (
-        <Card className="flex flex-col gap-5">
-          <div className="border-b border-neutral-100 pb-4 flex justify-between items-center">
-            <div>
-              <h3 className="text-base font-bold text-neutral-900">Table QR Code Generator</h3>
-              <p className="text-xs text-neutral-500">Printable QR codes for each table so customers can scan, order & view live timer</p>
-            </div>
-            <Button variant="outline" size="sm" leftIcon={<Printer className="w-4 h-4" />} onClick={() => window.print()}>
-              Print All QR Cards
-            </Button>
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {tables.map((t) => {
-              const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-              const targetUrl = `${currentOrigin}/?tableId=${t.id}`;
-
-              return (
-                <div key={t.id} className="p-5 rounded-2xl border border-neutral-200 bg-white flex flex-col items-center text-center shadow-xs">
-                  <div className="w-10 h-10 rounded-xl bg-neutral-900 text-white flex items-center justify-center font-extrabold font-mono text-sm mb-1">
-                    #{t.number.toString().padStart(2, '0')}
-                  </div>
-                  <h4 className="font-bold text-neutral-900 text-sm">{t.name}</h4>
-                  <p className="text-[11px] text-neutral-400 uppercase font-semibold mb-2">{t.type} Table</p>
-
-                  <div className="p-2 bg-white rounded-xl border border-neutral-200 shadow-2xs my-1 flex items-center justify-center">
-                    <QRCodeComponent value={targetUrl} size={112} alt={`QR Code ${t.number}`} />
-                  </div>
-
-                  <p className="text-[10px] text-neutral-400 mt-1 mb-3">Scan for Customer Check-in & Ordering</p>
-
-                  {onShowQRCode && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full justify-center text-xs"
-                      leftIcon={<QrCode className="w-3.5 h-3.5" />}
-                      onClick={() => onShowQRCode(t)}
-                    >
-                      Print / Download PNG
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
 
       {/* TAB 6: Backup & System Security */}
       {activeTab === 'backup' && (
@@ -873,6 +692,64 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <span>{isRestoring ? 'Restoring Database...' : 'Upload & Restore Snapshot'}</span>
                 </div>
               </label>
+            </div>
+          </div>
+
+          {/* Automatic Daily Snapshot Backups */}
+          <div className="pt-4 border-t border-neutral-100 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">
+                  Automatic Daily Snapshots (Data Protection)
+                </h4>
+                <p className="text-[11px] text-neutral-500">
+                  Background daily snapshots auto-saved locally so you never lose data on device crash or internet drop
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
+                onClick={async () => {
+                  const snap = await performDailyAutoSnapshot(config.clubId || 'oneshot-club');
+                  if (snap) {
+                    setBackupMsg('✅ Daily snapshot created & saved successfully.');
+                  }
+                }}
+              >
+                Take Instant Snapshot
+              </Button>
+            </div>
+
+            <div className="space-y-2">
+              {getAvailableAutoSnapshots().length === 0 ? (
+                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold">
+                  No previous daily snapshots found. Click "Take Instant Snapshot" to save one now.
+                </div>
+              ) : (
+                getAvailableAutoSnapshots().map((snap) => (
+                  <div key={snap.key} className="p-3 rounded-xl border border-neutral-200 bg-white flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-extrabold text-neutral-900">📅 Daily Snapshot: {snap.date}</span>
+                      <span className="text-[10px] text-neutral-400 font-mono ml-2">
+                        {new Date(snap.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={async () => {
+                        if (confirm(`Restore snapshot from ${snap.date}? Current data will be replaced by this snapshot.`)) {
+                          const res = await restoreAutoSnapshot(config.clubId || 'oneshot-club', snap.key);
+                          setBackupMsg(res.message);
+                        }
+                      }}
+                      className="px-3 py-1 bg-neutral-900 hover:bg-neutral-800 text-white font-extrabold text-[11px] rounded-lg cursor-pointer transition-colors"
+                    >
+                      Restore This Snapshot
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -1496,7 +1373,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <label className="font-bold text-neutral-700 block mb-1">Email / Username *</label>
                 <input
                   type="email"
-                  placeholder="e.g. rahul@rocket147.com"
+                  placeholder="e.g. rahul@oneshotsnooker.com"
                   value={newStaffEmail}
                   onChange={(e) => setNewStaffEmail(e.target.value)}
                   className="w-full bg-neutral-50 border border-neutral-300 rounded-xl p-3 outline-none focus:border-neutral-900 font-medium"

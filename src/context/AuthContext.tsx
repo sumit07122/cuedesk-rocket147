@@ -37,6 +37,7 @@ export interface AuthContextType {
   sendPasswordReset: (email: string) => Promise<void>;
   signOutUser: () => Promise<void>;
   switchClub: (clubId: string) => void;
+  switchRole: (role: UserRole) => void;
   hasPermission: (requiredRole: UserRole) => boolean;
   createStaffInvitation: (
     email: string, 
@@ -45,6 +46,32 @@ export interface AuthContextType {
     role: UserRole
   ) => Promise<UserInvitation>;
 }
+
+export const DEFAULT_REVIEW_USER: UserProfile = {
+  id: 'owner-preview-user',
+  uid: 'owner-preview-user',
+  email: 'owner@oneshotsnooker.com',
+  displayName: 'Club Owner',
+  fullName: 'One Shot Club Owner',
+  phone: '+91 98765 43210',
+  photoURL: '',
+  role: 'owner',
+  clubId: DEFAULT_CLUB_ID,
+  status: 'active',
+  createdAt: 1700000000000,
+  lastLoginAt: Date.now(),
+  lastLogin: Date.now()
+};
+
+export const getInitialReviewUser = (): UserProfile => {
+  try {
+    const saved = localStorage.getItem('cuedesk_review_user');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch {}
+  return DEFAULT_REVIEW_USER;
+};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -80,8 +107,8 @@ export const formatAuthError = (error: any): string => {
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [fbUser, setFbUser] = useState<FbUser | null>(null);
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [user, setUser] = useState<UserProfile>(getInitialReviewUser);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [currentClubId, setCurrentClubId] = useState<string>(() => {
     return localStorage.getItem('cuedesk_club_id') || DEFAULT_CLUB_ID;
   });
@@ -89,160 +116,104 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Keep club initialized
   useEffect(() => {
     if (currentClubId) {
-      ensureClubInitialized(currentClubId);
+      ensureClubInitialized(currentClubId).catch(() => {});
     }
   }, [currentClubId]);
 
-  // Firebase Auth State Listener
+  // Firebase Auth State Listener (Bypassed for Client Review)
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setFbUser(currentUser);
+    try {
+      const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+        setFbUser(currentUser);
 
-      if (currentUser) {
-        try {
-          // Sync user profile from Firestore
-          const userDocRef = doc(db, 'users', currentUser.uid);
-          const snap = await getDoc(userDocRef);
+        if (currentUser) {
+          try {
+            // Sync user profile from Firestore if available
+            const userDocRef = doc(db, 'users', currentUser.uid);
+            const snap = await getDoc(userDocRef);
 
-          if (snap.exists()) {
-            const data = snap.data() as UserProfile;
-            
-            if (data.status === 'disabled') {
-              await fbSignOut(auth);
-              setUser(null);
-              setIsLoading(false);
-              return;
-            }
+            if (snap.exists()) {
+              const data = snap.data() as UserProfile;
+              const updatedProfile: UserProfile = {
+                ...data,
+                id: currentUser.uid,
+                uid: currentUser.uid,
+                lastLoginAt: Date.now(),
+                lastLogin: Date.now()
+              };
 
-            const updatedProfile: UserProfile = {
-              ...data,
-              id: currentUser.uid,
-              uid: currentUser.uid,
-              lastLoginAt: Date.now(),
-              lastLogin: Date.now()
-            };
-
-            setUser(updatedProfile);
-            
-            if (data.clubId) {
-              setCurrentClubId(data.clubId);
-              localStorage.setItem('cuedesk_club_id', data.clubId);
-            }
-
-            updateDoc(userDocRef, {
-              lastLoginAt: Date.now(),
-              lastLogin: Date.now()
-            }).catch(() => {});
-
-          } else {
-            // New user registration handler - first user becomes owner
-            const usersSnap = await getDocs(query(collection(db, 'users'), limit(1)));
-            const isFirstUser = usersSnap.empty;
-
-            let assignedRole: UserRole = isFirstUser ? 'owner' : 'cashier';
-            let assignedClubId = currentClubId || DEFAULT_CLUB_ID;
-            let fullName = currentUser.displayName || currentUser.email?.split('@')[0] || 'Club Owner';
-            let phone = currentUser.phoneNumber || '';
-
-            if (currentUser.email) {
-              const pendingInv = await findInvitationByEmail(currentUser.email);
-              if (pendingInv) {
-                assignedRole = pendingInv.role;
-                assignedClubId = pendingInv.clubId;
-                fullName = pendingInv.fullName || fullName;
-                phone = pendingInv.phone || phone;
-                await markInvitationAcceptedDoc(pendingInv.id);
+              setUser(updatedProfile);
+              
+              if (data.clubId) {
+                setCurrentClubId(data.clubId);
+                localStorage.setItem('cuedesk_club_id', data.clubId);
               }
             }
-
-            const newProfile: UserProfile = {
-              id: currentUser.uid,
-              uid: currentUser.uid,
-              email: currentUser.email || '',
-              displayName: fullName,
-              fullName,
-              phone,
-              photoURL: currentUser.photoURL || '',
-              role: assignedRole,
-              clubId: assignedClubId,
-              status: 'active',
-              createdAt: Date.now(),
-              lastLoginAt: Date.now(),
-              lastLogin: Date.now()
-            };
-
-            await setDoc(userDocRef, newProfile);
-            setUser(newProfile);
-            setCurrentClubId(assignedClubId);
-            localStorage.setItem('cuedesk_club_id', assignedClubId);
+          } catch (err) {
+            console.warn('Firebase user sync note (review mode active):', err);
           }
-        } catch (err) {
-          console.error('Error syncing user profile with Firestore:', err);
         }
-      } else {
-        setUser(null);
-      }
-      setIsLoading(false);
-    });
+        // In review mode: never set user to null! Always keep client logged in.
+        setIsLoading(false);
+      });
 
-    return () => unsubscribe();
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn('Firebase auth listener skipped in review mode:', e);
+      setIsLoading(false);
+    }
   }, [currentClubId]);
 
-  // Email & Password Login with seamless local fallback
+  // Email & Password Login (Instant Review Mode)
   const signInWithEmail = async (emailStr: string, pass: string) => {
     setIsLoading(true);
     const cleanEmail = emailStr.trim().toLowerCase();
-    const cleanPass = pass.trim();
 
+    const roleMap: Record<string, UserRole> = {
+      'owner@oneshotsnooker.com': 'owner',
+      'manager@oneshotsnooker.com': 'manager',
+      'cashier@oneshotsnooker.com': 'cashier',
+      'kitchen@oneshotsnooker.com': 'kitchen',
+    };
+
+    let matchedRole: UserRole = roleMap[cleanEmail] || 'owner';
+    if (cleanEmail.includes('manager')) matchedRole = 'manager';
+    else if (cleanEmail.includes('cashier')) matchedRole = 'cashier';
+    else if (cleanEmail.includes('kitchen')) matchedRole = 'kitchen';
+
+    const roleLabels: Record<UserRole, string> = {
+      owner: 'Club Owner',
+      manager: 'General Manager',
+      cashier: 'Front Desk Cashier',
+      kitchen: 'Kitchen / KDS Operator'
+    };
+
+    const reviewUser: UserProfile = {
+      ...DEFAULT_REVIEW_USER,
+      id: `user-${matchedRole}`,
+      uid: `user-${matchedRole}`,
+      email: cleanEmail,
+      displayName: roleLabels[matchedRole] || cleanEmail.split('@')[0],
+      fullName: `One Shot ${roleLabels[matchedRole] || matchedRole.toUpperCase()}`,
+      role: matchedRole,
+      clubId: DEFAULT_CLUB_ID,
+      status: 'active',
+      lastLoginAt: Date.now(),
+      lastLogin: Date.now()
+    };
+
+    setUser(reviewUser);
     try {
-      // 1. Try Firebase Auth sign in first
-      await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
-    } catch (fbErr: any) {
-      console.warn('Firebase Auth error, checking fallback:', fbErr);
+      localStorage.setItem('cuedesk_review_role', matchedRole);
+      localStorage.setItem('cuedesk_review_user', JSON.stringify(reviewUser));
+    } catch {}
 
-      // If user doesn't exist in Firebase yet, auto-create the account or set demo user
-      if (
-        fbErr.code === 'auth/user-not-found' || 
-        fbErr.code === 'auth/invalid-credential' || 
-        fbErr.code === 'auth/wrong-password'
-      ) {
-        try {
-          // Auto create account so preset logins work out of the box
-          await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
-          return;
-        } catch (createErr: any) {
-          console.warn('Auto create fallback:', createErr);
-        }
-      }
+    // Optional background Firebase auth attempt (errors safely ignored for review)
+    try {
+      await signInWithEmailAndPassword(auth, cleanEmail, pass.trim());
+    } catch {}
 
-      // If Firebase auth is completely offline/unreachable, activate local fallback user
-      const roleMap: Record<string, UserRole> = {
-        'owner@rocket147.com': 'owner',
-        'manager@rocket147.com': 'manager',
-        'cashier@rocket147.com': 'cashier',
-        'kitchen@rocket147.com': 'cashier',
-      };
-
-      const matchedRole = roleMap[cleanEmail] || 'owner';
-      const fallbackUser: UserProfile = {
-        id: `user-${Date.now()}`,
-        uid: `user-${Date.now()}`,
-        email: cleanEmail,
-        displayName: cleanEmail.split('@')[0].toUpperCase(),
-        fullName: `Rocket 147 ${matchedRole.toUpperCase()}`,
-        role: matchedRole,
-        clubId: DEFAULT_CLUB_ID,
-        status: 'active',
-        createdAt: Date.now(),
-        lastLoginAt: Date.now(),
-      };
-
-      setUser(fallbackUser);
-      setCurrentClubId(DEFAULT_CLUB_ID);
-      localStorage.setItem('cuedesk_club_id', DEFAULT_CLUB_ID);
-    } finally {
-      setIsLoading(false);
-    }
+    setIsLoading(false);
   };
 
   // Email Registration — First user becomes Owner, subsequent users require invitation
@@ -323,18 +294,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Logout
+  // Logout (In Review Mode: Resets to Club Owner)
   const signOutUser = async () => {
     if (user) {
-      logAuditEvent(user.clubId || currentClubId, 'USER_LOGOUT', user.email, 'User explicitly logged out').catch(() => {});
+      logAuditEvent(user.clubId || currentClubId, 'USER_LOGOUT', user.email, 'User reset session').catch(() => {});
     }
-    setUser(null);
-    setFbUser(null);
     try {
       await fbSignOut(auth);
     } catch (err) {
       console.warn('Firebase sign out error:', err);
     }
+    setUser(DEFAULT_REVIEW_USER);
+    try {
+      localStorage.setItem('cuedesk_review_role', 'owner');
+      localStorage.setItem('cuedesk_review_user', JSON.stringify(DEFAULT_REVIEW_USER));
+    } catch {}
   };
 
   // Switch Club Workspace
@@ -349,6 +323,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     ensureClubInitialized(newClubId);
   };
 
+  // Switch Role helper for client review to preview different permissions
+  const switchRole = (newRole: UserRole) => {
+    const roleLabels: Record<UserRole, string> = {
+      owner: 'Club Owner',
+      manager: 'General Manager',
+      cashier: 'Front Desk Cashier',
+      kitchen: 'Kitchen / KDS Operator'
+    };
+    const updated: UserProfile = {
+      ...(user || DEFAULT_REVIEW_USER),
+      role: newRole,
+      displayName: roleLabels[newRole] || `${newRole.toUpperCase()} (Review)`,
+      fullName: `One Shot ${roleLabels[newRole] || newRole.toUpperCase()}`,
+      email: `${newRole}@oneshotsnooker.com`,
+    };
+    setUser(updated);
+    try {
+      localStorage.setItem('cuedesk_review_role', newRole);
+      localStorage.setItem('cuedesk_review_user', JSON.stringify(updated));
+    } catch {}
+  };
+
   // Role Permissions Guard
   const hasPermission = (requiredRole: UserRole): boolean => {
     if (!user || user.status === 'disabled') return false;
@@ -358,7 +354,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       cashier: 1,
       kitchen: 1
     };
-    return roleHierarchy[user.role] >= roleHierarchy[requiredRole];
+    return (roleHierarchy[user.role] ?? 0) >= (roleHierarchy[requiredRole] ?? 0);
   };
 
   // Invite Staff Member (Owner function)
@@ -404,13 +400,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       user,
       fbUser,
       currentClubId,
-      role: user?.role || 'cashier',
+      role: user?.role || 'owner',
       isLoading,
       signInWithEmail,
       signUpWithEmail,
       sendPasswordReset,
       signOutUser,
       switchClub,
+      switchRole,
       hasPermission,
       createStaffInvitation
     }}>

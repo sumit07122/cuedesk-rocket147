@@ -106,12 +106,10 @@ export type PageView =
   | 'maintenance'
   | 'reports'
   | 'settings'
-  | 'customer-qr'
   | 'kds'
-  | 'login'
-  | 'super-admin';
+  | 'login';
 
-export type TableType = 'pool' | 'snooker' | 'carom' | 'vip';
+export type TableType = 'snooker' | 'pool' | 'american_pool' | 'table_tennis' | 'ps5' | 'ps4' | 'magnet_table' | 'carom' | 'vip' | 'xbox' | 'pc_rig';
 
 export type TableStatus = 'available' | 'occupied' | 'reserved' | 'cleaning' | 'payment_pending' | 'maintenance';
 
@@ -264,6 +262,7 @@ export interface TableItem {
   type: TableType;
   status: TableStatus;
   hourlyRate: number;
+  perMinuteRate?: number;
   currentSession?: SessionData;
   reservedTime?: string;
   reservedCustomer?: string;

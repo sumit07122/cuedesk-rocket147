@@ -23,7 +23,7 @@ export const CueLockersView: React.FC<CueLockersViewProps> = ({
 }) => {
   const [localLockers, setLocalLockers] = useState<CueLocker[]>(() => {
     if (lockers.length > 0) return lockers;
-    // Default 12 lockers for Rocket 147
+    // Default 12 lockers for One Shot Snooker Gaming Club
     return Array.from({ length: 12 }, (_, i) => ({
       id: `locker-${i + 1}`,
       lockerNumber: `Locker #${String(i + 1).padStart(2, '0')}`,

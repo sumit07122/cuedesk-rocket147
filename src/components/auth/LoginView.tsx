@@ -87,7 +87,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-amber-500 to-amber-300 opacity-40 blur-md group-hover:opacity-75 transition duration-500" />
             <img
               src="/logo.png"
-              alt="CueDesk - Rocket 147 Snooker & Pool Club Management"
+              alt="CueDesk - One Shot Snooker Gaming Club Management"
               className="relative w-24 h-24 rounded-3xl object-cover shadow-2xl ring-1 ring-amber-400/30"
             />
           </div>
@@ -99,7 +99,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             </span>
           </h1>
           <p className="text-[11px] font-medium text-amber-200/70 mt-0.5 tracking-wide uppercase">
-            Rocket 147 Snooker & Pool Club
+            One Shot Snooker Gaming Club
           </p>
         </div>
 

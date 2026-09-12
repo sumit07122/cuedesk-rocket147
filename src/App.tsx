@@ -15,12 +15,10 @@ import { MobileBottomNav } from './components/navigation/MobileBottomNav';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { BillingView } from './components/billing/BillingView';
 import { TableDetailsModal } from './components/tables/TableDetailsModal';
-import { TableQRCodeModal } from './components/tables/TableQRCodeModal';
 import { StartSessionModal } from './components/tables/StartSessionModal';
 import { TransferTableModal } from './components/tables/TransferTableModal';
 import { AddSnackModal } from './components/tables/AddSnackModal';
 import { ReceiptModal } from './components/billing/ReceiptModal';
-import { CustomerQRView } from './components/customer/CustomerQRView';
 import { TablesManagerView } from './components/tables/TablesManagerView';
 import { FoodInventoryView } from './components/menu/FoodInventoryView';
 import { CustomerCRMView } from './components/crm/CustomerCRMView';
@@ -35,6 +33,7 @@ import { LoginView } from './components/auth/LoginView';
 import { ToastContainer, ToastMessage } from './components/ui/Toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { useRealtimeClubData } from './hooks/useRealtimeClubData';
+import { performDailyAutoSnapshot } from './utils/autoSnapshot';
 import { OfflineBanner } from './components/common/OfflineBanner';
 import { createNotification } from './services/dbService';
 import { RoleGuard } from './components/common/RoleGuard';
@@ -103,16 +102,15 @@ function CueDeskApp() {
   } = useRealtimeClubData(currentClubId);
 
   // View state
-  const [activePage, setActivePage] = useState<PageView>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('tableId')) {
-        return 'customer-qr';
-      }
-    }
-    return 'dashboard';
-  });
+  const [activePage, setActivePage] = useState<PageView>('dashboard');
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+
+  // Daily Background Auto-Snapshot Trigger
+  React.useEffect(() => {
+    if (currentClubId && !isDataLoading) {
+      performDailyAutoSnapshot(currentClubId);
+    }
+  }, [currentClubId, isDataLoading]);
 
   // Toast Notifications
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -166,8 +164,6 @@ function CueDeskApp() {
 
   const [activeReceiptItem, setActiveReceiptItem] = useState<SessionHistoryItem | null>(null);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
-
-  const [qrModalTable, setQrModalTable] = useState<TableItem | null>(null);
 
   // Derived Metrics
   const occupiedCount = tables.filter((t) => t.status === 'occupied' || t.status === 'payment_pending').length;
@@ -435,23 +431,7 @@ function CueDeskApp() {
     addToast('warning', 'Session Request Rejected', 'Customer request was declined.');
   };
 
-  // Loading screen while Firebase Auth initializes
-  if (isAuthLoading) {
-    return (
-      <div className="min-h-screen bg-[#F8F9FA] flex flex-col items-center justify-center p-4">
-        <div className="w-12 h-12 rounded-2xl bg-neutral-900 text-white flex items-center justify-center shadow-md animate-bounce mb-3">
-          <CircleDot className="w-6 h-6 animate-spin" />
-        </div>
-        <h2 className="text-sm font-extrabold text-neutral-900 tracking-tight">CueDesk</h2>
-        <p className="text-xs text-neutral-400 mt-1">Verifying secure Firebase session...</p>
-      </div>
-    );
-  }
-
-  // If user is unauthenticated and not on customer QR route, show Login screen
-  if (!user && activePage !== 'customer-qr') {
-    return <LoginView />;
-  }
+  // Client Review Mode: Authentication is completely bypassed for instant review on Vercel
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-neutral-900 flex flex-col lg:flex-row antialiased font-sans">
@@ -462,72 +442,37 @@ function CueDeskApp() {
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
 
       {/* Desktop Left Sidebar */}
-      {activePage !== 'customer-qr' && (
-        <Sidebar
-          activePage={activePage}
-          setActivePage={setActivePage}
-          occupiedCount={occupiedCount}
-          totalTables={tables.length}
-          clubs={saasClubs}
-          onOpenOnboarding={() => setIsOnboardingOpen(true)}
-          onOpenSuperAdmin={() => setActivePage('super-admin')}
-          onLogout={() => {
-            signOutUser();
-          }}
-        />
-      )}
+      <Sidebar
+        activePage={activePage}
+        setActivePage={setActivePage}
+        occupiedCount={occupiedCount}
+        totalTables={tables.length}
+        clubs={saasClubs}
+        onOpenOnboarding={() => setIsOnboardingOpen(true)}
+        onOpenSuperAdmin={() => setActivePage('super-admin')}
+        onLogout={() => {
+          signOutUser();
+          addToast('info', 'Review Mode Active', 'Session reset to Club Owner with full administrative access.');
+        }}
+      />
 
       {/* Main Content Workspace */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
         {/* Top Navbar */}
-        {activePage !== 'customer-qr' && (
-          <Navbar
-            activePage={activePage}
-            setActivePage={setActivePage}
-            notifications={notifications}
-            onMarkNotificationRead={async (id) => markNotificationRead(id)}
-            onClearAllNotifications={async () => clearAllNotifications()}
-            onQuickStartSession={() => {
-              setStartSessionTable(availableTables[0] || null);
-              setIsStartSessionOpen(true);
-            }}
-          />
-        )}
-
-        {/* Pending Customer QR Requests Notification Banner */}
-        {pendingRequests.length > 0 && activePage !== 'customer-qr' && (
-          <div className="mx-4 sm:mx-6 mt-4 p-3.5 bg-amber-50 border border-amber-200/90 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-amber-950">
-                  {pendingRequests.length} Customer QR Session Request(s) Pending
-                </h4>
-                <p className="text-[11px] text-amber-800">
-                  Customers scanned table QR codes and are waiting for Desk Marker approval.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {pendingRequests.map((req) => (
-                <button
-                  key={req.id}
-                  onClick={() => handleApproveRequest(req.id, req.tableId, req.customerName, req.customerPhone)}
-                  className="px-3 py-1.5 bg-amber-900 hover:bg-black text-white text-xs font-bold rounded-xl transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Approve {req.customerName}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        <Navbar
+          activePage={activePage}
+          setActivePage={setActivePage}
+          notifications={notifications}
+          onMarkNotificationRead={async (id) => markNotificationRead(id)}
+          onClearAllNotifications={async () => clearAllNotifications()}
+          onQuickStartSession={() => {
+            setStartSessionTable(availableTables[0] || null);
+            setIsStartSessionOpen(true);
+          }}
+        />
 
         {/* Pending Kitchen Food Orders Notification Banner */}
-        {foodOrders.filter(o => o.status === 'new').length > 0 && activePage !== 'customer-qr' && (
+        {foodOrders.filter(o => o.status === 'new').length > 0 && (
           <div className="mx-4 sm:mx-6 mt-3 p-3.5 bg-emerald-50 border border-emerald-200/90 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
@@ -569,7 +514,6 @@ function CueDeskApp() {
               onMarkNotificationRead={markNotificationRead}
               onApproveRequest={(req) => handleApproveRequest(req.id, req.tableId, req.customerName, req.customerPhone)}
               onRejectRequest={(reqId) => handleRejectRequest(reqId)}
-              onShowQRCode={(table) => setQrModalTable(table)}
               onSelectTable={(table) => setSelectedTableDetails(table)}
               onStartSession={(table) => {
                 setStartSessionTable(table);
@@ -770,7 +714,6 @@ function CueDeskApp() {
                 onDeleteTable={handleDeleteTable}
                 onAddMenuItem={handleAddMenuItem}
                 onDeleteMenuItem={handleDeleteMenuItem}
-                onShowQRCode={(table) => setQrModalTable(table)}
               />
             </RoleGuard>
           ) : activePage === 'super-admin' ? (
@@ -787,41 +730,6 @@ function CueDeskApp() {
                 onDeleteClub={deleteSaaSClubWorkspace}
               />
             </RoleGuard>
-          ) : activePage === 'customer-qr' ? (
-            <CustomerQRView
-              config={config}
-              tables={tables}
-              menuItems={menuItems}
-              foodOrders={foodOrders}
-              onCustomerCheckIn={(tableId, name, phone) => {
-                createCustomerSessionRequest(tableId, name, phone, 2);
-                addToast('info', 'Session Requested', `Request sent to Desk Marker for Table`);
-              }}
-              onCustomerAddSnack={(tableId, items) => {
-                handleAddOrderItems(tableId, items);
-              }}
-              onCustomerRequestCheckout={(tableId) => {
-                requestCheckout(tableId, user?.email);
-                addToast('warning', `Checkout Requested`, `Marker alerted for Table`);
-              }}
-              onCreateFoodOrder={async (order) => {
-                const id = await createFoodOrder(order);
-                addToast('success', 'Order Sent!', `Your order has been sent to the desk.`);
-                return id;
-              }}
-              onCallCueBoy={async (tableId, tableName) => {
-                await createNotification(currentClubId, {
-                  clubId: currentClubId,
-                  type: 'general',
-                  title: `🛎️ Cue Boy Alert: ${tableName}`,
-                  message: `Customer at ${tableName} has requested staff assistance!`,
-                  timestamp: Date.now(),
-                  read: false,
-                  severity: 'warning'
-                }).catch(() => {});
-                addToast('warning', `🛎️ Cue Boy Alert`, `Assistance requested at ${tableName}`);
-              }}
-            />
           ) : (
             <DashboardView
               tables={tables}
@@ -831,7 +739,6 @@ function CueDeskApp() {
               sessionRequests={sessionRequests}
               onApproveRequest={(req) => handleApproveRequest(req.id, req.tableId, req.customerName, req.customerPhone)}
               onRejectRequest={(reqId) => handleRejectRequest(reqId)}
-              onShowQRCode={(table) => setQrModalTable(table)}
               onSelectTable={(table) => setSelectedTableDetails(table)}
               onStartSession={(table) => {
                 setStartSessionTable(table);
@@ -852,13 +759,11 @@ function CueDeskApp() {
         </main>
 
         {/* Mobile Bottom Navigation */}
-        {activePage !== 'customer-qr' && (
-          <MobileBottomNav
-            activePage={activePage}
-            setActivePage={setActivePage}
-            occupiedCount={occupiedCount}
-          />
-        )}
+        <MobileBottomNav
+          activePage={activePage}
+          setActivePage={setActivePage}
+          occupiedCount={occupiedCount}
+        />
       </div>
 
       {/* ------------------------------------------------------------- */}
@@ -891,15 +796,6 @@ function CueDeskApp() {
           setIsTransferOpen(true);
         }}
         onRemoveOrderItem={handleRemoveOrderItem}
-        onShowQRCode={(table) => setQrModalTable(table)}
-      />
-
-      {/* Table QR Code Generator Modal */}
-      <TableQRCodeModal
-        isOpen={Boolean(qrModalTable)}
-        onClose={() => setQrModalTable(null)}
-        table={qrModalTable}
-        config={config}
       />
 
       {/* Start Session Modal */}

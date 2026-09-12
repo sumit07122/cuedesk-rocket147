@@ -16,7 +16,7 @@ export const TournamentView: React.FC<TournamentViewProps> = ({ currencySymbol }
   const [tournaments, setTournaments] = useState<Tournament[]>([
     {
       id: 'tourney-1',
-      title: 'Rocket 147 Open Snooker Cup 2026',
+      title: 'One Shot Open Snooker Cup 2026',
       entryFee: 500,
       prizePool: 4000,
       status: 'ongoing',

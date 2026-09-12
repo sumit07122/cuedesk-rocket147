@@ -189,7 +189,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               size="sm"
               onClick={() => {
                 const phoneClean = historyItem.customerPhone?.replace(/[^0-9]/g, '') || '';
-                const msg = `🎱 *${config.clubName || 'ROCKET 147 SNOOKER CLUB'} - DIGITAL RECEIPT* 🎱\n` +
+                const msg = `🎱 *${config.clubName || 'ONE SHOT SNOOKER GAMING CLUB'} - DIGITAL RECEIPT* 🎱\n` +
                   `Receipt #: ${historyItem.receiptNo}\n` +
                   `Date: ${historyItem.timestamp}\n` +
                   `Customer: ${historyItem.customerName}\n` +
@@ -204,7 +204,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                   `*GRAND TOTAL: ₹${historyItem.grandTotal.toFixed(2)}*\n` +
                   `Status: ${historyItem.paymentMethod.toUpperCase()} (${historyItem.paymentStatus.toUpperCase()})\n` +
                   `----------------------------\n` +
-                  `Thank you for playing at ${config.clubName || 'Rocket 147'}! See you next time.`;
+                  `Thank you for playing at ${config.clubName || 'One Shot Snooker'}! See you next time.`;
                 
                 window.open(`https://wa.me/${phoneClean}?text=${encodeURIComponent(msg)}`, '_blank');
               }}

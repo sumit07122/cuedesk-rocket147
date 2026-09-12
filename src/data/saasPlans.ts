@@ -65,7 +65,7 @@ export const INITIAL_SAAS_CLUBS: SaaSClubProfile[] = [
     id: 'club-royal-cue',
     clubName: 'Royal Cue Sports & Lounge',
     tagline: 'Premium Snooker & Pool Experience',
-    address: '147 Rocket Avenue, Sector 18, Metro Hub',
+    address: '147 One Shot Way, Sector 18, Metro Hub',
     phone: '+1 (555) 019-2834',
     email: 'contact@royalcue.com',
     currencySymbol: '$',

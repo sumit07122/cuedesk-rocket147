@@ -15,7 +15,8 @@ import {
   Users,
   UserCheck,
   TrendingUp,
-  ChefHat
+  ChefHat,
+  RotateCcw
 } from 'lucide-react';
 import { PageView, SaaSClubProfile } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -41,7 +42,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenOnboarding = () => {},
   onOpenSuperAdmin = () => {},
 }) => {
-  const { user, currentClubId, role, hasPermission, switchClub } = useAuth();
+  const { user, currentClubId, role, hasPermission, switchClub, switchRole } = useAuth();
 
   const navItems = [
     { id: 'dashboard' as PageView, label: 'Dashboard Overview', icon: LayoutDashboard, minRole: 'cashier' },
@@ -54,7 +55,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'expenses' as PageView, label: 'Expenses & Profit', icon: TrendingUp, minRole: 'manager' },
     { id: 'reports' as PageView, label: 'Reports & Analytics', icon: BarChart3, minRole: 'manager' },
     { id: 'settings' as PageView, label: 'Club Settings', icon: Settings, minRole: 'owner' },
-    { id: 'customer-qr' as PageView, label: 'Customer QR View', icon: QrCode, isSpecial: true, minRole: 'cashier' },
   ];
 
   const roleColors: Record<string, string> = {
@@ -71,12 +71,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActivePage('dashboard')}>
           <img
             src="/logo.png"
-            alt="CueDesk Rocket 147"
+            alt="CueDesk One Shot Snooker"
             className="w-12 h-12 rounded-2xl object-cover shadow-lg shrink-0 ring-2 ring-amber-200/60"
           />
           <div className="min-w-0">
             <h1 className="text-lg font-black text-neutral-900 tracking-tight leading-none">CueDesk</h1>
-            <span className="text-[10px] font-bold text-amber-600 tracking-widest uppercase">Rocket 147 • Club OS</span>
+            <span className="text-[10px] font-bold text-amber-600 tracking-widest uppercase">One Shot • Gaming OS</span>
           </div>
         </div>
       </div>
@@ -85,7 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="px-4 py-3 border-b border-neutral-100 flex items-center gap-2 bg-neutral-50/70">
         <Building2 className="w-4 h-4 text-neutral-500 shrink-0" />
         <div className="truncate">
-          <p className="text-xs font-bold text-neutral-900 truncate">Rocket 147 Snooker & Pool</p>
+          <p className="text-xs font-bold text-neutral-900 truncate">One Shot Snooker Gaming</p>
           <p className="text-[10px] text-neutral-400">Grand Arena Plaza • Official OS</p>
         </div>
       </div>
@@ -122,8 +122,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   ? 'opacity-40 cursor-not-allowed text-neutral-400'
                   : isActive
                   ? 'bg-neutral-900 text-white shadow-xs'
-                  : item.isSpecial
-                  ? 'text-neutral-700 hover:bg-neutral-100 border border-dashed border-neutral-300/80 my-1'
                   : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
               }`}
             >
@@ -142,40 +140,61 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   {item.badge}
                 </span>
-              ) : item.isSpecial && !isActive ? (
-                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
               ) : null}
             </button>
           );
         })}
       </nav>
 
-      {/* Footer / User Profile & Role */}
-      <div className="p-4 border-t border-neutral-100 flex items-center justify-between">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-full bg-neutral-900 text-white font-bold text-xs flex items-center justify-center shrink-0">
-            {role.charAt(0).toUpperCase()}
+      {/* Footer / User Profile & Role Switcher */}
+      <div className="p-3 border-t border-neutral-100 flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-full bg-neutral-900 text-white font-bold text-xs flex items-center justify-center shrink-0">
+              {role.charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <h4 className="text-xs font-semibold text-neutral-900 truncate">
+                {user?.displayName || 'Club Owner'}
+              </h4>
+              <span
+                className={`inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.2 rounded border ${
+                  roleColors[role] || 'bg-neutral-100 text-neutral-800'
+                }`}
+              >
+                {role}
+              </span>
+            </div>
           </div>
-          <div className="min-w-0 flex-1">
-            <h4 className="text-xs font-semibold text-neutral-900 truncate">
-              {user?.displayName || 'Staff User'}
-            </h4>
-            <span
-              className={`inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.2 rounded border ${
-                roleColors[role] || 'bg-neutral-100 text-neutral-800'
-              }`}
-            >
-              {role}
-            </span>
-          </div>
+          <button
+            onClick={onLogout}
+            title="Reset Session to Owner"
+            className="p-1.5 text-neutral-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </button>
         </div>
-        <button
-          onClick={onLogout}
-          title="Log Out"
-          className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-        >
-          <LogOut className="w-4 h-4" />
-        </button>
+
+        {/* Quick Role Switcher for Client Review */}
+        {switchRole && (
+          <div className="flex items-center gap-1 p-1 bg-neutral-100 rounded-xl border border-neutral-200/60">
+            {(['owner', 'manager', 'cashier', 'kitchen'] as any[]).map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => switchRole(r)}
+                className={`flex-1 text-[10px] font-bold py-1 rounded-lg capitalize transition-all cursor-pointer ${
+                  role === r
+                    ? 'bg-white text-neutral-900 shadow-2xs font-extrabold ring-1 ring-black/5'
+                    : 'text-neutral-500 hover:text-neutral-900'
+                }`}
+                title={`Preview as ${r.toUpperCase()}`}
+              >
+                {r === 'kitchen' ? 'KDS' : r}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </aside>
   );

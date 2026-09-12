@@ -14,6 +14,7 @@ import {
   exportRevenueReportCSV,
   triggerPrintReport 
 } from '../export/ExportUtility';
+import { exportSalesToExcel } from '../../utils/excelExport';
 import { 
   ResponsiveContainer, 
   AreaChart, 
@@ -75,7 +76,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            onClick={() => exportRevenueReportCSV(history)}
+            onClick={() => exportSalesToExcel(history)}
             leftIcon={<Download className="w-4 h-4" />}
             size="sm"
           >

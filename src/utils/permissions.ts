@@ -73,10 +73,8 @@ const ROLE_ALLOWED_PAGES: Record<UserRole, PageView[]> = {
     'maintenance', 
     'reports', 
     'settings', 
-    'customer-qr', 
     'kds',
-    'login', 
-    'super-admin'
+    'login'
   ],
   manager: [
     'dashboard', 
@@ -88,7 +86,6 @@ const ROLE_ALLOWED_PAGES: Record<UserRole, PageView[]> = {
     'expenses', 
     'maintenance', 
     'reports', 
-    'customer-qr', 
     'kds',
     'login'
   ],
@@ -99,14 +96,12 @@ const ROLE_ALLOWED_PAGES: Record<UserRole, PageView[]> = {
     'billing', 
     'menu-inventory', 
     'customers', 
-    'customer-qr', 
     'kds',
     'login'
   ],
   kitchen: [
     'kds',
     'menu-inventory',
-    'customer-qr',
     'login'
   ]
 };
@@ -124,7 +119,7 @@ export function hasCapability(role: UserRole | undefined, capability: Capability
  */
 export function canAccessPage(role: UserRole | undefined, page: PageView): boolean {
   if (!role) return false;
-  if (page === 'customer-qr' || page === 'login') return true;
+  if (page === 'login') return true;
   return ROLE_ALLOWED_PAGES[role]?.includes(page) ?? false;
 }
 

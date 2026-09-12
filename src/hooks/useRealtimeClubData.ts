@@ -82,26 +82,37 @@ import {
   logAuditEvent
 } from '../services/dbService';
 import { SUBSCRIPTION_PLANS } from '../data/saasPlans';
-import { initialBusinessConfig } from '../data/mockData';
+import { 
+  initialBusinessConfig,
+  initialTables,
+  initialMenuItems,
+  initialSessionHistory,
+  initialTopCustomers,
+  initialEmployees,
+  initialAttendance,
+  initialExpenses,
+  initialMaintenanceRecords,
+  initialNotifications
+} from '../data/mockData';
 
 export const useRealtimeClubData = (clubId: string) => {
   const [config, setConfig] = useState<BusinessConfig>(initialBusinessConfig);
-  const [tables, setTables] = useState<TableItem[]>([]);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-  const [history, setHistory] = useState<SessionHistoryItem[]>([]);
-  const [topCustomers, setTopCustomers] = useState<TopCustomer[]>([]);
+  const [tables, setTables] = useState<TableItem[]>(initialTables);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(initialMenuItems);
+  const [history, setHistory] = useState<SessionHistoryItem[]>(initialSessionHistory);
+  const [topCustomers, setTopCustomers] = useState<TopCustomer[]>(initialTopCustomers);
   const [sessionRequests, setSessionRequests] = useState<SessionRequest[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
   const [foodOrders, setFoodOrders] = useState<FoodOrder[]>([]);
   const [purchaseRecords, setPurchaseRecords] = useState<PurchaseRecord[]>([]);
   const [inventoryAdjustments, setInventoryAdjustments] = useState<InventoryAdjustment[]>([]);
-  const [employees, setEmployees] = useState<EmployeeUser[]>([]);
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
-  const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
-  const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>([]);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [employees, setEmployees] = useState<EmployeeUser[]>(initialEmployees);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>(initialAttendance);
+  const [expenses, setExpenses] = useState<ExpenseRecord[]>(initialExpenses);
+  const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>(initialMaintenanceRecords);
+  const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications);
   const [saasClubs, setSaasClubs] = useState<SaaSClubProfile[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   useEffect(() => {
     // Subscribe to all SaaS clubs dynamically
@@ -109,28 +120,50 @@ export const useRealtimeClubData = (clubId: string) => {
 
     if (!clubId) return () => unsubSaas();
 
-    setIsLoading(true);
+    // Safety timeout: never leave UI in loading state
+    const safetyTimer = setTimeout(() => {
+      setIsLoading(false);
+    }, 1000);
 
     const unsubConfig = subscribeClubSettings(clubId, (data) => setConfig(data));
     const unsubTables = subscribeTables(clubId, (data) => {
-      setTables(data);
+      if (data && data.length > 0) {
+        setTables(data);
+      }
       setIsLoading(false);
     });
-    const unsubMenuItems = subscribeMenuItems(clubId, (data) => setMenuItems(data));
-    const unsubHistory = subscribeHistory(clubId, (data) => setHistory(data));
-    const unsubCustomers = subscribeTopCustomers(clubId, (data) => setTopCustomers(data));
+    const unsubMenuItems = subscribeMenuItems(clubId, (data) => {
+      if (data && data.length > 0) setMenuItems(data);
+    });
+    const unsubHistory = subscribeHistory(clubId, (data) => {
+      if (data && data.length > 0) setHistory(data);
+    });
+    const unsubCustomers = subscribeTopCustomers(clubId, (data) => {
+      if (data && data.length > 0) setTopCustomers(data);
+    });
     const unsubRequests = subscribeSessionRequests(clubId, (data) => setSessionRequests(data));
     const unsubLogs = subscribeAuditLogs(clubId, (data) => setAuditLogs(data));
     const unsubFoodOrders = subscribeFoodOrders(clubId, (data) => setFoodOrders(data));
     const unsubPurchases = subscribePurchaseRecords(clubId, (data) => setPurchaseRecords(data));
     const unsubAdjustments = subscribeInventoryAdjustments(clubId, (data) => setInventoryAdjustments(data));
-    const unsubEmployees = subscribeEmployees(clubId, (data) => setEmployees(data));
-    const unsubAttendance = subscribeAttendance(clubId, (data) => setAttendance(data));
-    const unsubExpenses = subscribeExpenses(clubId, (data) => setExpenses(data));
-    const unsubMaintenance = subscribeMaintenance(clubId, (data) => setMaintenanceRecords(data));
-    const unsubNotifications = subscribeNotifications(clubId, (data) => setNotifications(data));
+    const unsubEmployees = subscribeEmployees(clubId, (data) => {
+      if (data && data.length > 0) setEmployees(data);
+    });
+    const unsubAttendance = subscribeAttendance(clubId, (data) => {
+      if (data && data.length > 0) setAttendance(data);
+    });
+    const unsubExpenses = subscribeExpenses(clubId, (data) => {
+      if (data && data.length > 0) setExpenses(data);
+    });
+    const unsubMaintenance = subscribeMaintenance(clubId, (data) => {
+      if (data && data.length > 0) setMaintenanceRecords(data);
+    });
+    const unsubNotifications = subscribeNotifications(clubId, (data) => {
+      if (data && data.length > 0) setNotifications(data);
+    });
 
     return () => {
+      clearTimeout(safetyTimer);
       unsubSaas();
       unsubConfig();
       unsubTables();

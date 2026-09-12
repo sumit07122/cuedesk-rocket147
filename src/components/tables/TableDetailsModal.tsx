@@ -13,13 +13,14 @@ import {
   Trash2, 
   Sparkles,
   Tag,
-  QrCode
+  QrCode,
+  Trophy
 } from 'lucide-react';
 import { TableItem, SessionData } from '../../types';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
-import { formatCurrency, calculateSessionSeconds, formatTimerString, calculateBillTotals } from '../../utils/formatters';
+import { formatCurrency, formatPerMinuteRate, calculateSessionSeconds, formatTimerString, calculateBillTotals } from '../../utils/formatters';
 
 interface TableDetailsModalProps {
   isOpen: boolean;
@@ -53,6 +54,16 @@ export const TableDetailsModal: React.FC<TableDetailsModalProps> = ({
   onShowQRCode,
 }) => {
   const [now, setNow] = useState(Date.now());
+  const [p1Frames, setP1Frames] = useState(0);
+  const [p2Frames, setP2Frames] = useState(0);
+  const [player1Name, setPlayer1Name] = useState('Player 1');
+  const [player2Name, setPlayer2Name] = useState('Player 2');
+
+  useEffect(() => {
+    if (table?.currentSession?.customerName) {
+      setPlayer1Name(table.currentSession.customerName);
+    }
+  }, [table]);
 
   useEffect(() => {
     if (!isOpen || !table || table.status !== 'occupied' || table.currentSession?.isPaused) {
@@ -89,22 +100,9 @@ export const TableDetailsModal: React.FC<TableDetailsModalProps> = ({
           <div className="flex items-center gap-2">
             <Badge variant={table.status} />
             <span className="text-xs text-neutral-500 font-medium">
-              Rate: <strong className="text-neutral-900">{formatCurrency(table.hourlyRate, currencySymbol)}/hr</strong>
+              Rate: <strong className="text-neutral-900">{formatPerMinuteRate(table.perMinuteRate ? table.perMinuteRate * 60 : table.hourlyRate, currencySymbol)}</strong>
+              <span className="text-[11px] text-neutral-400 font-normal ml-1">({formatCurrency(table.hourlyRate, currencySymbol)}/hr)</span>
             </span>
-            {onShowQRCode && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs ml-1"
-                leftIcon={<QrCode className="w-3.5 h-3.5" />}
-                onClick={() => {
-                  onClose();
-                  onShowQRCode(table);
-                }}
-              >
-                Table QR
-              </Button>
-            )}
           </div>
 
           {!isOccupied && (
@@ -196,6 +194,77 @@ export const TableDetailsModal: React.FC<TableDetailsModalProps> = ({
               <div className="flex items-center gap-1.5 text-xs text-neutral-700 font-semibold bg-neutral-100 px-2.5 py-1.5 rounded-xl border border-neutral-200/80">
                 <User className="w-3.5 h-3.5 text-neutral-500" />
                 <span>{session.playersCount || 2} Players</span>
+              </div>
+            </div>
+
+            {/* Live Match Frame Scorekeeper Card */}
+            <div className="bg-gradient-to-br from-neutral-900 via-neutral-900 to-neutral-800 text-white rounded-2xl p-4 border border-amber-500/20 shadow-md">
+              <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-3">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                  <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                  Live Match Scorekeeper (Best of 5 Frames)
+                </span>
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 font-extrabold px-2 py-0.5 rounded border border-amber-500/30">
+                  ONE SHOT ARENA
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 items-center">
+                {/* Player 1 Box */}
+                <div className="bg-white/5 border border-white/10 rounded-xl p-3 flex flex-col items-center gap-1 text-center">
+                  <input
+                    type="text"
+                    value={player1Name}
+                    onChange={(e) => setPlayer1Name(e.target.value)}
+                    className="text-xs font-bold text-center bg-transparent border-b border-white/20 pb-0.5 w-full outline-none text-neutral-200"
+                  />
+                  <div className="flex items-center gap-3 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setP1Frames(Math.max(0, p1Frames - 1))}
+                      className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold text-sm cursor-pointer"
+                    >
+                      -
+                    </button>
+                    <span className="text-2xl font-black font-mono text-amber-400">{p1Frames}</span>
+                    <button
+                      type="button"
+                      onClick={() => setP1Frames(p1Frames + 1)}
+                      className="w-7 h-7 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-sm cursor-pointer"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <span className="text-[9px] text-neutral-400 uppercase font-semibold">Frames Won</span>
+                </div>
+
+                {/* Player 2 Box */}
+                <div className="bg-white/5 border border-white/10 rounded-xl p-3 flex flex-col items-center gap-1 text-center">
+                  <input
+                    type="text"
+                    value={player2Name}
+                    onChange={(e) => setPlayer2Name(e.target.value)}
+                    className="text-xs font-bold text-center bg-transparent border-b border-white/20 pb-0.5 w-full outline-none text-neutral-200"
+                  />
+                  <div className="flex items-center gap-3 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setP2Frames(Math.max(0, p2Frames - 1))}
+                      className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold text-sm cursor-pointer"
+                    >
+                      -
+                    </button>
+                    <span className="text-2xl font-black font-mono text-amber-400">{p2Frames}</span>
+                    <button
+                      type="button"
+                      onClick={() => setP2Frames(p2Frames + 1)}
+                      className="w-7 h-7 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-sm cursor-pointer"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <span className="text-[9px] text-neutral-400 uppercase font-semibold">Frames Won</span>
+                </div>
               </div>
             </div>
 

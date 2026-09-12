@@ -15,7 +15,7 @@ import {
 import { TableItem, SessionData } from '../../types';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
-import { formatCurrency, calculateSessionSeconds, formatTimerString, calculateBillTotals } from '../../utils/formatters';
+import { formatCurrency, formatPerMinuteRate, calculateSessionSeconds, formatTimerString, calculateBillTotals } from '../../utils/formatters';
 
 interface TableCardProps {
   table: TableItem;
@@ -99,17 +99,26 @@ export const TableCard: React.FC<TableCardProps> = ({
             <span className={`text-[11px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md ${
               table.type === 'snooker'
                 ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                : table.type === 'pool'
+                : table.type === 'pool' || table.type === 'american_pool'
                 ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                : table.type === 'pickleball'
+                : table.type === 'table_tennis'
                 ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                : table.type === 'ps5'
+                : table.type === 'ps5' || table.type === 'ps4'
                 ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                : table.type === 'magnet_table'
+                ? 'bg-teal-100 text-teal-800 border border-teal-200'
                 : table.type === 'vip'
                 ? 'bg-purple-100 text-purple-800 border border-purple-200'
                 : 'bg-neutral-100 text-neutral-700'
             }`}>
-              {table.type === 'ps5' ? '🎮 PS5' : table.type === 'pickleball' ? '🏓 Court' : table.type === 'snooker' ? '🔴 Snooker' : table.type === 'pool' ? '🎱 Pool' : table.type}
+              {table.type === 'snooker' ? '🔴 Snooker' 
+                : table.type === 'pool' ? '🎱 Pool' 
+                : table.type === 'american_pool' ? '🎱 American Pool' 
+                : table.type === 'table_tennis' ? '🏓 Table Tennis' 
+                : table.type === 'ps5' ? '🎮 PS5' 
+                : table.type === 'ps4' ? '🎮 PS4' 
+                : table.type === 'magnet_table' ? '🧲 Magnet Table' 
+                : table.type.toUpperCase()}
             </span>
           </div>
           <p className="text-xs text-neutral-500 font-medium truncate max-w-[180px] mt-0.5">
@@ -118,19 +127,6 @@ export const TableCard: React.FC<TableCardProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5">
-          {onShowQRCode && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onShowQRCode(table);
-              }}
-              title="Table QR Code"
-              className="p-1 rounded-lg border border-neutral-200 hover:bg-neutral-100 text-neutral-500 hover:text-neutral-900 transition-colors cursor-pointer"
-            >
-              <QrCode className="w-3.5 h-3.5" />
-            </button>
-          )}
           <Badge variant={table.status} />
         </div>
       </div>
@@ -200,14 +196,16 @@ export const TableCard: React.FC<TableCardProps> = ({
         ) : (
           <div className="flex items-center justify-between py-1">
             <div>
-              <span className="text-xs text-neutral-400 block font-medium">Hourly Rate</span>
-              <span className="text-lg font-bold text-neutral-800">
-                {formatCurrency(table.hourlyRate, currencySymbol)}
-                <span className="text-xs font-normal text-neutral-400">/hr</span>
+              <span className="text-xs text-neutral-400 block font-medium">Session Rate</span>
+              <span className="text-sm font-extrabold text-neutral-900">
+                {formatPerMinuteRate(table.perMinuteRate ? table.perMinuteRate * 60 : table.hourlyRate, currencySymbol)}
+                <span className="text-[11px] font-normal text-neutral-500 ml-1">
+                  ({formatCurrency(table.hourlyRate, currencySymbol)}/hr)
+                </span>
               </span>
             </div>
             <span className="text-xs text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100">
-              Ready for Session
+              Ready
             </span>
           </div>
         )}

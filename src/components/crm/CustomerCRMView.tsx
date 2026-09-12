@@ -29,6 +29,7 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
 import { formatCurrency } from '../../utils/formatters';
+import { exportCreditLedgerToExcel } from '../../utils/excelExport';
 import { useAuth } from '../../context/AuthContext';
 
 interface CustomerCRMViewProps {
@@ -66,6 +67,10 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
   const [addingCreditCustomer, setAddingCreditCustomer] = useState<TopCustomer | null>(null);
   const [creditChargeAmount, setCreditChargeAmount] = useState<string>('');
   const [creditChargeReason, setCreditChargeReason] = useState<string>('');
+
+  // Delete Customer State
+  const [deletingCustomer, setDeletingCustomer] = useState<TopCustomer | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [isSaving, setIsSaving] = useState(false);
 
@@ -137,9 +142,16 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
     }
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (confirm(`Are you sure you want to delete customer profile for "${name}"?`)) {
-      await onDeleteCustomer(id);
+  const handleConfirmDelete = async () => {
+    if (!deletingCustomer) return;
+    try {
+      setIsDeleting(true);
+      await onDeleteCustomer(deletingCustomer.id);
+      setDeletingCustomer(null);
+    } catch (err) {
+      alert('Failed to delete customer profile.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -216,27 +228,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
   };
 
   const exportCSV = () => {
-    const headers = ['Name', 'Phone', 'Membership', 'Credit Dues', 'Credit Limit', 'Sessions', 'Hours Played', 'Total Spent', 'Last Visit', 'Notes'];
-    const rows = customers.map((c) => [
-      `"${c.name}"`,
-      `"${c.phone}"`,
-      c.membershipStatus || c.tier || 'Regular',
-      (c.outstandingDue || 0).toFixed(2),
-      (c.creditLimit || DEFAULT_CREDIT_LIMIT).toFixed(2),
-      c.sessionsCount || 0,
-      c.totalHoursPlayed || 0,
-      c.totalSpent.toFixed(2),
-      `"${c.lastVisit}"`,
-      `"${c.notes || ''}"`
-    ]);
-
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const link = document.createElement('a');
-    link.setAttribute('href', encodeURI(csvContent));
-    link.setAttribute('download', `Credit_Ledger_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    exportCreditLedgerToExcel(customers, config.clubName);
   };
 
   return (
@@ -623,7 +615,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                       <Edit className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => handleDelete(cust.id, cust.name)}
+                      onClick={() => setDeletingCustomer(cust)}
                       className="p-1.5 hover:bg-rose-50 text-rose-600 rounded-lg cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -779,7 +771,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                           {dueAmt > 0 && (
                             <button
                               onClick={() => {
-                                const msg = `Hello ${cust.name}, gentle payment reminder from ${config.clubName || 'Rocket 147 Snooker & Pool Club'}. Your outstanding credit balance is ₹${dueAmt.toFixed(0)}. Kindly clear it at your earliest convenience. Thank you!`;
+                                const msg = `Hello ${cust.name}, gentle payment reminder from ${config.clubName || 'One Shot Snooker Gaming Club'}. Your outstanding credit balance is ₹${dueAmt.toFixed(0)}. Kindly clear it at your earliest convenience. Thank you!`;
                                 window.open(`https://wa.me/${cust.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
                               }}
                               className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
@@ -800,7 +792,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
 
                           {/* Delete Button */}
                           <button
-                            onClick={() => handleDelete(cust.id, cust.name)}
+                            onClick={() => setDeletingCustomer(cust)}
                             className="p-1.5 text-neutral-400 hover:text-rose-600 rounded-lg hover:bg-neutral-100 transition-colors cursor-pointer"
                             title="Delete Customer"
                           >
@@ -816,6 +808,41 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
           </table>
         </div>
       </Card>
+
+      {/* MODAL: DELETE CUSTOMER CONFIRMATION */}
+      {deletingCustomer && (
+        <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-neutral-200 space-y-4 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold text-neutral-900">Delete Customer Profile?</h3>
+              <p className="text-xs text-neutral-500 mt-1">
+                Are you sure you want to delete profile for <strong className="text-neutral-900">{deletingCustomer.name}</strong>?
+                This will remove their CRM profile and credit ledger record.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeletingCustomer(null)}
+                className="py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl cursor-pointer shadow-xs"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete Profile'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL: SETTLE CREDIT DUES */}
       {settlingCustomer && (
@@ -1110,7 +1137,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                     size="sm"
                     variant="primary"
                     onClick={() => {
-                      const msg = `Hello ${viewingLedgerCustomer.name}, gentle payment reminder from ${config.clubName || 'Rocket 147 Snooker & Pool Club'}. Your outstanding credit balance is ₹${(viewingLedgerCustomer.outstandingDue || 0).toFixed(0)}. Kindly clear it at your earliest convenience. Thank you!`;
+                      const msg = `Hello ${viewingLedgerCustomer.name}, gentle payment reminder from ${config.clubName || 'One Shot Snooker Gaming Club'}. Your outstanding credit balance is ₹${(viewingLedgerCustomer.outstandingDue || 0).toFixed(0)}. Kindly clear it at your earliest convenience. Thank you!`;
                       window.open(`https://wa.me/${viewingLedgerCustomer.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
                     }}
                     className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
