@@ -6,7 +6,9 @@ import {
   Bell, 
   Monitor,
   ChevronDown,
-  Download
+  Download,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { PageView, NotificationItem } from '../../types';
 import { Button } from '../ui/Button';
@@ -14,6 +16,7 @@ import { NotificationCenter } from '../notifications/NotificationCenter';
 import { useAuth } from '../../context/AuthContext';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 import { PWAInstallModal } from '../common/PWAInstallModal';
+import { soundEffects } from '../../utils/soundEffects';
 
 interface NavbarProps {
   activePage: PageView;
@@ -55,6 +58,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [networkStatus, setNetworkStatus] = useState<'online' | 'syncing' | 'offline'>(
     typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'online'
   );
+  const [isAudioMuted, setIsAudioMuted] = useState(soundEffects.getMuted());
+
+  useEffect(() => {
+    return soundEffects.subscribe((muted) => setIsAudioMuted(muted));
+  }, []);
 
   useEffect(() => {
     const update = () => {
@@ -148,6 +156,28 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Clock className="w-3 h-3 text-neutral-400" />
             <span>{timeString}</span>
           </div>
+
+          {/* Sound FX Audio Toggle */}
+          <button
+            type="button"
+            onClick={() => soundEffects.toggleMuted()}
+            title={isAudioMuted ? 'Unmute Sound Effects & Audio Alerts' : 'Mute Sound Effects'}
+            aria-label={isAudioMuted ? 'Unmute sound effects' : 'Mute sound effects'}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer active:scale-95 ${
+              isAudioMuted
+                ? 'bg-neutral-100 text-neutral-400 border-neutral-200 hover:bg-neutral-200'
+                : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 shadow-2xs'
+            }`}
+          >
+            {isAudioMuted ? (
+              <VolumeX className="w-3.5 h-3.5" />
+            ) : (
+              <Volume2 className="w-3.5 h-3.5 text-emerald-600" />
+            )}
+            <span className="hidden xl:inline text-[11px] font-semibold">
+              {isAudioMuted ? 'Muted' : 'Sound'}
+            </span>
+          </button>
 
           {/* Notification Center */}
           <div className="relative">

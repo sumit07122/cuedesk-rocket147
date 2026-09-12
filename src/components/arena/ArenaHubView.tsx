@@ -23,8 +23,12 @@ import { Badge } from '../ui/Badge';
 import { soundEffects } from '../../utils/soundEffects';
 
 export const ArenaHubView: React.FC = () => {
-  const [soundMuted, setSoundMuted] = useState(false);
+  const [soundMuted, setSoundMuted] = useState(soundEffects.getMuted());
   const [selectedStation, setSelectedStation] = useState<'all' | 'ps5' | 'pickleball' | 'snooker'>('all');
+
+  React.useEffect(() => {
+    return soundEffects.subscribe((muted) => setSoundMuted(muted));
+  }, []);
 
   // PS5 & Multi-Gaming Arena Stations State
   const [gamingStations, setGamingStations] = useState([

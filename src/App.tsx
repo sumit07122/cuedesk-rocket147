@@ -39,6 +39,7 @@ import { createNotification } from './services/dbService';
 import { RoleGuard } from './components/common/RoleGuard';
 import { CheckCircle2, Sparkles, CircleDot, ChefHat } from 'lucide-react';
 import { UserRole } from './types';
+import { soundEffects } from './utils/soundEffects';
 
 function CueDeskApp() {
   const { user, currentClubId, role, signOutUser, switchClub, isLoading: isAuthLoading, hasPermission } = useAuth();
@@ -153,6 +154,19 @@ function CueDeskApp() {
   }, [activePage, user]);
 
   // Modals & Selection state
+  const previousUnreadCueBoysRef = React.useRef<number>(0);
+
+  React.useEffect(() => {
+    const unreadCueBoys = notifications.filter(
+      (n) => !n.read && (n.title?.includes('Cue Boy') || n.title?.includes('Assistance'))
+    ).length;
+
+    if (unreadCueBoys > previousUnreadCueBoysRef.current) {
+      soundEffects.playCueBoyCallSound();
+    }
+    previousUnreadCueBoysRef.current = unreadCueBoys;
+  }, [notifications]);
+
   const [selectedTableDetails, setSelectedTableDetails] = useState<TableItem | null>(null);
   const [startSessionTable, setStartSessionTable] = useState<TableItem | null>(null);
   const [isStartSessionOpen, setIsStartSessionOpen] = useState(false);
@@ -213,6 +227,7 @@ function CueDeskApp() {
     };
 
     await startSession(tableId, newSession, user?.email);
+    soundEffects.playStartChime();
     addToast('success', `Session Started`, `Table #${targetTable.number} registered for ${customerName}`);
   };
 
@@ -222,6 +237,11 @@ function CueDeskApp() {
     await togglePause(table.id, table.currentSession, user?.email);
 
     const isNowPaused = !table.currentSession.isPaused;
+    if (isNowPaused) {
+      soundEffects.playPauseChime();
+    } else {
+      soundEffects.playStartChime();
+    }
     addToast(
       isNowPaused ? 'warning' : 'success',
       isNowPaused ? `Timer Paused` : `Timer Resumed`,
@@ -266,6 +286,7 @@ function CueDeskApp() {
     if (!targetTable || !targetTable.currentSession) return;
 
     await addOrders(tableId, targetTable.currentSession, itemsToAdd, user?.email);
+    soundEffects.playSnackAddSound();
 
     // Send ticket to Kitchen Display System (KDS)
     const orderTotal = itemsToAdd.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -298,6 +319,7 @@ function CueDeskApp() {
   // 7. Mark Paid & Clear Table in Firestore
   const handleMarkPaid = async (historyItem: SessionHistoryItem) => {
     await finalizeBill(historyItem, user?.email);
+    soundEffects.playPaymentSuccessChime();
 
     // Automated Credit Ledger Sync when payment method is "Pay on Credit / Due Ledger"
     if (historyItem.paymentMethod === 'due_ledger' || historyItem.paymentStatus === 'due_ledger') {
