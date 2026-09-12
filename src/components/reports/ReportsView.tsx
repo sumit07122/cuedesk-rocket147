@@ -54,8 +54,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   const [revenueTimeframe, setRevenueTimeframe] = useState<'daily' | 'weekly'>('weekly');
 
   const totalRevenue = history.reduce((sum, item) => sum + item.grandTotal, 0);
-  const totalSessionsCount = history.length + 12; // Including previous shifts
-  const avgSessionVal = totalRevenue > 0 ? totalRevenue / history.length : 42.50;
+  const totalSessionsCount = history.length;
+  const avgSessionVal = history.length > 0 ? totalRevenue / history.length : 0;
 
   const filteredHistory = history.filter(
     (item) =>

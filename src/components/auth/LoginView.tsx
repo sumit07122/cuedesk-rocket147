@@ -161,7 +161,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                     type={showPassword ? 'text' : 'password'}
                     required
                     autoComplete="new-password"
-                    placeholder="••••••••"
+                    placeholder="Enter password..."
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full bg-[#18181f] border border-white/10 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white placeholder-neutral-500 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all font-medium"
@@ -198,19 +198,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   </>
                 )}
               </button>
-
-              <div className="p-3 bg-white/5 border border-white/10 rounded-xl text-[11px] text-neutral-400 space-y-1">
-                <div className="flex items-center justify-between text-neutral-300 font-bold">
-                  <span>🔑 Handover Default Passwords:</span>
-                  <span className="text-amber-400 font-mono text-[10px]">Ready to Use</span>
-                </div>
-                <div className="grid grid-cols-2 gap-1 text-[10px] font-mono text-neutral-300">
-                  <div>Owner: <span className="text-amber-300">owner123</span></div>
-                  <div>Manager: <span className="text-emerald-300">manager123</span></div>
-                  <div>Cashier: <span className="text-blue-300">cashier123</span></div>
-                  <div>Kitchen: <span className="text-purple-300">kitchen123</span></div>
-                </div>
-              </div>
             </form>
           )}
 
