@@ -168,10 +168,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <button
             onClick={onLogout}
-            title="Reset Session to Owner"
-            className="p-1.5 text-neutral-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+            title="Sign Out to Login Screen"
+            className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
           >
-            <RotateCcw className="w-4 h-4" />
+            <LogOut className="w-4 h-4" />
           </button>
         </div>
 

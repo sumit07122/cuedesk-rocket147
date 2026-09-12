@@ -27,7 +27,6 @@ interface TableCardProps {
   onEndSession: (table: TableItem) => void;
   onPauseResumeSession: (table: TableItem) => void;
   onAddSnack: (table: TableItem) => void;
-  onShowQRCode?: (table: TableItem) => void;
 }
 
 export const TableCard: React.FC<TableCardProps> = ({
@@ -40,7 +39,6 @@ export const TableCard: React.FC<TableCardProps> = ({
   onEndSession,
   onPauseResumeSession,
   onAddSnack,
-  onShowQRCode,
 }) => {
   const [now, setNow] = useState(Date.now());
 

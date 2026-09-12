@@ -81,6 +81,7 @@ function CueDeskApp() {
     updateOrderStatus,
     recordStockAdjustment,
     recordPurchase,
+    resetClubData,
     saveCustomer,
     deleteCustomer,
     saveEmployee,
@@ -431,7 +432,15 @@ function CueDeskApp() {
     addToast('warning', 'Session Request Rejected', 'Customer request was declined.');
   };
 
-  // Client Review Mode: Authentication is completely bypassed for instant review on Vercel
+  // Auth Protection: If user is not signed in, show professional LoginView
+  if (!user && !isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0c] selection:bg-amber-500 selection:text-black">
+        <ToastContainer toasts={toasts} onDismiss={removeToast} />
+        <LoginView onLoginSuccess={() => addToast('success', 'Welcome Back', 'Signed in to One Shot Snooker Club.')} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-neutral-900 flex flex-col lg:flex-row antialiased font-sans">
@@ -452,7 +461,7 @@ function CueDeskApp() {
         onOpenSuperAdmin={() => setActivePage('super-admin')}
         onLogout={() => {
           signOutUser();
-          addToast('info', 'Review Mode Active', 'Session reset to Club Owner with full administrative access.');
+          addToast('info', 'Signed Out', 'You have been signed out to the login screen.');
         }}
       />
 
@@ -714,6 +723,16 @@ function CueDeskApp() {
                 onDeleteTable={handleDeleteTable}
                 onAddMenuItem={handleAddMenuItem}
                 onDeleteMenuItem={handleDeleteMenuItem}
+                onResetClub={async (type) => {
+                  await resetClubData(type);
+                  addToast(
+                    'success',
+                    'Club Reset Completed',
+                    type === 'history'
+                      ? 'Sales and session history wiped clean.'
+                      : 'Full club data reset: sessions cleared, tables ready, dues set to ₹0.'
+                  );
+                }}
               />
             </RoleGuard>
           ) : activePage === 'super-admin' ? (

@@ -106,7 +106,7 @@ export function sanitizeDataForFirestore<T>(data: T): T {
 /**
  * Ensures the specified club has initial data populated in Firestore.
  */
-export const ensureClubInitialized = async (clubId: string = DEFAULT_CLUB_ID, clubName?: string): Promise<void> => {
+export const ensureClubInitialized = async (clubId: string = DEFAULT_CLUB_ID, clubName?: string, force: boolean = false): Promise<void> => {
   try {
     const configRef = doc(db, 'clubs', clubId, 'config', 'settings');
     let configSnap;
@@ -117,42 +117,44 @@ export const ensureClubInitialized = async (clubId: string = DEFAULT_CLUB_ID, cl
       return;
     }
 
-    if (!configSnap.exists()) {
+    if (!configSnap.exists() || force) {
       const batch = writeBatch(db);
 
       // 1. Initialize Club Settings
       const newConfig: BusinessConfig = {
         ...initialBusinessConfig,
-        clubName: clubName || (clubId === DEFAULT_CLUB_ID ? 'CueDesk Lounge & Club' : `${clubId.toUpperCase()} Cue Sports`),
+        clubName: clubName || (clubId === DEFAULT_CLUB_ID ? 'One Shot Snooker Gaming Club' : `${clubId.toUpperCase()} Cue Sports`),
       };
-      batch.set(configRef, newConfig);
+      batch.set(configRef, newConfig, { merge: true });
 
       // 2. Initialize Tables
       initialTables.forEach((tbl) => {
         const tblRef = doc(db, 'clubs', clubId, 'tables', tbl.id);
-        batch.set(tblRef, { ...tbl, clubId });
+        batch.set(tblRef, { ...tbl, clubId }, { merge: true });
       });
 
       // 3. Initialize Menu Items
       initialMenuItems.forEach((item) => {
         const itemRef = doc(db, 'clubs', clubId, 'menuItems', item.id);
-        batch.set(itemRef, { ...item, clubId });
+        batch.set(itemRef, { ...item, clubId }, { merge: true });
       });
 
-      // 4. Initialize History
-      initialSessionHistory.forEach((hist) => {
-        const histRef = doc(db, 'clubs', clubId, 'history', hist.id);
-        batch.set(histRef, { ...hist, clubId });
-      });
+      // 4. Initialize History (only if force seeding initially)
+      if (!configSnap.exists()) {
+        initialSessionHistory.forEach((hist) => {
+          const histRef = doc(db, 'clubs', clubId, 'history', hist.id);
+          batch.set(histRef, { ...hist, clubId }, { merge: true });
+        });
 
-      // 5. Initialize Top Customers
-      initialTopCustomers.forEach((cust) => {
-        const custRef = doc(db, 'clubs', clubId, 'customers', cust.id);
-        batch.set(custRef, { ...cust, clubId });
-      });
+        // 5. Initialize Top Customers
+        initialTopCustomers.forEach((cust) => {
+          const custRef = doc(db, 'clubs', clubId, 'customers', cust.id);
+          batch.set(custRef, { ...cust, clubId }, { merge: true });
+        });
+      }
 
       await batch.commit();
-      console.log(`Successfully seeded initial Firestore data for club: ${clubId}`);
+      console.log(`Successfully seeded Firestore data for club: ${clubId}`);
     }
   } catch (error) {
     console.warn(`Note initializing club data for ${clubId}:`, error);
@@ -415,30 +417,59 @@ export const subscribeHistory = (
 
 export const clearHistoryAndAnalytics = async (clubId: string = DEFAULT_CLUB_ID): Promise<void> => {
   try {
-    const collectionsToWipe = ['history', 'foodOrders', 'requests', 'notifications', 'expenses', 'auditLogs', 'inventoryAdjustments'];
+    const collectionsToWipe = ['history', 'foodOrders', 'requests', 'notifications', 'expenses', 'attendance', 'auditLogs', 'inventoryAdjustments'];
     for (const colName of collectionsToWipe) {
-      const colRef = collection(db, 'clubs', clubId, colName);
-      const snap = await getDocs(colRef);
-      if (!snap.empty) {
-        const batch = writeBatch(db);
-        snap.forEach((d) => batch.delete(d.ref));
-        await batch.commit();
+      try {
+        const colRef = collection(db, 'clubs', clubId, colName);
+        const snap = await getDocs(colRef);
+        if (!snap.empty) {
+          const batch = writeBatch(db);
+          snap.forEach((d) => batch.delete(d.ref));
+          await batch.commit();
+        }
+      } catch (colErr) {
+        console.warn(`Could not wipe collection ${colName} (safe to ignore if offline):`, colErr);
       }
     }
 
     // Reset all tables to available and clear active sessions
-    const tablesRef = collection(db, 'clubs', clubId, 'tables');
-    const tablesSnap = await getDocs(tablesRef);
-    if (!tablesSnap.empty) {
-      const tableBatch = writeBatch(db);
-      tablesSnap.forEach((d) => {
-        tableBatch.update(d.ref, {
-          status: 'available',
-          currentSession: null,
-          isMaintenance: false
+    try {
+      const tablesRef = collection(db, 'clubs', clubId, 'tables');
+      const tablesSnap = await getDocs(tablesRef);
+      if (!tablesSnap.empty) {
+        const tableBatch = writeBatch(db);
+        tablesSnap.forEach((d) => {
+          tableBatch.update(d.ref, {
+            status: 'available',
+            currentSession: null,
+            isMaintenance: false
+          });
         });
-      });
-      await tableBatch.commit();
+        await tableBatch.commit();
+      }
+    } catch (tblErr) {
+      console.warn('Could not reset tables in Firestore (safe to ignore if offline):', tblErr);
+    }
+
+    // Reset customer dues to 0
+    try {
+      const custRef = collection(db, 'clubs', clubId, 'customers');
+      const custSnap = await getDocs(custRef);
+      if (!custSnap.empty) {
+        const custBatch = writeBatch(db);
+        custSnap.forEach((d) => {
+          custBatch.update(d.ref, {
+            outstandingDue: 0,
+            sessionsCount: 0,
+            totalSpent: 0,
+            totalHoursPlayed: 0,
+            udhaarLedger: []
+          });
+        });
+        await custBatch.commit();
+      }
+    } catch (custErr) {
+      console.warn('Could not reset customer dues in Firestore:', custErr);
     }
   } catch (err) {
     console.error('Error in complete club data reset:', err);

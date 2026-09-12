@@ -42,7 +42,6 @@ interface DashboardViewProps {
   onApproveRequest?: (req: SessionRequest) => void;
   onRejectRequest?: (requestId: string) => void;
   onMarkNotificationRead?: (id: string) => void;
-  onShowQRCode?: (table: TableItem) => void;
   onSelectTable: (table: TableItem) => void;
   onStartSession: (table: TableItem) => void;
   onEndSession: (table: TableItem) => void;
@@ -76,7 +75,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onApproveRequest,
   onRejectRequest,
   onMarkNotificationRead,
-  onShowQRCode,
   onSelectTable,
   onStartSession,
   onEndSession,
@@ -299,7 +297,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               onEndSession={onEndSession}
               onPauseResumeSession={onPauseResumeSession}
               onAddSnack={onAddSnack}
-              onShowQRCode={onShowQRCode}
             />
           ))}
         </div>

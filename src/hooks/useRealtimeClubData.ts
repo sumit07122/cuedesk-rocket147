@@ -79,6 +79,7 @@ import {
   createNotification,
   markNotificationAsRead,
   clearAllNotifications,
+  clearHistoryAndAnalytics,
   logAuditEvent
 } from '../services/dbService';
 import { SUBSCRIPTION_PLANS } from '../data/saasPlans';
@@ -136,30 +137,30 @@ export const useRealtimeClubData = (clubId: string) => {
       if (data && data.length > 0) setMenuItems(data);
     });
     const unsubHistory = subscribeHistory(clubId, (data) => {
-      if (data && data.length > 0) setHistory(data);
+      if (data) setHistory(data);
     });
     const unsubCustomers = subscribeTopCustomers(clubId, (data) => {
       if (data && data.length > 0) setTopCustomers(data);
     });
-    const unsubRequests = subscribeSessionRequests(clubId, (data) => setSessionRequests(data));
-    const unsubLogs = subscribeAuditLogs(clubId, (data) => setAuditLogs(data));
-    const unsubFoodOrders = subscribeFoodOrders(clubId, (data) => setFoodOrders(data));
-    const unsubPurchases = subscribePurchaseRecords(clubId, (data) => setPurchaseRecords(data));
-    const unsubAdjustments = subscribeInventoryAdjustments(clubId, (data) => setInventoryAdjustments(data));
+    const unsubRequests = subscribeSessionRequests(clubId, (data) => setSessionRequests(data || []));
+    const unsubLogs = subscribeAuditLogs(clubId, (data) => setAuditLogs(data || []));
+    const unsubFoodOrders = subscribeFoodOrders(clubId, (data) => setFoodOrders(data || []));
+    const unsubPurchases = subscribePurchaseRecords(clubId, (data) => setPurchaseRecords(data || []));
+    const unsubAdjustments = subscribeInventoryAdjustments(clubId, (data) => setInventoryAdjustments(data || []));
     const unsubEmployees = subscribeEmployees(clubId, (data) => {
       if (data && data.length > 0) setEmployees(data);
     });
     const unsubAttendance = subscribeAttendance(clubId, (data) => {
-      if (data && data.length > 0) setAttendance(data);
+      if (data) setAttendance(data);
     });
     const unsubExpenses = subscribeExpenses(clubId, (data) => {
-      if (data && data.length > 0) setExpenses(data);
+      if (data) setExpenses(data);
     });
     const unsubMaintenance = subscribeMaintenance(clubId, (data) => {
-      if (data && data.length > 0) setMaintenanceRecords(data);
+      if (data) setMaintenanceRecords(data);
     });
     const unsubNotifications = subscribeNotifications(clubId, (data) => {
-      if (data && data.length > 0) setNotifications(data);
+      if (data) setNotifications(data);
     });
 
     return () => {
@@ -416,6 +417,70 @@ export const useRealtimeClubData = (clubId: string) => {
     await clearAllNotifications(clubId, ids);
   };
 
+  const handleResetClubData = async (resetType: 'all' | 'history' = 'all') => {
+    setIsLoading(true);
+    try {
+      if (resetType === 'history') {
+        setHistory([]);
+        try {
+          await clearHistoryAndAnalytics(clubId);
+        } catch (err) {
+          console.warn('Remote clearHistoryAndAnalytics error (safe fallback):', err);
+        }
+      } else {
+        // Full Club Reset: wipe transactions, restore tables and customer ledgers
+        setHistory([]);
+        setFoodOrders([]);
+        setSessionRequests([]);
+        setNotifications([]);
+        setExpenses([]);
+        setAttendance([]);
+        setAuditLogs([]);
+
+        // Reset all tables to available
+        setTables((prev) =>
+          prev.map((t) => ({
+            ...t,
+            status: 'available',
+            currentSession: null,
+            isMaintenance: false,
+          }))
+        );
+
+        // Reset customer outstanding dues & session stats
+        setTopCustomers((prev) =>
+          prev.map((c) => ({
+            ...c,
+            outstandingDue: 0,
+            sessionsCount: 0,
+            totalSpent: 0,
+            totalHoursPlayed: 0,
+            udhaarLedger: [],
+          }))
+        );
+
+        // Clear remote collections if online
+        try {
+          await clearHistoryAndAnalytics(clubId);
+        } catch (err) {
+          console.warn('Remote full wipe warning (safe fallback):', err);
+        }
+
+        // Clear local storage daily snapshots & cached club data
+        try {
+          for (let i = localStorage.length - 1; i >= 0; i--) {
+            const key = localStorage.key(i);
+            if (key && (key.startsWith('oneshot_daily_snapshot_') || key.startsWith('cuedesk_snapshot_'))) {
+              localStorage.removeItem(key);
+            }
+          }
+        } catch {}
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     config,
     tables,
@@ -453,6 +518,7 @@ export const useRealtimeClubData = (clubId: string) => {
     updateOrderStatus: handleUpdateOrderStatus,
     recordStockAdjustment: handleRecordStockAdjustment,
     recordPurchase: handleRecordPurchase,
+    resetClubData: handleResetClubData,
     // Phase 7 Actions
     saveCustomer: handleSaveCustomerCRM,
     saveCustomerCRM: handleSaveCustomerCRM,

@@ -51,6 +51,7 @@ interface SettingsViewProps {
   onDeleteTable: (tableId: string) => void;
   onAddMenuItem: (item: Omit<MenuItem, 'id'>) => void;
   onDeleteMenuItem: (itemId: string) => void;
+  onResetClub?: (type: 'all' | 'history') => Promise<void>;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -62,6 +63,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onDeleteTable,
   onAddMenuItem,
   onDeleteMenuItem,
+  onResetClub,
 }) => {
   const [activeTab, setActiveTab] = useState<
     'tables' | 'crm_rules' | 'rates' | 'menu' | 'employees' | 'backup' | 'database'
@@ -902,13 +904,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   if (resetConfirmText.trim().toUpperCase() !== RESET_KEYWORD) return;
                   setIsClearingHistory(true);
                   try {
-                    await clearHistoryAndAnalytics(config.id);
+                    const target = dangerTarget === 'history' ? 'history' : 'all';
+                    if (onResetClub) {
+                      await onResetClub(target);
+                    } else {
+                      await clearHistoryAndAnalytics(config.id);
+                    }
                     setClearSuccess(true);
                     setDangerModalOpen(false);
                     setResetConfirmText('');
                     setTimeout(() => setClearSuccess(false), 4000);
-                  } catch (err) {
-                    alert('Error clearing data: ' + err);
+                  } catch (err: any) {
+                    alert('Error clearing data: ' + (err?.message || err));
                   } finally {
                     setIsClearingHistory(false);
                   }

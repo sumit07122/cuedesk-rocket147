@@ -13,6 +13,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import { useAuth, formatAuthError } from '../../context/AuthContext';
+import { DEFAULT_PRESET_CREDENTIALS, PresetRoleCredential } from './loginConstants';
 
 interface LoginViewProps {
   onLoginSuccess?: () => void;
@@ -22,8 +23,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const { signInWithEmail, sendPasswordReset } = useAuth();
 
   const [mode, setMode] = useState<'signin' | 'forgot'>('signin');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [selectedRole, setSelectedRole] = useState<string>('owner');
+  const [email, setEmail] = useState('owner@oneshotsnooker.com');
+  const [password, setPassword] = useState('owner123');
   const [showPassword, setShowPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -124,6 +126,50 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           {/* MODE 1: SIGN IN */}
           {mode === 'signin' && (
             <form onSubmit={handleEmailSignIn} className="flex flex-col gap-3.5">
+              {/* Quick Preset Roles Grid */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-bold text-amber-300 uppercase tracking-wider">
+                    Quick Role Selector (Default Logins)
+                  </label>
+                  <span className="text-[10px] text-neutral-400">1-Tap Fill</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {DEFAULT_PRESET_CREDENTIALS.map((cred) => {
+                    const isSelected = selectedRole === cred.role;
+                    return (
+                      <button
+                        key={cred.role}
+                        type="button"
+                        onClick={() => {
+                          setSelectedRole(cred.role);
+                          setEmail(cred.email);
+                          setPassword(cred.pass);
+                          clearMessages();
+                        }}
+                        className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
+                          isSelected
+                            ? 'bg-amber-500/20 border-amber-400/80 shadow-sm ring-1 ring-amber-400/50'
+                            : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={`text-xs font-bold ${isSelected ? 'text-amber-300' : 'text-neutral-200'}`}>
+                            {cred.title}
+                          </span>
+                          <span className="text-[9px] font-semibold text-neutral-400 px-1.5 py-0.5 rounded bg-black/40 border border-white/5">
+                            {cred.badge}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono text-neutral-400 truncate">
+                          {cred.email.split('@')[0]}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div>
                 <label className="text-xs font-bold text-neutral-300 block mb-1">User Email Address</label>
                 <div className="relative">
@@ -197,6 +243,19 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   </>
                 )}
               </button>
+
+              <div className="p-3 bg-white/5 border border-white/10 rounded-xl text-[11px] text-neutral-400 space-y-1">
+                <div className="flex items-center justify-between text-neutral-300 font-bold">
+                  <span>🔑 Handover Default Passwords:</span>
+                  <span className="text-amber-400 font-mono text-[10px]">Ready to Use</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1 text-[10px] font-mono text-neutral-300">
+                  <div>Owner: <span className="text-amber-300">owner123</span></div>
+                  <div>Manager: <span className="text-emerald-300">manager123</span></div>
+                  <div>Cashier: <span className="text-blue-300">cashier123</span></div>
+                  <div>Kitchen: <span className="text-purple-300">kitchen123</span></div>
+                </div>
+              </div>
             </form>
           )}
 

@@ -35,7 +35,6 @@ interface TableDetailsModalProps {
   onOpenAddSnacks: (table: TableItem) => void;
   onOpenTransferTable: (table: TableItem) => void;
   onRemoveOrderItem?: (tableId: string, orderId: string) => void;
-  onShowQRCode?: (table: TableItem) => void;
 }
 
 export const TableDetailsModal: React.FC<TableDetailsModalProps> = ({
@@ -51,7 +50,6 @@ export const TableDetailsModal: React.FC<TableDetailsModalProps> = ({
   onOpenAddSnacks,
   onOpenTransferTable,
   onRemoveOrderItem,
-  onShowQRCode,
 }) => {
   const [now, setNow] = useState(Date.now());
   const [p1Frames, setP1Frames] = useState(0);

@@ -192,7 +192,7 @@ export const FirebaseConnectSection: React.FC<{ currentClubId?: string }> = ({ c
     setIsSeeding(true);
     setSeedSuccess(null);
     try {
-      await ensureClubInitialized(currentClubId);
+      await ensureClubInitialized(currentClubId, undefined, true);
       setSeedSuccess(`Initial tables, menu items, and business rules successfully seeded into club "${currentClubId}"!`);
     } catch (e: any) {
       alert(`Seeding error: ${e.message}`);

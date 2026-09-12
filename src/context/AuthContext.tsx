@@ -63,8 +63,12 @@ export const DEFAULT_REVIEW_USER: UserProfile = {
   lastLogin: Date.now()
 };
 
-export const getInitialReviewUser = (): UserProfile => {
+export const getInitialReviewUser = (): UserProfile | null => {
   try {
+    const isLoggedOut = localStorage.getItem('cuedesk_logged_out');
+    if (isLoggedOut === 'true') {
+      return null;
+    }
     const saved = localStorage.getItem('cuedesk_review_user');
     if (saved) {
       return JSON.parse(saved);
@@ -107,7 +111,7 @@ export const formatAuthError = (error: any): string => {
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [fbUser, setFbUser] = useState<FbUser | null>(null);
-  const [user, setUser] = useState<UserProfile>(getInitialReviewUser);
+  const [user, setUser] = useState<UserProfile | null>(getInitialReviewUser);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [currentClubId, setCurrentClubId] = useState<string>(() => {
     return localStorage.getItem('cuedesk_club_id') || DEFAULT_CLUB_ID;
@@ -204,6 +208,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     setUser(reviewUser);
     try {
+      localStorage.removeItem('cuedesk_logged_out');
       localStorage.setItem('cuedesk_review_role', matchedRole);
       localStorage.setItem('cuedesk_review_user', JSON.stringify(reviewUser));
     } catch {}
@@ -294,20 +299,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Logout (In Review Mode: Resets to Club Owner)
+  // Logout (Brings user to Login View)
   const signOutUser = async () => {
     if (user) {
-      logAuditEvent(user.clubId || currentClubId, 'USER_LOGOUT', user.email, 'User reset session').catch(() => {});
+      logAuditEvent(user.clubId || currentClubId, 'USER_LOGOUT', user.email, 'User signed out').catch(() => {});
     }
     try {
       await fbSignOut(auth);
     } catch (err) {
       console.warn('Firebase sign out error:', err);
     }
-    setUser(DEFAULT_REVIEW_USER);
+    setUser(null);
     try {
-      localStorage.setItem('cuedesk_review_role', 'owner');
-      localStorage.setItem('cuedesk_review_user', JSON.stringify(DEFAULT_REVIEW_USER));
+      localStorage.setItem('cuedesk_logged_out', 'true');
+      localStorage.removeItem('cuedesk_review_role');
+      localStorage.removeItem('cuedesk_review_user');
     } catch {}
   };
 
