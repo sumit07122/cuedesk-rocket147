@@ -42,7 +42,14 @@ import { Badge } from '../ui/Badge';
 import { formatCurrency, formatPerMinuteRate } from '../../utils/formatters';
 import { exportClubBackup, downloadBackupFile, restoreClubBackup, ClubBackupSnapshot } from '../../utils/backupService';
 import { getAvailableAutoSnapshots, restoreAutoSnapshot, performDailyAutoSnapshot } from '../../utils/autoSnapshot';
-import { exportCustomerCreditLedgerCSV, exportBillingHistoryCSV } from '../../utils/excelExport';
+import { 
+  exportSalesToExcel, 
+  exportCreditLedgerToExcel, 
+  exportInventoryToExcel, 
+  exportEmployeesToExcel,
+  exportCustomerCreditLedgerCSV,
+  exportBillingHistoryCSV
+} from '../../utils/excelExport';
 import { SystemHealthSection } from './SystemHealthSection';
 import { FirebaseConnectSection } from './FirebaseConnectSection';
 
@@ -1122,6 +1129,51 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <span>{backupMsg}</span>
                 </div>
               )}
+
+              {/* Quick Excel Exports */}
+              <div className="pt-4 border-t border-neutral-100">
+                <h4 className="text-xs font-bold text-neutral-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                  Excel & Spreadsheet Exports (.csv)
+                </h4>
+                <p className="text-xs text-neutral-500 mb-3">
+                  Download structured tabular datasets compatible with Microsoft Excel, Google Sheets, and accounting software.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<Download className="w-3.5 h-3.5" />}
+                    onClick={() => exportSalesToExcel(history, config.clubName)}
+                  >
+                    Sales History
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<Download className="w-3.5 h-3.5" />}
+                    onClick={() => exportCreditLedgerToExcel(customers, config.clubName)}
+                  >
+                    Credit Ledger
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<Download className="w-3.5 h-3.5" />}
+                    onClick={() => exportInventoryToExcel(menuItems, config.clubName)}
+                  >
+                    Menu Inventory
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<Download className="w-3.5 h-3.5" />}
+                    onClick={() => exportEmployeesToExcel(employees, config.clubName)}
+                  >
+                    Staff Roster
+                  </Button>
+                </div>
+              </div>
             </Card>
           )}
 

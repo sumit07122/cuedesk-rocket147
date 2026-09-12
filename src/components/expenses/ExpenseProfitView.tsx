@@ -12,7 +12,8 @@ import {
   User, 
   Trash2, 
   Filter,
-  CheckCircle2
+  CheckCircle2,
+  Download
 } from 'lucide-react';
 import { ExpenseRecord, ExpenseCategory, SessionHistoryItem, BusinessConfig } from '../../types';
 import { Card } from '../ui/Card';
@@ -20,6 +21,7 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
 import { formatCurrency } from '../../utils/formatters';
+import { exportExpensesToExcel } from '../../utils/excelExport';
 
 interface ExpenseProfitViewProps {
   expenses: ExpenseRecord[];
@@ -170,6 +172,15 @@ export const ExpenseProfitView: React.FC<ExpenseProfitViewProps> = ({
               </button>
             ))}
           </div>
+
+          <Button
+            variant="outline"
+            onClick={() => exportExpensesToExcel(expenses, config.clubName)}
+            leftIcon={<Download className="w-4 h-4" />}
+            size="sm"
+          >
+            Export
+          </Button>
 
           <Button
             variant="primary"

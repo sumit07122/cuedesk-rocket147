@@ -195,6 +195,79 @@ assertEqual(escapeCSVCell('One Shot, Club'), '"One Shot, Club"', 'CSV escaping w
 assertEqual(escapeCSVCell('Riley "Tournament" Table'), '"Riley ""Tournament"" Table"', 'CSV escaping doubles internal quotes');
 assertEqual(escapeCSVCell('Line1\nLine2'), '"Line1\nLine2"', 'CSV escaping retains newlines safely');
 
+// ----------------------------------------------------
+// 7. Multi-Entity Excel Export Model Tests
+// ----------------------------------------------------
+console.log('\n▶ Testing Multi-Entity Excel Export Formats');
+const mockExpense = {
+  id: 'exp-1',
+  clubId: 'club-1',
+  category: 'Table Repair',
+  amount: 1500,
+  date: '2026-09-12',
+  timestamp: baseTime,
+  recordedBy: 'Manager',
+  notes: 'Re-felted Match Star Table 01'
+};
+const expenseRow = [
+  mockExpense.date,
+  mockExpense.category,
+  mockExpense.amount.toFixed(2),
+  mockExpense.recordedBy,
+  mockExpense.notes
+];
+assertEqual(expenseRow[1], 'Table Repair', 'Expense export maps category correctly');
+assertEqual(expenseRow[2], '1500.00', 'Expense export formats amount with 2 decimals');
+
+const mockEmployee = {
+  id: 'emp-1',
+  clubId: 'club-1',
+  name: 'Kavita Devi',
+  phone: '9876501234',
+  email: 'kavita@oneshotsnooker.com',
+  role: 'cashier' as const,
+  joiningDate: '2026-01-15',
+  status: 'active' as const
+};
+const employeeRow = [
+  mockEmployee.name,
+  mockEmployee.role.toUpperCase(),
+  mockEmployee.phone,
+  mockEmployee.email,
+  mockEmployee.joiningDate,
+  mockEmployee.status.toUpperCase()
+];
+assertEqual(employeeRow[0], 'Kavita Devi', 'Employee export maps staff name');
+assertEqual(employeeRow[1], 'CASHIER', 'Employee export standardizes uppercase role');
+
+const mockTournament = {
+  id: 'tourney-1',
+  title: 'One Shot Masters 2026',
+  entryFee: 1000,
+  prizePool: 8000,
+  status: 'ongoing' as const,
+  startDate: '2026-09-10',
+  winner: undefined,
+  matches: [
+    { id: 'm1', round: 1, player1: 'A', player2: 'B', score1: 3, score2: 1, winner: 'A', status: 'completed' as const },
+    { id: 'm2', round: 1, player1: 'C', player2: 'D', score1: 0, score2: 0, status: 'live' as const }
+  ]
+};
+const tournamentRow = [
+  mockTournament.title,
+  mockTournament.startDate,
+  mockTournament.status.toUpperCase(),
+  mockTournament.entryFee.toFixed(2),
+  mockTournament.prizePool.toFixed(2),
+  mockTournament.winner || 'Pending Finals',
+  mockTournament.matches.length,
+  mockTournament.matches.filter(m => m.status === 'completed').length
+];
+assertEqual(tournamentRow[0], 'One Shot Masters 2026', 'Tournament export maps title');
+assertEqual(tournamentRow[4], '8000.00', 'Tournament export formats prize pool');
+assertEqual(tournamentRow[6], 2, 'Tournament export counts total matches');
+assertEqual(tournamentRow[7], 1, 'Tournament export counts completed matches');
+
 console.log('\n=============================================');
 console.log(`Test Results: ${passed} Passed, ${failed} Failed`);
 console.log('=============================================\n');

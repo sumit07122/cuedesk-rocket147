@@ -24,7 +24,8 @@ import {
   Image as ImageIcon,
   ChevronDown,
   ShieldAlert,
-  Sparkles
+  Sparkles,
+  Download
 } from 'lucide-react';
 import { 
   MenuItem, 
@@ -39,6 +40,7 @@ import {
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { formatCurrency } from '../../utils/formatters';
+import { exportInventoryToExcel } from '../../utils/excelExport';
 import { useAuth } from '../../context/AuthContext';
 
 interface FoodInventoryViewProps {
@@ -315,6 +317,15 @@ export const FoodInventoryView: React.FC<FoodInventoryViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="md"
+            leftIcon={<Download className="w-4 h-4 text-neutral-600" />}
+            onClick={() => exportInventoryToExcel(menuItems, config.clubName)}
+          >
+            Export Catalog
+          </Button>
+
           <Button
             variant="outline"
             size="md"

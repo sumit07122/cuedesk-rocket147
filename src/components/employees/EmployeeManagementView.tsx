@@ -14,7 +14,8 @@ import {
   Phone, 
   History,
   Edit,
-  Trash2
+  Trash2,
+  Download
 } from 'lucide-react';
 import { EmployeeUser, AttendanceRecord, UserRole } from '../../types';
 import { Card } from '../ui/Card';
@@ -22,6 +23,7 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
 import { useAuth } from '../../context/AuthContext';
+import { exportEmployeesToExcel, exportAttendanceToExcel } from '../../utils/excelExport';
 
 interface EmployeeManagementViewProps {
   employees: EmployeeUser[];
@@ -30,6 +32,7 @@ interface EmployeeManagementViewProps {
   onDeleteEmployee: (employeeId: string) => Promise<void>;
   onCheckIn: (employeeId: string, employeeName: string, role: UserRole, notes?: string) => Promise<void>;
   onCheckOut: (attendanceId: string) => Promise<void>;
+  clubName?: string;
 }
 
 export const EmployeeManagementView: React.FC<EmployeeManagementViewProps> = ({
@@ -39,6 +42,7 @@ export const EmployeeManagementView: React.FC<EmployeeManagementViewProps> = ({
   onDeleteEmployee,
   onCheckIn,
   onCheckOut,
+  clubName = 'One Shot Snooker Gaming Club',
 }) => {
   const { role: currentUserRole, user, createStaffInvitation } = useAuth();
   const [activeTab, setActiveTab] = useState<'employees' | 'attendance'>('employees');
@@ -161,14 +165,33 @@ export const EmployeeManagementView: React.FC<EmployeeManagementViewProps> = ({
             </button>
           </div>
 
-          {activeTab === 'employees' && (
+          {activeTab === 'employees' ? (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => exportEmployeesToExcel(employees, clubName)}
+                leftIcon={<Download className="w-4 h-4" />}
+                size="sm"
+              >
+                Export Roster
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleOpenAddModal}
+                leftIcon={<UserPlus className="w-4 h-4" />}
+                size="sm"
+              >
+                Add Staff Member
+              </Button>
+            </div>
+          ) : (
             <Button
-              variant="primary"
-              onClick={handleOpenAddModal}
-              leftIcon={<UserPlus className="w-4 h-4" />}
+              variant="outline"
+              onClick={() => exportAttendanceToExcel(attendance, clubName)}
+              leftIcon={<Download className="w-4 h-4" />}
               size="sm"
             >
-              Add Staff Member
+              Export Attendance
             </Button>
           )}
         </div>

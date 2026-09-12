@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Trophy, Plus, Users, Calendar, Award, Play, CheckCircle2, ChevronRight } from 'lucide-react';
+import { Trophy, Plus, Users, Calendar, Award, Play, CheckCircle2, ChevronRight, Download } from 'lucide-react';
 import { Tournament, TournamentMatch } from '../../types';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -7,6 +7,7 @@ import { Input } from '../ui/Input';
 import { Modal } from '../ui/Modal';
 import { Badge } from '../ui/Badge';
 import { formatCurrency } from '../../utils/formatters';
+import { exportTournamentsToExcel } from '../../utils/excelExport';
 
 interface TournamentViewProps {
   currencySymbol: string;
@@ -75,7 +76,16 @@ export const TournamentView: React.FC<TournamentViewProps> = ({ currencySymbol }
             <p className="text-sm text-neutral-400">Knockout tournament manager, live match scoring & prize pool tracking</p>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            className="border-neutral-700 text-neutral-300 hover:text-white hover:bg-neutral-800"
+            onClick={() => exportTournamentsToExcel(tournaments)}
+            leftIcon={<Download className="w-4 h-4 text-amber-400" />}
+            size="sm"
+          >
+            Export Tournament (.csv)
+          </Button>
           <div className="bg-neutral-800 px-4 py-2 rounded-xl border border-neutral-700 text-center">
             <span className="text-xs font-medium text-neutral-400 block">Total Prize Pool</span>
             <span className="text-xl font-bold text-emerald-400">{formatCurrency(activeTourney?.prizePool || 0, currencySymbol)}</span>

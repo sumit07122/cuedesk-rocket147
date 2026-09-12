@@ -649,6 +649,7 @@ function CueDeskApp() {
               <EmployeeManagementView
                 employees={employees}
                 attendance={attendance}
+                clubName={config.clubName}
                 onSaveEmployee={async (emp) => {
                   const id = await saveEmployee(emp);
                   addToast('success', 'Staff Member Saved', `${emp.name} account active.`);
