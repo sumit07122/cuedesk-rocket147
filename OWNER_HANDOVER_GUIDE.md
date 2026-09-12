@@ -23,7 +23,7 @@ CueDesk helps you manage:
 
 Open the CueDesk website on your counter computer, tablet, or phone (e.g. `http://localhost:3000` or your live club URL).
 
-Each staff member has a dedicated preloaded account with 1-tap quick login presets:
+Each staff member should sign in using their assigned account credentials:
 
 | Staff Role | Login Email ID | Default Password | Scope of Access |
 | :--- | :--- | :--- | :--- |
@@ -32,9 +32,7 @@ Each staff member has a dedicated preloaded account with 1-tap quick login prese
 | 💵 **Cashier / Desk** | `cashier@oneshotsnooker.com` | `cashier123` | Tables, Live Timers, Billing, Payments, Food Orders, Credit Ledger |
 | 👨‍🍳 **Kitchen Staff** | `kitchen@oneshotsnooker.com` | `kitchen123` | Kitchen Display Screen (KDS) order queue & preparation |
 
-> 💡 **1-Tap Quick Login**: On the sign-in screen, click any of the colored role buttons at the top to automatically fill the email and password instantly.
-
-### Important
+### Important Security Notice
 * Do not share the Owner account with other staff.
 * After the initial handover, change default passwords from **Club Settings ➔ Security**.
 
@@ -291,7 +289,48 @@ If moving to a new computer or recovering after hardware failure:
 
 ---
 
-# 14. ⚙️ Settings (13 Core Sections)
+# 14. ☁️ Connecting Client's Firebase Database Directly From the App
+
+**YES, you can connect your client's Firebase directly inside the app without touching code or running builds!**
+
+Follow this quick 3-minute handover workflow:
+
+### Step 1: Create Client's Firebase Project
+1. Go to [Firebase Console](https://console.firebase.google.com/) and click **Add Project** (e.g. `one-shot-snooker`).
+2. In the left menu, enable **Authentication** (go to Sign-in method ➔ Enable **Email/Password**).
+3. In the left menu, click **Firestore Database** ➔ **Create Database** (choose your closest region, e.g. `asia-south1 (Mumbai)`).
+4. Go to **Firestore Database ➔ Rules** tab, and paste the contents of `firestore.rules` from this repository (or click publish).
+
+### Step 2: Get Web Configuration
+1. In Firebase Console, click **Project Settings (⚙️ icon)** ➔ Scroll to **Your apps**.
+2. Click the **Web icon (`</>`)**, register app nickname (e.g. `One Shot Web`), and copy the config object:
+   ```javascript
+   const firebaseConfig = {
+     apiKey: "AIzaSy...",
+     authDomain: "one-shot-snooker.firebaseapp.com",
+     projectId: "one-shot-snooker",
+     storageBucket: "one-shot-snooker.firebasestorage.app",
+     messagingSenderId: "123456789...",
+     appId: "1:123456789:web:abcdef..."
+   };
+   ```
+
+### Step 3: Connect Inside CueDesk
+1. Open CueDesk on your browser.
+2. Sign in as Owner and open:
+   **Club Settings → Cloud Database Connection**
+3. Paste the config object directly into the **"Raw Config Snippet"** box (CueDesk automatically extracts your `projectId`, `apiKey`, and bucket details!).
+4. Click **"Test & Ping Database"** — verify the green success alert (`Firestore read responded in XXms`).
+5. Click **"Apply & Switch Database"** and confirm page reload.
+
+### Step 4: Seed Client's Default Club Data
+1. After the page reloads, return to **Club Settings → Cloud Database Connection**.
+2. Click **"Seed Initial Club Data to Database"**.
+3. CueDesk automatically writes the 8 gaming stations, menu items, business config, and default roles into your client's new Firestore database!
+
+---
+
+# 15. ⚙️ Settings (13 Core Sections)
 
 The Owner has full control over all 13 settings sections:
 
@@ -303,15 +342,15 @@ The Owner has full control over all 13 settings sections:
 6. **Customer CRM & Credit**: Set maximum credit limits (e.g. ₹2,000) and VIP discount percentages.
 7. **Reports & Exports**: Quick links for Excel data downloads.
 8. **Backup & Restore**: Download complete club JSON snapshots and restore data.
-9. **Notifications**: Configure audio alerts for cue boy assistance and checkout requests.
-10. **Security & Passwords**: Change staff passwords and enforce login policies.
-11. **System Health**: View live cloud connection state, latency (ms), and cache size.
-12. **About & License**: Software version, tenant ID, and developer support details.
+9. **Cloud Database Connection**: In-app live Firebase switch and data seeding.
+10. **Notifications**: Configure audio alerts for cue boy assistance and checkout requests.
+11. **Security & Passwords**: Change staff passwords and enforce login policies.
+12. **System Health**: View live cloud connection state, latency (ms), and cache size.
 13. **Danger Zone**: Full club wipe utility for fresh openings.
 
 ---
 
-# 15. 🩺 System Health & Live Diagnostics
+# 16. 🩺 System Health & Live Diagnostics
 
 The Owner can verify system status anytime from:
 
@@ -332,7 +371,7 @@ This tests 48 critical functions including table fee rounding, member VIP discou
 
 ---
 
-# 16. ⚠️ Full Club Reset (Danger Zone)
+# 17. ⚠️ Full Club Reset (Danger Zone)
 
 The **Full Club Reset** is a high-privilege administrative operation.
 
@@ -350,7 +389,7 @@ Use it only when you intentionally want to remove test sales data before your of
 
 ---
 
-# 17. 👥 Staff Roles & Permissions
+# 18. 👥 Staff Roles & Permissions
 
 ### 👑 Owner
 * Full unrestricted system control
@@ -379,7 +418,7 @@ Use it only when you intentionally want to remove test sales data before your of
 
 ---
 
-# 18. 🔒 Basic Security Rules
+# 19. 🔒 Basic Security Rules
 
 For smooth and safe club operations:
 
@@ -392,7 +431,7 @@ For smooth and safe club operations:
 
 ---
 
-# 19. 🆘 Troubleshooting & FAQs
+# 20. 🆘 Troubleshooting & FAQs
 
 ### What if the internet goes down?
 CueDesk is built with offline resilience. Running timers and active tables will continue operating locally on your computer. When internet connectivity returns, Firestore synchronizes automatically in the background.
@@ -407,7 +446,7 @@ Do not charge the customer twice. Open **Reports ➔ Session History** to inspec
 
 ---
 
-# 20. 📞 CueDesk Technical Support
+# 21. 📞 CueDesk Technical Support
 
 For assistance, custom rate structures, or feature requests, contact CueDesk technical support:
 

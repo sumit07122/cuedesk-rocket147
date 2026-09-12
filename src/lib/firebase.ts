@@ -15,7 +15,20 @@ export interface FirebaseAppConfig {
 }
 
 export const getActiveFirebaseConfig = (): { config: FirebaseAppConfig; source: 'env' | 'custom' | 'bundled'; isCustom: boolean } => {
-  // 1. Highest Priority: Vite / Vercel Environment Variables
+  // 1. In-App Custom / Client Database Override (configured directly from Club Settings -> Cloud Connection)
+  try {
+    const saved = localStorage.getItem('cuedesk_custom_firebase_config');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.projectId && parsed.apiKey) {
+        return { config: parsed, source: 'custom', isCustom: true };
+      }
+    }
+  } catch (e) {
+    console.warn('Error reading custom firebase config from localStorage:', e);
+  }
+
+  // 2. Vite / Vercel Environment Variables
   const envApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
   const envProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
 
@@ -33,19 +46,6 @@ export const getActiveFirebaseConfig = (): { config: FirebaseAppConfig; source: 
       source: 'env',
       isCustom: false
     };
-  }
-
-  // 2. Developer Override (stored locally via developer tools only)
-  try {
-    const saved = localStorage.getItem('cuedesk_custom_firebase_config');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed.projectId && parsed.apiKey) {
-        return { config: parsed, source: 'custom', isCustom: true };
-      }
-    }
-  } catch (e) {
-    console.warn('Error reading developer custom firebase config:', e);
   }
 
   // 3. Bundled Application Fallback
