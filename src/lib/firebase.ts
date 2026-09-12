@@ -14,7 +14,7 @@ export interface FirebaseAppConfig {
   measurementId?: string;
 }
 
-export const getActiveFirebaseConfig = (): { config: FirebaseAppConfig; source: 'env' | 'custom' | 'bundled' } => {
+export const getActiveFirebaseConfig = (): { config: FirebaseAppConfig; source: 'env' | 'custom' | 'bundled'; isCustom: boolean } => {
   // 1. Highest Priority: Vite / Vercel Environment Variables
   const envApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
   const envProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
@@ -30,7 +30,8 @@ export const getActiveFirebaseConfig = (): { config: FirebaseAppConfig; source: 
         messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
         firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || '(default)',
       },
-      source: 'env'
+      source: 'env',
+      isCustom: false
     };
   }
 
@@ -40,7 +41,7 @@ export const getActiveFirebaseConfig = (): { config: FirebaseAppConfig; source: 
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed.projectId && parsed.apiKey) {
-        return { config: parsed, source: 'custom' };
+        return { config: parsed, source: 'custom', isCustom: true };
       }
     }
   } catch (e) {
@@ -48,7 +49,7 @@ export const getActiveFirebaseConfig = (): { config: FirebaseAppConfig; source: 
   }
 
   // 3. Bundled Application Fallback
-  return { config: bundledFirebaseConfig as FirebaseAppConfig, source: 'bundled' };
+  return { config: bundledFirebaseConfig as FirebaseAppConfig, source: 'bundled', isCustom: false };
 };
 
 export const saveCustomFirebaseConfig = (config: FirebaseAppConfig) => {

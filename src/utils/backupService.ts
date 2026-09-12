@@ -101,14 +101,17 @@ export async function exportClubBackup(clubId: string): Promise<ClubBackupSnapsh
   }
 }
 
-export function downloadBackupFile(snapshot: ClubBackupSnapshot): void {
+export function downloadBackupFile(snapshot: ClubBackupSnapshot, customPrefix?: string): void {
   const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
     JSON.stringify(snapshot, null, 2)
   )}`;
   const downloadAnchor = document.createElement('a');
   const dateStr = new Date().toISOString().split('T')[0];
+  const safePrefix = customPrefix 
+    ? customPrefix.toLowerCase().replace(/[^a-z0-9_-]/g, '_') 
+    : snapshot.clubId;
   downloadAnchor.setAttribute('href', jsonString);
-  downloadAnchor.setAttribute('download', `cuedesk_backup_${snapshot.clubId}_${dateStr}.json`);
+  downloadAnchor.setAttribute('download', `cuedesk_backup_${safePrefix}_${dateStr}.json`);
   document.body.appendChild(downloadAnchor);
   downloadAnchor.click();
   downloadAnchor.remove();

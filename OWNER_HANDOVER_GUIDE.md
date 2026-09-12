@@ -93,3 +93,14 @@ To clear all test sales data or perform a fresh wipe before official club openin
    RESET ONESHOT
    ```
 4. Click **Permanently Delete Data**.
+
+---
+
+## 🩺 System Health Diagnostics & Verification
+
+1. **In-App Health Tab**: Open **Club Settings ➔ System Health & Diagnostics** to view live Firestore latency (in ms), offline storage cache, cloud connection state, and active browser memory.
+2. **Automated Logic Self-Test**: Run the built-in diagnostic test suite anytime from terminal:
+   ```bash
+   npm test
+   ```
+   This verifies table billing rounding, member discounts, credit risk calculations, and export formatting.
