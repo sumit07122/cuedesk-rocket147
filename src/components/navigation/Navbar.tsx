@@ -52,6 +52,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   const { isInstallable, isInstalled, isIOS, promptInstall } = usePWAInstall();
   const [showPwaModal, setShowPwaModal] = useState(false);
   const [timeString, setTimeString] = useState('');
+  const [networkStatus, setNetworkStatus] = useState<'online' | 'syncing' | 'offline'>(
+    typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'online'
+  );
 
   useEffect(() => {
     const update = () => {
@@ -59,7 +62,21 @@ export const Navbar: React.FC<NavbarProps> = ({
     };
     update();
     const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
+
+    const handleOnline = () => {
+      setNetworkStatus('syncing');
+      setTimeout(() => setNetworkStatus('online'), 1500);
+    };
+    const handleOffline = () => setNetworkStatus('offline');
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   const currentInfo = pageTitles[activePage] || pageTitles.dashboard;
@@ -97,10 +114,33 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* RIGHT: Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
 
-          {/* Review Mode Badge */}
-          <div className="hidden sm:flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-2.5 py-1.5 rounded-xl text-[11px] font-bold">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Review Mode</span>
+          {/* Tri-State Cloud Connection Indicator */}
+          <div
+            title={
+              networkStatus === 'online'
+                ? 'Cloud Firestore Connected (Realtime Multi-Device Sync Active)'
+                : networkStatus === 'syncing'
+                ? 'Syncing offline changes with Cloud Firestore...'
+                : 'Offline Mode: Transactions saved to local cache until connection restores'
+            }
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-colors ${
+              networkStatus === 'online'
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                : networkStatus === 'syncing'
+                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                : 'bg-rose-50 text-rose-800 border-rose-200'
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                networkStatus === 'online'
+                  ? 'bg-emerald-500 animate-pulse'
+                  : networkStatus === 'syncing'
+                  ? 'bg-amber-500 animate-pulse'
+                  : 'bg-rose-500'
+              }`}
+            />
+            <span className="font-mono uppercase">{networkStatus}</span>
           </div>
 
           {/* Live Clock — hidden on small mobile */}

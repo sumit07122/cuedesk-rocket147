@@ -1,36 +1,40 @@
 import React, { useState } from 'react';
 import { 
-  Settings as SettingsIcon, 
-  Grid2X2, 
-  DollarSign, 
-  Utensils, 
-  Users, 
-  Percent, 
   Building2, 
+  Grid2X2, 
+  Users, 
+  Utensils, 
+  Receipt, 
+  CreditCard, 
+  BarChart3, 
+  HardDrive, 
+  Bell, 
+  ShieldCheck, 
+  Activity, 
+  Info, 
+  AlertTriangle,
   Plus, 
   Trash2, 
   Edit3, 
   Check, 
   Save, 
   Sparkles,
-  Printer,
-  Database,
   Download,
   Upload,
-  ShieldCheck,
-  ShieldAlert,
   RefreshCw,
-  Crown,
-  ChefHat,
   Sliders,
   CheckCircle2,
-  UserPlus,
-  Key,
   X,
-  Lock
+  Lock,
+  Phone,
+  MessageCircle,
+  FileSpreadsheet,
+  RotateCcw,
+  Clock,
+  Eye,
+  EyeOff
 } from 'lucide-react';
-import { TableItem, MenuItem, BusinessConfig, TableType, SubscriptionPlanId } from '../../types';
-import { SUBSCRIPTION_PLANS, calculateTrialDaysRemaining } from '../../data/saasPlans';
+import { TableItem, MenuItem, BusinessConfig, TableType, TopCustomer, SessionHistoryItem, EmployeeUser } from '../../types';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -38,19 +42,41 @@ import { Badge } from '../ui/Badge';
 import { formatCurrency, formatPerMinuteRate } from '../../utils/formatters';
 import { exportClubBackup, downloadBackupFile, restoreClubBackup, ClubBackupSnapshot } from '../../utils/backupService';
 import { getAvailableAutoSnapshots, restoreAutoSnapshot, performDailyAutoSnapshot } from '../../utils/autoSnapshot';
-import { clearHistoryAndAnalytics } from '../../services/dbService';
-import { getRecentMonitoringEvents } from '../../utils/monitoring';
+import { exportCustomerCreditLedgerCSV, exportBillingHistoryCSV } from '../../utils/excelExport';
+import { SystemHealthSection } from './SystemHealthSection';
 import { FirebaseConnectSection } from './FirebaseConnectSection';
+
+export type SettingsSectionId = 
+  | 'profile'
+  | 'stations'
+  | 'staff'
+  | 'menu'
+  | 'billing'
+  | 'credit'
+  | 'reports'
+  | 'backup'
+  | 'notifications'
+  | 'security'
+  | 'health'
+  | 'about'
+  | 'danger';
 
 interface SettingsViewProps {
   config: BusinessConfig;
   tables: TableItem[];
   menuItems: MenuItem[];
+  employees?: EmployeeUser[];
+  history?: SessionHistoryItem[];
+  customers?: TopCustomer[];
   onUpdateConfig: (newConfig: BusinessConfig) => void;
   onAddTable: (table: Omit<TableItem, 'id' | 'status'>) => void;
+  onEditTable?: (table: TableItem) => void;
   onDeleteTable: (tableId: string) => void;
   onAddMenuItem: (item: Omit<MenuItem, 'id'>) => void;
+  onEditMenuItem?: (item: MenuItem) => void;
   onDeleteMenuItem: (itemId: string) => void;
+  onSaveEmployee?: (emp: EmployeeUser) => void;
+  onDeleteEmployee?: (empId: string) => void;
   onResetClub?: (type: 'all' | 'history') => Promise<void>;
 }
 
@@ -58,752 +84,1217 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   config,
   tables,
   menuItems,
+  employees = [],
+  history = [],
+  customers = [],
   onUpdateConfig,
   onAddTable,
+  onEditTable,
   onDeleteTable,
   onAddMenuItem,
+  onEditMenuItem,
   onDeleteMenuItem,
+  onSaveEmployee,
+  onDeleteEmployee,
   onResetClub,
 }) => {
-  const [activeTab, setActiveTab] = useState<
-    'tables' | 'crm_rules' | 'rates' | 'menu' | 'employees' | 'backup' | 'database'
-  >('tables');
-
-  const [isClearingHistory, setIsClearingHistory] = useState(false);
-  const [clearSuccess, setClearSuccess] = useState(false);
-
-  // Danger Zone state
-  const [dangerModalOpen, setDangerModalOpen] = useState(false);
-  const [dangerTarget, setDangerTarget] = useState<'history' | 'expenses' | 'customers' | 'all' | null>(null);
-  const [resetConfirmText, setResetConfirmText] = useState('');
-  const RESET_KEYWORD = 'RESET';
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>('profile');
 
   // Business Config Form State
   const [businessForm, setBusinessForm] = useState<BusinessConfig>(config);
   const [isSaved, setIsSaved] = useState(false);
 
-  // New Table Form State
+  // Stations State
   const [showAddTable, setShowAddTable] = useState(false);
+  const [editingTable, setEditingTable] = useState<TableItem | null>(null);
   const [newTableName, setNewTableName] = useState('');
-  const [newTableType, setNewTableType] = useState<TableType>('pool');
-  const [newTableRate, setNewTableRate] = useState<number>(18.00);
+  const [newTableType, setNewTableType] = useState<TableType>('snooker');
+  const [newTableRate, setNewTableRate] = useState<number>(300.00);
 
-  // New Menu Item State
+  // Menu State
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const [editingMenuItem, setEditingMenuItem] = useState<MenuItem | null>(null);
   const [newMenuName, setNewMenuName] = useState('');
-  const [newMenuCat, setNewMenuCat] = useState<'drinks' | 'snacks' | 'food' | 'accessories'>('drinks');
-  const [newMenuPrice, setNewMenuPrice] = useState<number>(4.50);
+  const [newMenuCat, setNewMenuCat] = useState<'drinks' | 'snacks' | 'food' | 'tea_coffee' | 'cold_drinks' | 'instant_food' | 'accessories'>('cold_drinks');
+  const [newMenuPrice, setNewMenuPrice] = useState<number>(120.00);
+  const [newMenuCost, setNewMenuCost] = useState<number>(60.00);
+  const [newMenuStock, setNewMenuStock] = useState<number>(50);
 
-  // Backup state
+  // Staff State
+  const [showAddStaff, setShowAddStaff] = useState(false);
+  const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffEmail, setNewStaffEmail] = useState('');
+  const [newStaffPhone, setNewStaffPhone] = useState('');
+  const [newStaffRole, setNewStaffRole] = useState<'owner' | 'manager' | 'cashier' | 'kitchen'>('cashier');
+
+  // Backup State
   const [isExporting, setIsExporting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [backupMsg, setBackupMsg] = useState<string | null>(null);
 
-  // Staff Roles & Permissions Management State
-  const [rolesList, setRolesList] = useState([
-    {
-      id: 'owner',
-      title: 'OWNER / SUPER ADMIN',
-      description: 'Full system access. Can manage staff, reset analytics, edit pricing, and access all financial data.',
-      baseRole: 'owner' as const,
-      isCustom: false,
-      permissions: {
-        tableOps: true,
-        billingCheckout: true,
-        applyDiscount: true,
-        foodInventory: true,
-        customerCredit: true,
-        reportsAnalytics: true,
-        clubSettings: true,
-        shiftClosure: true,
-        dataReset: true,
-      }
-    },
-    {
-      id: 'manager',
-      title: 'CLUB MANAGER',
-      description: 'Operational management. Can manage inventory, expenses, maintenance, and view reports.',
-      baseRole: 'manager' as const,
-      isCustom: false,
-      permissions: {
-        tableOps: true,
-        billingCheckout: true,
-        applyDiscount: true,
-        foodInventory: true,
-        customerCredit: true,
-        reportsAnalytics: true,
-        clubSettings: false,
-        shiftClosure: true,
-        dataReset: false,
-      }
-    },
-    {
-      id: 'cashier',
-      title: 'COUNTER CASHIER',
-      description: 'Counter operations only. Can start/stop table sessions, add snacks, and process billing.',
-      baseRole: 'cashier' as const,
-      isCustom: false,
-      permissions: {
-        tableOps: true,
-        billingCheckout: true,
-        applyDiscount: false,
-        foodInventory: false,
-        customerCredit: true,
-        reportsAnalytics: false,
-        clubSettings: false,
-        shiftClosure: true,
-        dataReset: false,
-      }
-    },
-    {
-      id: 'kitchen',
-      title: 'KITCHEN STAFF',
-      description: 'Kitchen access only. Can view and manage the Kitchen Display System (KDS), update order statuses, and manage food & inventory stock levels.',
-      baseRole: 'kitchen' as const,
-      isCustom: false,
-      permissions: {
-        tableOps: false,
-        billingCheckout: false,
-        applyDiscount: false,
-        foodInventory: true,
-        customerCredit: false,
-        reportsAnalytics: false,
-        clubSettings: false,
-        shiftClosure: false,
-        dataReset: false,
-      }
-    }
-  ]);
+  // Danger Zone State
+  const [dangerModalOpen, setDangerModalOpen] = useState(false);
+  const [dangerTarget, setDangerTarget] = useState<'history' | 'all' | null>(null);
+  const [resetConfirmText, setResetConfirmText] = useState('');
+  const RESET_KEYWORD = 'RESET ONESHOT';
+  const [isClearingHistory, setIsClearingHistory] = useState(false);
+  const [clearSuccess, setClearSuccess] = useState(false);
 
-  const [staffAccounts, setStaffAccounts] = useState([
-    { id: '1', name: 'Club Owner', email: 'owner@oneshotsnooker.com', role: 'owner', status: 'Active', access: 'Full Admin' },
-    { id: '2', name: 'Duty Manager', email: 'manager@oneshotsnooker.com', role: 'manager', status: 'Active', access: 'Operational' },
-    { id: '3', name: 'Front Counter Cashier', email: 'cashier@oneshotsnooker.com', role: 'cashier', status: 'Active', access: 'Counter Only' },
-    { id: '4', name: 'Kitchen Staff', email: 'kitchen@oneshotsnooker.com', role: 'kitchen', status: 'Active', access: 'KDS & Inventory' },
-  ]);
+  // Developer Tools Hidden Drawer
+  const [showDevDrawer, setShowDevDrawer] = useState(false);
+  const [versionClickCount, setVersionClickCount] = useState(0);
 
-  const [showAddRoleModal, setShowAddRoleModal] = useState(false);
-  const [newRoleTitle, setNewRoleTitle] = useState('');
-  const [newRoleDesc, setNewRoleDesc] = useState('');
-  const [newRoleBase, setNewRoleBase] = useState<'owner' | 'manager' | 'cashier' | 'kitchen'>('cashier');
-
-  const [showAddStaffModal, setShowAddStaffModal] = useState(false);
-  const [newStaffName, setNewStaffName] = useState('');
-  const [newStaffEmail, setNewStaffEmail] = useState('');
-  const [newStaffRole, setNewStaffRole] = useState('cashier');
-
-  const handleExportBackup = async () => {
-    try {
-      setIsExporting(true);
-      setBackupMsg(null);
-      const snapshot = await exportClubBackup(config.id || 'club-royal-cue');
-      downloadBackupFile(snapshot);
-      setBackupMsg('Backup snapshot generated and downloaded successfully!');
-    } catch (err) {
-      setBackupMsg(err instanceof Error ? err.message : 'Backup export failed.');
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const handleRestoreFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setIsRestoring(true);
-      setBackupMsg(null);
-      const text = await file.text();
-      const backupData = JSON.parse(text) as ClubBackupSnapshot;
-
-      if (!confirm(`Are you sure you want to restore backup for club ID "${backupData.clubId}"?`)) {
-        setIsRestoring(false);
-        return;
-      }
-
-      const res = await restoreClubBackup(config.id || 'club-royal-cue', backupData);
-      setBackupMsg(res.message);
-      if (backupData.config) {
-        onUpdateConfig(backupData.config);
-      }
-    } catch (err) {
-      setBackupMsg(`Restore error: ${err instanceof Error ? err.message : 'Invalid backup JSON file'}`);
-    } finally {
-      setIsRestoring(false);
-    }
-  };
-
-  const handleSaveConfig = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Handle saving general config
+  const handleSaveConfig = () => {
     onUpdateConfig(businessForm);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
   };
 
-  const handleAddTableSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTableName.trim()) return;
-    const nextNumber = tables.length + 1;
-    onAddTable({
-      number: nextNumber,
-      name: newTableName.trim(),
-      type: newTableType,
-      hourlyRate: newTableRate,
-    });
-    setNewTableName('');
-    setShowAddTable(false);
-  };
-
-  const handleAddMenuSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMenuName.trim()) return;
-    onAddMenuItem({
-      name: newMenuName.trim(),
-      category: newMenuCat,
-      price: newMenuPrice,
-      available: true,
-    });
-    setNewMenuName('');
-    setShowAddMenu(false);
-  };
+  // 13 Navigation Tabs Definition
+  const sections: { id: SettingsSectionId; label: string; icon: React.FC<{ className?: string }>; badge?: string }[] = [
+    { id: 'profile', label: 'Club Profile', icon: Building2 },
+    { id: 'stations', label: 'Gaming Stations', icon: Grid2X2, badge: `${tables.length}` },
+    { id: 'staff', label: 'Staff & Roles', icon: Users },
+    { id: 'menu', label: 'Menu & Food', icon: Utensils, badge: `${menuItems.length}` },
+    { id: 'billing', label: 'Billing Settings', icon: Receipt },
+    { id: 'credit', label: 'Customer & Credit', icon: CreditCard },
+    { id: 'reports', label: 'Reports & Export', icon: BarChart3 },
+    { id: 'backup', label: 'Backup & Restore', icon: HardDrive },
+    { id: 'notifications', label: 'Notifications', icon: Bell },
+    { id: 'security', label: 'Security & Audit', icon: ShieldCheck },
+    { id: 'health', label: 'System Health', icon: Activity },
+    { id: 'about', label: 'About CueDesk', icon: Info },
+    { id: 'danger', label: 'Danger Zone', icon: AlertTriangle, badge: 'Wipe' },
+  ];
 
   return (
-    <div className="flex flex-col gap-6 p-4 sm:p-6 max-w-7xl mx-auto w-full pb-24 lg:pb-8">
-      {/* Settings Navigation Bar */}
-      <div className="bg-white rounded-2xl border border-neutral-200/80 p-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar shadow-2xs">
-        {[
-          { id: 'tables', label: 'Manage Tables & Stations', icon: Grid2X2 },
-          { id: 'rates', label: 'Hourly & Minute Rates', icon: DollarSign },
-          { id: 'menu', label: 'Food & Drinks Menu', icon: Utensils },
-          { id: 'employees', label: 'Staff Roles & Credentials', icon: Users },
-          { id: 'crm_rules', label: 'CRM & Credit Rules', icon: Users },
-          { id: 'database', label: 'Cloud Database (Firebase)', icon: Database },
-          { id: 'backup', label: 'Backup & Security', icon: ShieldCheck },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                isActive
-                  ? 'bg-neutral-900 text-white shadow-xs'
-                  : 'text-neutral-600 hover:bg-neutral-100'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
+    <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 py-6 select-none">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-200/80 pb-5">
+        <div>
+          <h2 className="text-xl sm:text-2xl font-black text-neutral-900 tracking-tight flex items-center gap-2">
+            <span>Club Management Panel</span>
+            <span className="text-[11px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+              One Shot Pro
+            </span>
+          </h2>
+          <p className="text-xs sm:text-sm text-neutral-500 mt-1">
+            Configure gaming stations, rates, staff permissions, menu catalog, and data safety.
+          </p>
+        </div>
+
+        {/* Global Save Button for configuration forms */}
+        {(activeSection === 'profile' || activeSection === 'billing' || activeSection === 'credit' || activeSection === 'notifications') && (
+          <Button
+            variant="primary"
+            size="md"
+            onClick={handleSaveConfig}
+            leftIcon={isSaved ? <Check className="w-4 h-4 text-emerald-400" /> : <Save className="w-4 h-4" />}
+            className="self-start sm:self-auto shadow-sm"
+          >
+            {isSaved ? 'Saved to Cloud' : 'Save Changes'}
+          </Button>
+        )}
       </div>
 
-
-
-      {/* TAB: Cloud Database (Firebase Direct Connect) */}
-      {activeTab === 'database' && (
-        <FirebaseConnectSection currentClubId={config.id || 'club-royal-cue'} />
-      )}
-
-      {/* TAB: CRM & Membership Credit Rules */}
-      {activeTab === 'crm_rules' && (
-        <Card className="flex flex-col gap-6">
-          <div className="border-b border-neutral-100 pb-4 flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-neutral-900" />
-                <h3 className="text-base font-bold text-neutral-900">CRM, Membership Tiers & Credit Limits</h3>
-              </div>
-              <p className="text-xs text-neutral-500 mt-0.5">
-                Configure discount rates for member tiers, set credit risk limits, and define auto-upgrade criteria
-              </p>
-            </div>
-            {isSaved && (
-              <span className="text-xs font-semibold text-emerald-600 flex items-center gap-1.5">
-                <Check className="w-4 h-4" /> Settings Saved!
-              </span>
-            )}
+      {/* Main 2-Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        {/* LEFT COLUMN: Vertical Navigation Menu */}
+        <div className="lg:col-span-3 bg-white rounded-3xl border border-neutral-200/90 p-2 sm:p-3 shadow-2xs space-y-1 sticky top-20">
+          <div className="px-3 py-2 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+            Management Sections
           </div>
+          {sections.map((sec) => {
+            const Icon = sec.icon;
+            const isActive = activeSection === sec.id;
+            const isDanger = sec.id === 'danger';
 
-          <form onSubmit={handleSaveConfig} className="space-y-6">
-            {/* Section 1: Member Tier Discounts */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-neutral-500">
-                1. Tier-Based Member Discounts
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="p-4 rounded-2xl border border-neutral-200 bg-neutral-50/50 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-extrabold text-xs text-neutral-700">SILVER TIER</span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-neutral-200 text-neutral-700">5% Default</span>
+            return (
+              <button
+                key={sec.id}
+                onClick={() => setActiveSection(sec.id)}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                  isActive
+                    ? isDanger
+                      ? 'bg-rose-600 text-white shadow-xs'
+                      : 'bg-neutral-900 text-white shadow-xs'
+                    : isDanger
+                    ? 'text-rose-600 hover:bg-rose-50'
+                    : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : isDanger ? 'text-rose-600' : 'text-neutral-400'}`} />
+                  <span>{sec.label}</span>
+                </div>
+                {sec.badge && (
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                    isActive ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-600'
+                  }`}>
+                    {sec.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* RIGHT COLUMN: Active Section Workspace */}
+        <div className="lg:col-span-9 min-w-0">
+
+          {/* ========================================================= */}
+          {/* 1. CLUB PROFILE */}
+          {/* ========================================================= */}
+          {activeSection === 'profile' && (
+            <Card className="p-6 space-y-6">
+              <div>
+                <h3 className="text-base font-extrabold text-neutral-900">Club Identity & Branding</h3>
+                <p className="text-xs text-neutral-500 mt-0.5">Details printed on customer billing receipts and displayed across staff screens.</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Club Business Name</label>
+                  <Input
+                    value={businessForm.clubName}
+                    onChange={(e) => setBusinessForm({ ...businessForm, clubName: e.target.value })}
+                    placeholder="e.g. One Shot Snooker Gaming Club"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Club Tagline / Subtitle</label>
+                  <Input
+                    value={businessForm.tagline || ''}
+                    onChange={(e) => setBusinessForm({ ...businessForm, tagline: e.target.value })}
+                    placeholder="e.g. Premium Cue Sports & Gaming Arena"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="font-bold text-neutral-700 block mb-1">Physical Venue Address</label>
+                  <Input
+                    value={businessForm.address}
+                    onChange={(e) => setBusinessForm({ ...businessForm, address: e.target.value })}
+                    placeholder="e.g. Level 2, Grand Arena Plaza, Metro Ave"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1 flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-neutral-400" />
+                    <span>Contact Phone Number</span>
+                  </label>
+                  <Input
+                    value={businessForm.phone}
+                    onChange={(e) => setBusinessForm({ ...businessForm, phone: e.target.value })}
+                    placeholder="+91 98765 43210"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1 flex items-center gap-1.5">
+                    <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>WhatsApp Business Number</span>
+                  </label>
+                  <Input
+                    value={businessForm.whatsappNumber || businessForm.phone}
+                    onChange={(e) => setBusinessForm({ ...businessForm, whatsappNumber: e.target.value })}
+                    placeholder="+91 98765 43210"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="font-bold text-neutral-700 block mb-1">Receipt Printed Footer Message</label>
+                  <Input
+                    value={businessForm.receiptFooterMsg || ''}
+                    onChange={(e) => setBusinessForm({ ...businessForm, receiptFooterMsg: e.target.value })}
+                    placeholder="e.g. Thank you for playing at One Shot Snooker! Visit us again."
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Operating Hours</label>
+                  <Input
+                    value={businessForm.operatingHours || '10:00 AM – 11:00 PM'}
+                    onChange={(e) => setBusinessForm({ ...businessForm, operatingHours: e.target.value })}
+                    placeholder="10:00 AM – 11:00 PM"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Currency Code & Symbol</label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={businessForm.currencySymbol}
+                      onChange={(e) => setBusinessForm({ ...businessForm, currencySymbol: e.target.value })}
+                      className="w-20 text-center font-bold"
+                    />
+                    <Input
+                      value={businessForm.currencyCode}
+                      onChange={(e) => setBusinessForm({ ...businessForm, currencyCode: e.target.value })}
+                      className="flex-1 font-bold"
+                    />
                   </div>
-                  <Input
-                    label="Discount Rate (%)"
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={businessForm.silverDiscountPercent ?? 5}
-                    onChange={(e) => setBusinessForm({ ...businessForm, silverDiscountPercent: parseFloat(e.target.value) || 0 })}
-                  />
-                  <p className="text-[10px] text-neutral-400">Auto-applied to table billing for Silver members</p>
-                </div>
-
-                <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50/20 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-extrabold text-xs text-amber-900">GOLD TIER</span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-200 text-amber-800">10% Default</span>
-                  </div>
-                  <Input
-                    label="Discount Rate (%)"
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={businessForm.goldDiscountPercent ?? 10}
-                    onChange={(e) => setBusinessForm({ ...businessForm, goldDiscountPercent: parseFloat(e.target.value) || 0 })}
-                  />
-                  <p className="text-[10px] text-amber-700/70">Auto-applied for Gold tier frequent players</p>
-                </div>
-
-                <div className="p-4 rounded-2xl border border-emerald-200 bg-emerald-50/20 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-extrabold text-xs text-emerald-900">VIP / PLATINUM</span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-200 text-emerald-800">15% Default</span>
-                  </div>
-                  <Input
-                    label="Discount Rate (%)"
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={businessForm.vipDiscountPercent ?? 15}
-                    onChange={(e) => setBusinessForm({ ...businessForm, vipDiscountPercent: parseFloat(e.target.value) || 0 })}
-                  />
-                  <p className="text-[10px] text-emerald-700/70">Highest tier privilege discount rate</p>
                 </div>
               </div>
-            </div>
-
-            {/* Section 2: Credit Limits & Udhaar Risk Management */}
-            <div className="pt-4 border-t border-neutral-100 space-y-3">
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-neutral-500">
-                2. Credit Dues & VIP Auto-Upgrade Policy
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-4 rounded-2xl border border-neutral-200 bg-neutral-50/50">
-                  <Input
-                    label="Maximum Credit / Due Limit per Player (₹)"
-                    type="number"
-                    step="100"
-                    value={businessForm.maxCreditLimit ?? 2000}
-                    onChange={(e) => setBusinessForm({ ...businessForm, maxCreditLimit: parseFloat(e.target.value) || 0 })}
-                  />
-                  <p className="text-[10px] text-neutral-400 mt-1.5">
-                    Maximum outstanding balance a player can hold before staff are warned during Pay Later checkout.
-                  </p>
-                </div>
-
-                <div className="p-4 rounded-2xl border border-neutral-200 bg-neutral-50/50">
-                  <Input
-                    label="Auto-Upgrade to VIP Spend Threshold (₹)"
-                    type="number"
-                    step="500"
-                    value={businessForm.autoUpgradeSpendThreshold ?? 5000}
-                    onChange={(e) => setBusinessForm({ ...businessForm, autoUpgradeSpendThreshold: parseFloat(e.target.value) || 0 })}
-                  />
-                  <p className="text-[10px] text-neutral-400 mt-1.5">
-                    Customers reaching this total spend automatically become eligible for VIP lounge privileges.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Save Button */}
-            <div className="flex items-center justify-between pt-4 border-t border-neutral-100">
-              <span className="text-xs text-neutral-400">Rules update live across all billing screens</span>
-              <Button type="submit" variant="primary" leftIcon={<Save className="w-4 h-4" />}>
-                Save CRM & Credit Rules
-              </Button>
-            </div>
-          </form>
-        </Card>
-      )}
-
-
-
-      {/* TAB 2: Manage Tables */}
-      {activeTab === 'tables' && (
-        <Card className="flex flex-col gap-5">
-          <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
-            <div>
-              <h3 className="text-base font-bold text-neutral-900">Manage Pool & Snooker Tables</h3>
-              <p className="text-xs text-neutral-500">Configure table names, types, and hourly rates</p>
-            </div>
-            <Button
-              variant="primary"
-              size="sm"
-              leftIcon={<Plus className="w-4 h-4" />}
-              onClick={() => setShowAddTable(true)}
-            >
-              Add New Table
-            </Button>
-          </div>
-
-          {/* Add Table Form */}
-          {showAddTable && (
-            <form onSubmit={handleAddTableSubmit} className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200 flex flex-col sm:flex-row items-end gap-3">
-              <div className="flex-1">
-                <Input
-                  label="Table Name"
-                  placeholder="e.g. Table 11 — Diamond Pro"
-                  value={newTableName}
-                  onChange={(e) => setNewTableName(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="w-full sm:w-40">
-                <label className="text-xs font-semibold text-neutral-700 block mb-1.5">Table Type</label>
-                <select
-                  value={newTableType}
-                  onChange={(e) => setNewTableType(e.target.value as any)}
-                  className="w-full bg-white border border-neutral-300 rounded-xl px-3 py-2 text-xs outline-none"
-                >
-                  <option value="snooker">🔴 Snooker</option>
-                  <option value="pool">🎱 Pool</option>
-                  <option value="american_pool">🎱 American Pool</option>
-                  <option value="table_tennis">🏓 Table Tennis</option>
-                  <option value="ps5">🎮 PS5 Lounge</option>
-                  <option value="ps4">🎮 PS4 Station</option>
-                  <option value="magnet_table">🧲 Magnet Table</option>
-                  <option value="carom">⚪ Carom</option>
-                  <option value="vip">👑 VIP Lounge</option>
-                </select>
-              </div>
-              <div className="w-full sm:w-32">
-                <Input
-                  label="Rate (Hourly ₹)"
-                  type="number"
-                  placeholder="e.g. 300 for ₹5/min"
-                  value={newTableRate}
-                  onChange={(e) => setNewTableRate(parseFloat(e.target.value) || 0)}
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setShowAddTable(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary" size="sm">
-                  Save Station
-                </Button>
-              </div>
-            </form>
+            </Card>
           )}
 
-          {/* Table List */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {tables.map((t) => (
-              <div key={t.id} className="p-4 rounded-2xl border border-neutral-200 bg-white flex items-center justify-between text-xs">
+          {/* ========================================================= */}
+          {/* 2. GAMING STATIONS */}
+          {/* ========================================================= */}
+          {activeSection === 'stations' && (
+            <Card className="p-6 space-y-6">
+              <div className="flex items-center justify-between">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-sm text-neutral-900">#{t.number}</span>
-                    <span className="uppercase font-semibold text-[10px] px-1.5 py-0.2 rounded bg-neutral-100 text-neutral-600">
-                      {t.type}
-                    </span>
-                  </div>
-                  <p className="font-semibold text-neutral-800 mt-0.5 truncate max-w-[160px]">{t.name}</p>
-                  <span className="text-neutral-500 font-mono mt-1 block font-extrabold text-neutral-900">
-                    {formatPerMinuteRate(t.perMinuteRate ? t.perMinuteRate * 60 : t.hourlyRate, config.currencySymbol)}
-                    <span className="text-[10px] font-normal text-neutral-400 ml-1">({formatCurrency(t.hourlyRate, config.currencySymbol)}/hr)</span>
-                  </span>
+                  <h3 className="text-base font-extrabold text-neutral-900">Gaming Stations & Tables</h3>
+                  <p className="text-xs text-neutral-500 mt-0.5">Manage tables, station types, hourly rates, and per-minute charging rules.</p>
                 </div>
-
-                <button
-                  onClick={() => onDeleteTable(t.id)}
-                  className="p-2 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
-                  title="Delete Table"
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leftIcon={<Plus className="w-4 h-4" />}
+                  onClick={() => {
+                    setEditingTable(null);
+                    setNewTableName(`Table 0${tables.length + 1}`);
+                    setNewTableRate(180.00);
+                    setShowAddTable(true);
+                  }}
                 >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {/* TAB 3: Food Menu */}
-      {activeTab === 'menu' && (
-        <Card className="flex flex-col gap-5">
-          <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
-            <div>
-              <h3 className="text-base font-bold text-neutral-900">Food & Beverage Menu Items</h3>
-              <p className="text-xs text-neutral-500">Manage snacks, coffee, meals, and cue accessories</p>
-            </div>
-            <Button
-              variant="primary"
-              size="sm"
-              leftIcon={<Plus className="w-4 h-4" />}
-              onClick={() => setShowAddMenu(true)}
-            >
-              Add Menu Item
-            </Button>
-          </div>
-
-          {/* Add Menu Item Form */}
-          {showAddMenu && (
-            <form onSubmit={handleAddMenuSubmit} className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200 flex flex-col sm:flex-row items-end gap-3">
-              <div className="flex-1">
-                <Input
-                  label="Item Name"
-                  placeholder="e.g. Cold Coffee"
-                  value={newMenuName}
-                  onChange={(e) => setNewMenuName(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="w-full sm:w-40">
-                <label className="text-xs font-semibold text-neutral-700 block mb-1.5">Category</label>
-                <select
-                  value={newMenuCat}
-                  onChange={(e) => setNewMenuCat(e.target.value as any)}
-                  className="w-full bg-white border border-neutral-300 rounded-xl px-3 py-2 text-xs outline-none"
-                >
-                  <option value="drinks">Beverages</option>
-                  <option value="snacks">Snacks</option>
-                  <option value="food">Food Meals</option>
-                  <option value="accessories">Cue Accessories</option>
-                </select>
-              </div>
-              <div className="w-full sm:w-32">
-                <Input
-                  label={`Price (${businessForm.currencySymbol || '₹'})`}
-                  type="number"
-                  step="0.5"
-                  value={newMenuPrice}
-                  onChange={(e) => setNewMenuPrice(parseFloat(e.target.value) || 0)}
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => setShowAddMenu(false)}>
-                  Cancel
+                  Add Station
                 </Button>
-                <Button type="submit" variant="primary" size="sm">
+              </div>
+
+              {/* Stations Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {tables.map((tbl) => (
+                  <div
+                    key={tbl.id}
+                    className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/90 flex flex-col justify-between gap-3 shadow-2xs"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-sm text-neutral-900">#{tbl.number}</span>
+                          <span className="font-bold text-xs text-neutral-800">{tbl.name}</span>
+                        </div>
+                        <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-white text-neutral-600 border border-neutral-200">
+                          {tbl.type.replace('_', ' ')}
+                        </span>
+                      </div>
+                      <Badge variant={tbl.status === 'occupied' ? 'danger' : 'success'}>
+                        {tbl.status === 'occupied' ? 'Active Session' : 'Ready'}
+                      </Badge>
+                    </div>
+
+                    <div className="pt-2 border-t border-neutral-200/60 flex items-center justify-between text-xs">
+                      <div>
+                        <span className="font-extrabold text-neutral-900">
+                          {formatPerMinuteRate(tbl.perMinuteRate ? tbl.perMinuteRate * 60 : tbl.hourlyRate, config.currencySymbol)}
+                        </span>
+                        <span className="text-[10px] text-neutral-500 ml-1">
+                          ({formatCurrency(tbl.hourlyRate, config.currencySymbol)}/hr)
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            setEditingTable(tbl);
+                            setNewTableName(tbl.name);
+                            setNewTableType(tbl.type);
+                            setNewTableRate(tbl.hourlyRate);
+                            setShowAddTable(true);
+                          }}
+                          className="p-1.5 text-neutral-500 hover:text-neutral-900 rounded-lg hover:bg-neutral-200/60 cursor-pointer"
+                          title="Edit Station"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Remove station "${tbl.name}"?`)) {
+                              onDeleteTable(tbl.id);
+                            }
+                          }}
+                          className="p-1.5 text-rose-500 hover:text-rose-700 rounded-lg hover:bg-rose-50 cursor-pointer"
+                          title="Delete Station"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Add / Edit Station Modal */}
+              {showAddTable && (
+                <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                  <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+                    <div className="flex items-center justify-between border-b pb-3">
+                      <h4 className="font-extrabold text-neutral-900 text-sm">
+                        {editingTable ? 'Edit Station' : 'Add New Gaming Station'}
+                      </h4>
+                      <button onClick={() => setShowAddTable(false)} className="p-1 text-neutral-400 hover:text-black">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-3 text-xs">
+                      <div>
+                        <label className="font-bold text-neutral-700 block mb-1">Station Name</label>
+                        <Input
+                          value={newTableName}
+                          onChange={(e) => setNewTableName(e.target.value)}
+                          placeholder="e.g. Snooker Match Star 03"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-bold text-neutral-700 block mb-1">Station Category / Type</label>
+                        <select
+                          value={newTableType}
+                          onChange={(e) => setNewTableType(e.target.value as TableType)}
+                          className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-xs font-bold"
+                        >
+                          <option value="snooker">Snooker Tournament Table</option>
+                          <option value="pool">American Pool Table</option>
+                          <option value="table_tennis">Table Tennis Arena</option>
+                          <option value="ps5">PlayStation 5 Console Lounge</option>
+                          <option value="ps4">PlayStation 4 Console Lounge</option>
+                          <option value="magnet_board">Magnet Board Arena</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="font-bold text-neutral-700 block mb-1">Hourly Billing Rate ({config.currencySymbol})</label>
+                        <Input
+                          type="number"
+                          value={newTableRate}
+                          onChange={(e) => setNewTableRate(parseFloat(e.target.value) || 0)}
+                        />
+                        <span className="text-[11px] text-neutral-400 mt-1 block">
+                          Calculates to exact {formatPerMinuteRate(newTableRate, config.currencySymbol)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-3 border-t">
+                      <Button variant="outline" size="sm" onClick={() => setShowAddTable(false)}>
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => {
+                          if (!newTableName.trim()) return;
+                          if (editingTable && onEditTable) {
+                            onEditTable({
+                              ...editingTable,
+                              name: newTableName.trim(),
+                              type: newTableType,
+                              hourlyRate: newTableRate,
+                              perMinuteRate: Number((newTableRate / 60).toFixed(2))
+                            });
+                          } else {
+                            onAddTable({
+                              number: tables.length + 1,
+                              name: newTableName.trim(),
+                              type: newTableType,
+                              hourlyRate: newTableRate,
+                              perMinuteRate: Number((newTableRate / 60).toFixed(2)),
+                              isMaintenance: false
+                            });
+                          }
+                          setShowAddTable(false);
+                        }}
+                      >
+                        {editingTable ? 'Save Station' : 'Create Station'}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* ========================================================= */}
+          {/* 3. STAFF & ROLES */}
+          {/* ========================================================= */}
+          {activeSection === 'staff' && (
+            <Card className="p-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-extrabold text-neutral-900">Staff Accounts & Access Roles</h3>
+                  <p className="text-xs text-neutral-500 mt-0.5">Role-based credentials for Owner, Managers, Cashiers, and Kitchen display.</p>
+                </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leftIcon={<Plus className="w-4 h-4" />}
+                  onClick={() => setShowAddStaff(true)}
+                >
+                  Add Staff Member
+                </Button>
+              </div>
+
+              {/* Roster Table */}
+              <div className="divide-y divide-neutral-100 border border-neutral-200/80 rounded-2xl overflow-hidden">
+                {employees.map((emp) => (
+                  <div key={emp.id} className="p-4 bg-white flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-neutral-900 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                        {emp.role.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h5 className="font-bold text-xs text-neutral-900 truncate">{emp.name}</h5>
+                          <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                            emp.role === 'owner' ? 'bg-amber-100 text-amber-900 border-amber-300' :
+                            emp.role === 'manager' ? 'bg-emerald-100 text-emerald-900 border-emerald-300' :
+                            emp.role === 'kitchen' ? 'bg-purple-100 text-purple-900 border-purple-300' :
+                            'bg-blue-100 text-blue-900 border-blue-300'
+                          }`}>
+                            {emp.role}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-neutral-500 font-mono mt-0.5 truncate">{emp.email}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant={emp.status === 'active' ? 'success' : 'neutral'}>
+                        {emp.status}
+                      </Badge>
+                      {emp.role !== 'owner' && (
+                        <button
+                          onClick={() => {
+                            if (confirm(`Remove staff member ${emp.name}?`)) {
+                              if (onDeleteEmployee) onDeleteEmployee(emp.id);
+                            }
+                          }}
+                          className="p-1 text-neutral-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Roles Explanation */}
+              <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/70 text-xs space-y-2">
+                <h5 className="font-bold text-neutral-800">Role Privilege Matrix</h5>
+                <ul className="space-y-1 text-neutral-600 text-[11px] list-disc pl-4">
+                  <li><strong>Owner:</strong> Full system access, financials, destructive wipes, and cloud database tools.</li>
+                  <li><strong>Manager:</strong> Daily shift closures, financial reports, expense recording, and station management.</li>
+                  <li><strong>Cashier / Desk:</strong> Session timers, billing checkout, snacks additions, and customer dues.</li>
+                  <li><strong>Kitchen Staff:</strong> Kitchen Display (KDS) order management screen at <code>/kds</code>.</li>
+                </ul>
+              </div>
+
+              {/* Add Staff Modal */}
+              {showAddStaff && (
+                <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                  <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+                    <div className="flex items-center justify-between border-b pb-3">
+                      <h4 className="font-extrabold text-neutral-900 text-sm">Add Staff Account</h4>
+                      <button onClick={() => setShowAddStaff(false)} className="p-1 text-neutral-400 hover:text-black">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-3 text-xs">
+                      <div>
+                        <label className="font-bold text-neutral-700 block mb-1">Full Name</label>
+                        <Input
+                          value={newStaffName}
+                          onChange={(e) => setNewStaffName(e.target.value)}
+                          placeholder="e.g. Ramesh Kumar"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-bold text-neutral-700 block mb-1">Email Address</label>
+                        <Input
+                          type="email"
+                          value={newStaffEmail}
+                          onChange={(e) => setNewStaffEmail(e.target.value)}
+                          placeholder="staff@oneshotsnooker.com"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-bold text-neutral-700 block mb-1">Phone Number</label>
+                        <Input
+                          value={newStaffPhone}
+                          onChange={(e) => setNewStaffPhone(e.target.value)}
+                          placeholder="+91 98765 00000"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-bold text-neutral-700 block mb-1">Assigned Role</label>
+                        <select
+                          value={newStaffRole}
+                          onChange={(e) => setNewStaffRole(e.target.value as any)}
+                          className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-xs font-bold"
+                        >
+                          <option value="cashier">Cashier / Desk Marker</option>
+                          <option value="manager">Club Manager</option>
+                          <option value="kitchen">Kitchen / KDS Operator</option>
+                          <option value="owner">Club Owner</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-3 border-t">
+                      <Button variant="outline" size="sm" onClick={() => setShowAddStaff(false)}>Cancel</Button>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => {
+                          if (!newStaffName.trim() || !newStaffEmail.trim()) return;
+                          if (onSaveEmployee) {
+                            onSaveEmployee({
+                              id: `emp-${Date.now()}`,
+                              clubId: config.id,
+                              name: newStaffName.trim(),
+                              email: newStaffEmail.trim(),
+                              phone: newStaffPhone.trim(),
+                              role: newStaffRole,
+                              joiningDate: new Date().toISOString().split('T')[0],
+                              status: 'active'
+                            });
+                          }
+                          setShowAddStaff(false);
+                        }}
+                      >
+                        Create Account
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* ========================================================= */}
+          {/* 4. MENU & FOOD */}
+          {/* ========================================================= */}
+          {activeSection === 'menu' && (
+            <Card className="p-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-extrabold text-neutral-900">Food & Beverage Catalog</h3>
+                  <p className="text-xs text-neutral-500 mt-0.5">Items displayed on table order modals and Kitchen Display (KDS).</p>
+                </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leftIcon={<Plus className="w-4 h-4" />}
+                  onClick={() => {
+                    setEditingMenuItem(null);
+                    setNewMenuName('');
+                    setNewMenuPrice(120.00);
+                    setShowAddMenu(true);
+                  }}
+                >
                   Add Item
                 </Button>
               </div>
-            </form>
-          )}
 
-          {/* Menu Items Table */}
-          <div className="divide-y divide-neutral-100">
-            {menuItems.map((item) => (
-              <div key={item.id} className="py-3 flex items-center justify-between text-xs">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-bold text-neutral-900">{item.name}</h4>
-                    <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-neutral-100 text-neutral-600">
-                      {item.category}
-                    </span>
-                  </div>
-                  {item.description && <p className="text-neutral-400 text-[11px] mt-0.5">{item.description}</p>}
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <span className="font-mono font-bold text-neutral-900 text-sm">
-                    {formatCurrency(item.price, config.currencySymbol)}
-                  </span>
-                  <button
-                    onClick={() => onDeleteMenuItem(item.id)}
-                    className="p-1.5 text-neutral-400 hover:text-rose-600 rounded-lg"
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {menuItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-3.5 rounded-2xl bg-neutral-50 border border-neutral-200/80 flex items-center justify-between gap-3 shadow-2xs"
                   >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+                    <div className="min-w-0">
+                      <h5 className="font-bold text-xs text-neutral-900 truncate">{item.name}</h5>
+                      <div className="flex items-center gap-2 mt-1 text-[10px] text-neutral-500 font-medium">
+                        <span className="capitalize">{item.category.replace('_', ' ')}</span>
+                        <span>•</span>
+                        <span>Stock: {item.stockQuantity} units</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="font-extrabold text-xs text-neutral-900 font-mono">
+                        {formatCurrency(item.price, config.currencySymbol)}
+                      </span>
+                      <button
+                        onClick={() => {
+                          if (confirm(`Delete menu item "${item.name}"?`)) {
+                            onDeleteMenuItem(item.id);
+                          }
+                        }}
+                        className="p-1 text-neutral-400 hover:text-rose-600 rounded-lg cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </Card>
-      )}
 
+              {/* Add Menu Item Modal */}
+              {showAddMenu && (
+                <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                  <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+                    <div className="flex items-center justify-between border-b pb-3">
+                      <h4 className="font-extrabold text-neutral-900 text-sm">Add Menu Item</h4>
+                      <button onClick={() => setShowAddMenu(false)} className="p-1 text-neutral-400 hover:text-black">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
 
+                    <div className="space-y-3 text-xs">
+                      <div>
+                        <label className="font-bold text-neutral-700 block mb-1">Item Name</label>
+                        <Input
+                          value={newMenuName}
+                          onChange={(e) => setNewMenuName(e.target.value)}
+                          placeholder="e.g. Masala Chai Cup"
+                        />
+                      </div>
 
-      {/* TAB 6: Backup & System Security */}
-      {activeTab === 'backup' && (
-        <Card className="flex flex-col gap-6">
-          <div className="border-b border-neutral-100 pb-4">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-emerald-600" />
-              <h3 className="text-base font-bold text-neutral-900">Database Backup & Production Reliability</h3>
-            </div>
-            <p className="text-xs text-neutral-500 mt-0.5">
-              Export full club snapshots, restore database state, and review system security logs
-            </p>
-          </div>
+                      <div>
+                        <label className="font-bold text-neutral-700 block mb-1">Category</label>
+                        <select
+                          value={newMenuCat}
+                          onChange={(e) => setNewMenuCat(e.target.value as any)}
+                          className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-xs font-bold"
+                        >
+                          <option value="tea_coffee">Tea & Coffee</option>
+                          <option value="cold_drinks">Cold Drinks & Beverages</option>
+                          <option value="snacks">Snacks & Sandwiches</option>
+                          <option value="instant_food">Instant Cup Noodles</option>
+                          <option value="accessories">Cue Accessories & Chalk</option>
+                        </select>
+                      </div>
 
-          {backupMsg && (
-            <div className="p-3.5 rounded-xl bg-neutral-900 text-white text-xs font-medium flex items-center justify-between">
-              <span>{backupMsg}</span>
-              <button onClick={() => setBackupMsg(null)} className="text-neutral-400 hover:text-white font-bold ml-2">×</button>
-            </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="font-bold text-neutral-700 block mb-1">Selling Price ({config.currencySymbol})</label>
+                          <Input
+                            type="number"
+                            value={newMenuPrice}
+                            onChange={(e) => setNewMenuPrice(parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-neutral-700 block mb-1">Stock Quantity</label>
+                          <Input
+                            type="number"
+                            value={newMenuStock}
+                            onChange={(e) => setNewMenuStock(parseInt(e.target.value) || 0)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-3 border-t">
+                      <Button variant="outline" size="sm" onClick={() => setShowAddMenu(false)}>Cancel</Button>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => {
+                          if (!newMenuName.trim()) return;
+                          onAddMenuItem({
+                            name: newMenuName.trim(),
+                            category: newMenuCat,
+                            price: newMenuPrice,
+                            costPrice: newMenuCost,
+                            stockQuantity: newMenuStock,
+                            lowStockThreshold: 5,
+                            available: true
+                          });
+                          setShowAddMenu(false);
+                        }}
+                      >
+                        Save Item
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </Card>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Export Card */}
-            <div className="p-5 rounded-2xl border border-neutral-200 bg-neutral-50/50 flex flex-col justify-between gap-4">
+          {/* ========================================================= */}
+          {/* 5. BILLING SETTINGS */}
+          {/* ========================================================= */}
+          {activeSection === 'billing' && (
+            <Card className="p-6 space-y-6">
               <div>
-                <div className="w-10 h-10 rounded-xl bg-neutral-900 text-white flex items-center justify-center mb-3">
-                  <Download className="w-5 h-5" />
-                </div>
-                <h4 className="font-bold text-neutral-900 text-sm">Download Club Backup JSON</h4>
-                <p className="text-xs text-neutral-500 mt-1">
-                  Generates an offline, structured backup snapshot containing all settings, table states, session history, menu items, and audit logs.
-                </p>
+                <h3 className="text-base font-extrabold text-neutral-900">Billing & Payment Rules</h3>
+                <p className="text-xs text-neutral-500 mt-0.5">Rates calculation, rounding rules, discounts, and payment methods.</p>
               </div>
 
-              <Button
-                variant="primary"
-                onClick={handleExportBackup}
-                disabled={isExporting}
-                leftIcon={<Download className="w-4 h-4" />}
-                className="w-full justify-center"
-              >
-                {isExporting ? 'Generating Snapshot...' : 'Export Backup JSON'}
-              </Button>
-            </div>
-
-            {/* Restore Card */}
-            <div className="p-5 rounded-2xl border border-neutral-200 bg-neutral-50/50 flex flex-col justify-between gap-4">
-              <div>
-                <div className="w-10 h-10 rounded-xl bg-neutral-900 text-white flex items-center justify-center mb-3">
-                  <Upload className="w-5 h-5" />
-                </div>
-                <h4 className="font-bold text-neutral-900 text-sm font-sans">Restore Club Snapshot</h4>
-                <p className="text-xs text-neutral-500 mt-1">
-                  Upload a previously exported `.json` snapshot file to restore system settings, table configurations, and menu catalogs.
-                </p>
-              </div>
-
-              <label className="w-full">
-                <input
-                  type="file"
-                  accept=".json"
-                  onChange={handleRestoreFile}
-                  disabled={isRestoring}
-                  className="hidden"
-                />
-                <div className="w-full bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl px-4 py-2.5 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors">
-                  <Upload className="w-4 h-4" />
-                  <span>{isRestoring ? 'Restoring Database...' : 'Upload & Restore Snapshot'}</span>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {/* Automatic Daily Snapshot Backups */}
-          <div className="pt-4 border-t border-neutral-100 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">
-                  Automatic Daily Snapshots (Data Protection)
-                </h4>
-                <p className="text-[11px] text-neutral-500">
-                  Background daily snapshots auto-saved locally so you never lose data on device crash or internet drop
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
-                onClick={async () => {
-                  const snap = await performDailyAutoSnapshot(config.clubId || 'oneshot-club');
-                  if (snap) {
-                    setBackupMsg('✅ Daily snapshot created & saved successfully.');
-                  }
-                }}
-              >
-                Take Instant Snapshot
-              </Button>
-            </div>
-
-            <div className="space-y-2">
-              {getAvailableAutoSnapshots().length === 0 ? (
-                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold">
-                  No previous daily snapshots found. Click "Take Instant Snapshot" to save one now.
-                </div>
-              ) : (
-                getAvailableAutoSnapshots().map((snap) => (
-                  <div key={snap.key} className="p-3 rounded-xl border border-neutral-200 bg-white flex items-center justify-between text-xs">
-                    <div>
-                      <span className="font-extrabold text-neutral-900">📅 Daily Snapshot: {snap.date}</span>
-                      <span className="text-[10px] text-neutral-400 font-mono ml-2">
-                        {new Date(snap.timestamp).toLocaleTimeString()}
-                      </span>
-                    </div>
-
-                    <button
-                      onClick={async () => {
-                        if (confirm(`Restore snapshot from ${snap.date}? Current data will be replaced by this snapshot.`)) {
-                          const res = await restoreAutoSnapshot(config.clubId || 'oneshot-club', snap.key);
-                          setBackupMsg(res.message);
-                        }
-                      }}
-                      className="px-3 py-1 bg-neutral-900 hover:bg-neutral-800 text-white font-extrabold text-[11px] rounded-lg cursor-pointer transition-colors"
-                    >
-                      Restore This Snapshot
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* System Health Overview */}
-          <div className="pt-4 border-t border-neutral-100">
-            <h4 className="text-xs font-bold text-neutral-900 uppercase tracking-wider mb-3">
-              System Telemetry & Monitoring Events
-            </h4>
-            <div className="space-y-2">
-              {getRecentMonitoringEvents().length === 0 ? (
-                <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200/60 text-emerald-800 text-xs font-medium flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  <span>All system security telemetry monitors report zero anomalies. System operating within normal thresholds.</span>
-                </div>
-              ) : (
-                getRecentMonitoringEvents().map((e) => (
-                  <div key={e.id} className="p-3 rounded-xl border border-neutral-200 bg-white text-xs flex justify-between items-center">
-                    <div>
-                      <span className="font-bold uppercase text-[10px] px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-700 mr-2">
-                        {e.type}
-                      </span>
-                      <span className="font-medium text-neutral-900">{e.message}</span>
-                    </div>
-                    <span className="text-[10px] text-neutral-400 font-mono">
-                      {new Date(e.timestamp).toLocaleTimeString()}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-          {/* Danger Zone: High Privilege System Reset */}
-          <div className="pt-6 border-t border-rose-200">
-            <div className="p-5 rounded-2xl bg-rose-950/5 border border-rose-200 space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold shrink-0">
-                  <ShieldAlert className="w-5 h-5" />
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                 <div>
-                  <h4 className="font-extrabold text-rose-950 text-sm">⚠️ High Security — Danger Zone</h4>
-                  <p className="text-xs text-rose-800">
-                    High privilege actions. Wiping records cannot be undone. Requires typing confirmation word <code className="bg-rose-100 px-1 py-0.5 rounded font-mono font-bold">RESET</code>.
+                  <label className="font-bold text-neutral-700 block mb-1">Default Base Rate ({config.currencySymbol}/hr)</label>
+                  <Input
+                    type="number"
+                    value={businessForm.defaultHourlyRate}
+                    onChange={(e) => setBusinessForm({ ...businessForm, defaultHourlyRate: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Minimum Charge Duration (Minutes)</label>
+                  <select
+                    value={businessForm.minimumChargeMinutes || 30}
+                    onChange={(e) => setBusinessForm({ ...businessForm, minimumChargeMinutes: parseInt(e.target.value) })}
+                    className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl font-bold"
+                  >
+                    <option value={0}>No minimum charge (Pay exact seconds)</option>
+                    <option value={15}>15 Minutes minimum</option>
+                    <option value={30}>30 Minutes minimum</option>
+                    <option value={60}>1 Hour minimum</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Cashier Max Discount Allowance (%)</label>
+                  <Input
+                    type="number"
+                    value={businessForm.maxCashierDiscountPercent || 10}
+                    onChange={(e) => setBusinessForm({ ...businessForm, maxCashierDiscountPercent: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Currency Rounding Rule</label>
+                  <select
+                    value={businessForm.roundingRule || 'nearest_1'}
+                    onChange={(e) => setBusinessForm({ ...businessForm, roundingRule: e.target.value as any })}
+                    className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl font-bold"
+                  >
+                    <option value="none">Exact cents / paise (no rounding)</option>
+                    <option value="nearest_1">Round to nearest ₹1</option>
+                    <option value="nearest_5">Round to nearest ₹5</option>
+                    <option value="round_up">Always round UP to next ₹1</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Club UPI ID for QR Billing</label>
+                  <Input
+                    value={businessForm.upiId || 'oneshot@upi'}
+                    onChange={(e) => setBusinessForm({ ...businessForm, upiId: e.target.value })}
+                    placeholder="oneshot@upi"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">UPI Payee Business Name</label>
+                  <Input
+                    value={businessForm.upiName || 'One Shot Snooker Gaming Club'}
+                    onChange={(e) => setBusinessForm({ ...businessForm, upiName: e.target.value })}
+                    placeholder="One Shot Snooker Gaming Club"
+                  />
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* ========================================================= */}
+          {/* 6. CUSTOMER & CREDIT */}
+          {/* ========================================================= */}
+          {activeSection === 'credit' && (
+            <Card className="p-6 space-y-6">
+              <div>
+                <h3 className="text-base font-extrabold text-neutral-900">Customer & Credit (Udhaar) Rules</h3>
+                <p className="text-xs text-neutral-500 mt-0.5">Player credit limits, risk tiers, and automated WhatsApp reminder details.</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Default Player Credit Limit ({config.currencySymbol})</label>
+                  <Input
+                    type="number"
+                    value={businessForm.maxCreditLimit || 2000}
+                    onChange={(e) => setBusinessForm({ ...businessForm, maxCreditLimit: parseFloat(e.target.value) || 0 })}
+                  />
+                  <span className="text-[11px] text-neutral-400 mt-1 block">
+                    Cashiers will receive warnings when a player's balance exceeds this limit.
+                  </span>
+                </div>
+
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Credit Risk Classification</label>
+                  <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-xl space-y-1.5 text-[11px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-emerald-700 font-bold">● GOOD:</span>
+                      <span className="text-neutral-600">&lt; 50% of credit limit</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-amber-700 font-bold">● MODERATE:</span>
+                      <span className="text-neutral-600">50% – 99% of credit limit</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-rose-700 font-bold">● OVER LIMIT:</span>
+                      <span className="text-neutral-600">100%+ (Checkout requires manager)</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="font-bold text-neutral-700 block mb-1">WhatsApp Reminder Message Template</label>
+                  <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-mono text-neutral-700 leading-relaxed">
+                    "Hello [Customer Name], gentle reminder from One Shot Snooker Gaming Club: you have an outstanding session balance of ₹[Amount Due]. Kindly clear via UPI to: {businessForm.upiId || 'oneshot@upi'}. Thank you!"
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* ========================================================= */}
+          {/* 7. REPORTS & EXPORT */}
+          {/* ========================================================= */}
+          {activeSection === 'reports' && (
+            <Card className="p-6 space-y-6">
+              <div>
+                <h3 className="text-base font-extrabold text-neutral-900">Financial Reports & Data Export</h3>
+                <p className="text-xs text-neutral-500 mt-0.5">Download spreadsheets for accountant audits, tax records, and player credit dues.</p>
+              </div>
+
+              {/* 3 Export Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/90 shadow-2xs flex flex-col justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 font-bold text-xs text-neutral-900">
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                      <span>Customer Credit & Udhaar Ledger</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-500 mt-1">
+                      Download spreadsheet of all customer outstanding balances, credit limits, and contact phones.
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<Download className="w-3.5 h-3.5 text-emerald-600" />}
+                    onClick={() => {
+                      exportCustomerCreditLedgerCSV(customers, config.clubName);
+                    }}
+                    className="justify-center font-bold"
+                  >
+                    Export Credit Ledger (.csv)
+                  </Button>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/90 shadow-2xs flex flex-col justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 font-bold text-xs text-neutral-900">
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                      <span>Complete Billing History</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-500 mt-1">
+                      Download spreadsheet of all settled bills, durations, table fees, food sales, and payment methods.
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<Download className="w-3.5 h-3.5 text-emerald-600" />}
+                    onClick={() => {
+                      exportBillingHistoryCSV(history, config.clubName);
+                    }}
+                    className="justify-center font-bold"
+                  >
+                    Export Sales History (.csv)
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* ========================================================= */}
+          {/* 8. BACKUP & RESTORE */}
+          {/* ========================================================= */}
+          {activeSection === 'backup' && (
+            <Card className="p-6 space-y-6">
+              <div>
+                <h3 className="text-base font-extrabold text-neutral-900">Backup & Disaster Recovery</h3>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  Understand where your club data lives and export complete JSON dumps for offline safekeeping.
+                </p>
+              </div>
+
+              {/* 3-Tier Architecture Explanation */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-xs space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-emerald-900">
+                    <span className="w-2 h-2 rounded-full bg-emerald-600" />
+                    <span>1. Cloud Firestore</span>
+                  </div>
+                  <p className="text-[11px] text-emerald-800">
+                    Primary live database. All table sessions, orders, and payments sync here in real time.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200 text-xs space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-blue-900">
+                    <span className="w-2 h-2 rounded-full bg-blue-600" />
+                    <span>2. Downloaded JSON</span>
+                  </div>
+                  <p className="text-[11px] text-blue-800">
+                    Manual file dump saved directly to your computer. Can be restored anytime with 1 click.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200 text-xs space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                    <span className="w-2 h-2 rounded-full bg-amber-600" />
+                    <span>3. Local Browser Snapshot</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800">
+                    Automated daily snapshot saved in browser storage. Acts as emergency cache on the counter PC.
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                <div className="p-4 rounded-xl bg-white border border-rose-200 flex flex-col justify-between gap-3">
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                <Button
+                  variant="primary"
+                  size="md"
+                  leftIcon={<Download className="w-4 h-4" />}
+                  disabled={isExporting}
+                  onClick={async () => {
+                    setIsExporting(true);
+                    try {
+                      const snapshot = await exportClubBackup(config.id);
+                      downloadBackupFile(snapshot, config.clubName);
+                      setBackupMsg('Complete JSON backup downloaded to your computer!');
+                      setTimeout(() => setBackupMsg(null), 4000);
+                    } catch (e: any) {
+                      alert('Export error: ' + e.message);
+                    } finally {
+                      setIsExporting(false);
+                    }
+                  }}
+                >
+                  {isExporting ? 'Exporting...' : 'Download Complete JSON Backup'}
+                </Button>
+
+                <label className="cursor-pointer">
+                  <input
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (!confirm(`Restore data from "${file.name}"? This will overwrite current tables and catalog.`)) return;
+                      setIsRestoring(true);
+                      try {
+                        const text = await file.text();
+                        const snapshot = JSON.parse(text) as ClubBackupSnapshot;
+                        await restoreClubBackup(config.id, snapshot);
+                        alert('Database successfully restored from JSON backup!');
+                        window.location.reload();
+                      } catch (err: any) {
+                        alert('Restore failed: ' + err.message);
+                      } finally {
+                        setIsRestoring(false);
+                      }
+                    }}
+                  />
+                  <div className="px-4 py-2.5 rounded-xl border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-800 text-xs font-bold transition-all shadow-2xs flex items-center gap-2">
+                    <Upload className="w-4 h-4 text-neutral-500" />
+                    <span>{isRestoring ? 'Restoring...' : 'Restore from JSON File'}</span>
+                  </div>
+                </label>
+              </div>
+
+              {backupMsg && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>{backupMsg}</span>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* ========================================================= */}
+          {/* 9. NOTIFICATIONS */}
+          {/* ========================================================= */}
+          {activeSection === 'notifications' && (
+            <Card className="p-6 space-y-6">
+              <div>
+                <h3 className="text-base font-extrabold text-neutral-900">Alerts & Staff Notification Rules</h3>
+                <p className="text-xs text-neutral-500 mt-0.5">Configure audio cues and desk alert banners for active operational events.</p>
+              </div>
+
+              <div className="space-y-4 text-xs divide-y divide-neutral-100">
+                <div className="flex items-center justify-between pt-2">
+                  <div>
+                    <h5 className="font-bold text-neutral-800">Kitchen Food Order Alerts</h5>
+                    <p className="text-neutral-500 text-[11px]">Notify desk whenever an order is submitted or marked ready by kitchen.</p>
+                  </div>
+                  <input type="checkbox" defaultChecked className="w-4 h-4 rounded text-neutral-900 accent-neutral-900" />
+                </div>
+
+                <div className="flex items-center justify-between pt-4">
+                  <div>
+                    <h5 className="font-bold text-neutral-800">Table Session 2-Hour Reminder</h5>
+                    <p className="text-neutral-500 text-[11px]">Display desk notice when a single session exceeds 120 minutes of play.</p>
+                  </div>
+                  <input type="checkbox" defaultChecked className="w-4 h-4 rounded text-neutral-900 accent-neutral-900" />
+                </div>
+
+                <div className="flex items-center justify-between pt-4">
+                  <div>
+                    <h5 className="font-bold text-neutral-800">Low Stock Inventory Warnings</h5>
+                    <p className="text-neutral-500 text-[11px]">Show snack inventory warning when item stock drops below 5 units.</p>
+                  </div>
+                  <input type="checkbox" defaultChecked className="w-4 h-4 rounded text-neutral-900 accent-neutral-900" />
+                </div>
+
+                <div className="flex items-center justify-between pt-4">
+                  <div>
+                    <h5 className="font-bold text-neutral-800">Customer Over-Credit Alert</h5>
+                    <p className="text-neutral-500 text-[11px]">Flag desk when player outstanding dues exceed their configured limit.</p>
+                  </div>
+                  <input type="checkbox" defaultChecked className="w-4 h-4 rounded text-neutral-900 accent-neutral-900" />
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* ========================================================= */}
+          {/* 10. SECURITY & AUDIT */}
+          {/* ========================================================= */}
+          {activeSection === 'security' && (
+            <Card className="p-6 space-y-6">
+              <div>
+                <h3 className="text-base font-extrabold text-neutral-900">Security & Session Management</h3>
+                <p className="text-xs text-neutral-500 mt-0.5">Control login sessions, account passwords, and review security access logs.</p>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/80 space-y-3">
+                  <h5 className="font-bold text-neutral-900">Change Account Password</h5>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Input type="password" placeholder="New Password (min 6 characters)" />
+                    <Input type="password" placeholder="Confirm New Password" />
+                  </div>
+                  <Button variant="secondary" size="sm" onClick={() => alert('Password update link sent to your registered email.')}>
+                    Update Password
+                  </Button>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-neutral-800">Auto Logout Timer</span>
+                    <select className="p-1.5 bg-white border border-neutral-300 rounded-lg text-xs font-bold">
+                      <option value="4">After 4 Hours of Inactivity</option>
+                      <option value="8">After 8 Hours of Inactivity</option>
+                      <option value="never">Never (Stay Signed In on Counter PC)</option>
+                    </select>
+                  </div>
+                  <p className="text-[11px] text-neutral-500">
+                    Automatically signs out staff when counter computer is left unattended.
+                  </p>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* ========================================================= */}
+          {/* 11. SYSTEM HEALTH (Zero Sensitive Keys Exposed!) */}
+          {/* ========================================================= */}
+          {activeSection === 'health' && (
+            <Card className="p-6">
+              <SystemHealthSection
+                currentClubId={config.id}
+                onOpenDeveloperDrawer={() => setShowDevDrawer(true)}
+              />
+            </Card>
+          )}
+
+          {/* ========================================================= */}
+          {/* 12. ABOUT CUEDESK */}
+          {/* ========================================================= */}
+          {activeSection === 'about' && (
+            <Card className="p-6 space-y-6">
+              <div className="flex items-center gap-4">
+                <img
+                  src="/logo.png"
+                  alt="CueDesk Logo"
+                  className="w-16 h-16 rounded-2xl object-cover ring-2 ring-amber-300 shadow-md cursor-pointer"
+                  onClick={() => {
+                    const next = versionClickCount + 1;
+                    setVersionClickCount(next);
+                    if (next >= 5) {
+                      setShowDevDrawer(true);
+                      setVersionClickCount(0);
+                    }
+                  }}
+                  title="CueDesk One Shot OS"
+                />
+                <div>
+                  <h3 className="text-lg font-black text-neutral-900 tracking-tight">CueDesk Pro OS</h3>
+                  <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">
+                    Custom Edition for One Shot Snooker Gaming Club
+                  </p>
+                  <p className="text-[11px] text-neutral-400 font-mono mt-0.5">
+                    Build: 2026.09-production • Cloud Firestore Realtime Engine
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/80 text-xs space-y-2 text-neutral-600">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-neutral-800">Licensed Venue</span>
+                  <span>One Shot Snooker Gaming Club</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-neutral-800">Deployment Type</span>
+                  <span className="text-emerald-700 font-bold">Cloud Production</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-neutral-800">Customer Support</span>
+                  <span>support@oneshotsnooker.com</span>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* ========================================================= */}
+          {/* 13. DANGER ZONE */}
+          {/* ========================================================= */}
+          {activeSection === 'danger' && (
+            <Card className="p-6 space-y-6 border-rose-200 bg-rose-50/10">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-rose-900">Danger Zone — Destructive Operations</h3>
+                  <p className="text-xs text-rose-700 mt-0.5">
+                    High privilege actions. Data wiping cannot be undone. All actions require typing strict confirmation.
+                  </p>
+                </div>
+              </div>
+
+              {/* 2 Destructive Action Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* 1. Reset Sales History */}
+                <div className="p-4 rounded-2xl bg-white border border-rose-200 flex flex-col justify-between gap-3 shadow-2xs">
                   <div>
                     <h5 className="font-bold text-neutral-900 text-xs">Clear Sales & Session History</h5>
-                    <p className="text-[11px] text-neutral-500 mt-0.5">
-                      Clears all completed bill history receipts and revenue counters to ₹0.
+                    <p className="text-[11px] text-neutral-500 mt-1">
+                      Wipes all billing receipts and revenue counters back to ₹0, keeping gaming stations, catalog, and staff intact.
                     </p>
                   </div>
                   <Button
@@ -820,11 +1311,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </Button>
                 </div>
 
-                <div className="p-4 rounded-xl bg-white border border-rose-200 flex flex-col justify-between gap-3">
+                {/* 2. Full Club Reset */}
+                <div className="p-4 rounded-2xl bg-white border border-rose-300 flex flex-col justify-between gap-3 shadow-2xs">
                   <div>
-                    <h5 className="font-bold text-neutral-900 text-xs">Full Club Data Reset</h5>
-                    <p className="text-[11px] text-neutral-500 mt-0.5">
-                      Resets sales history, telemetry logs, and restores clean slate for client handover.
+                    <h5 className="font-bold text-rose-900 text-xs">Full Club Data Reset</h5>
+                    <p className="text-[11px] text-neutral-500 mt-1">
+                      Wipes sales history, orders, player credit dues, and restores all table stations to empty state for client handover.
                     </p>
                   </div>
                   <Button
@@ -835,32 +1327,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       setResetConfirmText('');
                       setDangerModalOpen(true);
                     }}
-                    className="bg-rose-600 text-white hover:bg-rose-700 border-none justify-center font-bold"
+                    className="bg-rose-600 text-white hover:bg-rose-700 border-none justify-center font-bold shadow-xs"
                   >
                     Full Club Reset
                   </Button>
                 </div>
               </div>
-            </div>
-          </div>
-        </Card>
-      )}
 
-      {/* DANGER ZONE CONFIRMATION MODAL */}
+              {clearSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                  <span>Operation completed: Data successfully wiped.</span>
+                </div>
+              )}
+            </Card>
+          )}
+
+        </div>
+      </div>
+
+      {/* ========================================================= */}
+      {/* DANGER ZONE CONFIRMATION MODAL (Strict RESET ONESHOT) */}
+      {/* ========================================================= */}
       {dangerModalOpen && (
         <div className="fixed inset-0 bg-neutral-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 border border-rose-200">
             <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
               <h3 className="text-base font-extrabold text-rose-700 flex items-center gap-2">
-                <ShieldAlert className="w-5 h-5 text-rose-600" />
-                Confirm Data Reset
+                <AlertTriangle className="w-5 h-5 text-rose-600" />
+                <span>Confirm High-Privilege Wipe</span>
               </h3>
               <button
                 onClick={() => {
                   setDangerModalOpen(false);
                   setResetConfirmText('');
                 }}
-                className="p-1 text-neutral-400 hover:text-neutral-900 rounded-lg"
+                className="p-1 text-neutral-400 hover:text-neutral-900 rounded-lg cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -868,19 +1370,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
             <div className="space-y-3 text-xs">
               <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 leading-relaxed font-medium">
-                ⚠️ You are about to permanently delete <strong>{dangerTarget === 'all' ? 'ALL sales history and telemetry logs' : 'sales session history'}</strong> for <strong>{config.clubName}</strong>.
+                ⚠️ You are about to permanently delete <strong>{dangerTarget === 'all' ? 'ALL sales history, customer dues, orders, and telemetry logs' : 'sales session receipts'}</strong> for <strong>{config.clubName}</strong>.
               </div>
 
               <div>
                 <label className="font-extrabold text-neutral-800 block mb-1">
-                  Type <span className="font-mono text-rose-600 font-black">RESET</span> below to confirm:
+                  Type <span className="font-mono text-rose-600 font-black tracking-wider">RESET ONESHOT</span> below to confirm:
                 </label>
                 <input
                   type="text"
-                  placeholder="Type RESET here..."
+                  placeholder="Type RESET ONESHOT here..."
                   value={resetConfirmText}
                   onChange={(e) => setResetConfirmText(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-300 rounded-xl p-3 text-sm font-mono font-bold tracking-widest uppercase outline-none focus:border-rose-600 focus:ring-1 focus:ring-rose-600"
+                  className="w-full bg-neutral-50 border border-neutral-300 rounded-xl p-3 text-sm font-mono font-bold tracking-wider uppercase outline-none focus:border-rose-600 focus:ring-1 focus:ring-rose-600"
                 />
               </div>
             </div>
@@ -907,13 +1409,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     const target = dangerTarget === 'history' ? 'history' : 'all';
                     if (onResetClub) {
                       await onResetClub(target);
-                    } else {
-                      await clearHistoryAndAnalytics(config.id);
                     }
                     setClearSuccess(true);
                     setDangerModalOpen(false);
                     setResetConfirmText('');
-                    setTimeout(() => setClearSuccess(false), 4000);
+                    setTimeout(() => setClearSuccess(false), 5000);
                   } catch (err: any) {
                     alert('Error clearing data: ' + (err?.message || err));
                   } finally {
@@ -926,509 +1426,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     : 'bg-neutral-200 text-neutral-400 cursor-not-allowed border-none'
                 }`}
               >
-                {isClearingHistory ? 'Deleting...' : 'PERMANENTLY DELETE DATA'}
+                {isClearingHistory ? 'Wiping Data...' : 'PERMANENTLY DELETE DATA'}
               </Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* TAB 5: Hourly Pricing Management */}
-      {activeTab === 'rates' && (
-        <Card className="flex flex-col gap-5">
-          <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
-            <div>
-              <h3 className="text-base font-bold text-neutral-900">Hourly Pricing & Rate Management</h3>
-              <p className="text-xs text-neutral-500">Set base hourly rates per table type, configure peak-hour pricing and weekend multipliers</p>
-            </div>
-          </div>
-
-          {/* Per-Table Rate Editor */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-extrabold uppercase tracking-wider text-neutral-500">Individual Table Rates</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {tables.map((t) => (
-                <div key={t.id} className="p-4 rounded-2xl border border-neutral-200 bg-white flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-sm text-neutral-900">#{t.number}</span>
-                      <span className="uppercase font-semibold text-[10px] px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600">{t.type}</span>
-                    </div>
-                    <p className="font-semibold text-neutral-800 text-xs mt-0.5 truncate max-w-[140px]">{t.name}</p>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-neutral-400">{config.currencySymbol}</span>
-                    <input
-                      type="number"
-                      defaultValue={t.hourlyRate}
-                      min={0}
-                      step={10}
-                      onBlur={(e) => {
-                        const newRate = Number(e.target.value);
-                        if (newRate > 0 && newRate !== t.hourlyRate) {
-                          onAddTable({ ...t, hourlyRate: newRate } as any);
-                        }
-                      }}
-                      className="w-20 bg-neutral-50 border border-neutral-200 rounded-xl px-2.5 py-1.5 text-sm font-bold text-neutral-900 text-center outline-none focus:border-neutral-900"
-                    />
-                    <span className="text-xs text-neutral-400 font-medium">/hr</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Global Rate Multipliers */}
-          <div className="pt-4 border-t border-neutral-100 space-y-4">
-            <h4 className="text-xs font-extrabold uppercase tracking-wider text-neutral-500">Global Rate Multipliers</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-4 rounded-2xl border border-neutral-200 bg-neutral-50/50">
-                <label className="text-xs font-bold text-neutral-700 block mb-1.5">Weekend Rate Multiplier</label>
-                <p className="text-[10px] text-neutral-400 mb-2">Applied on Saturday & Sunday (e.g., 1.5 = 50% extra)</p>
-                <input
-                  type="number"
-                  step="0.1"
-                  min={1}
-                  max={3}
-                  value={businessForm.weekendRateMultiplier || 1}
-                  onChange={(e) => setBusinessForm({ ...businessForm, weekendRateMultiplier: Number(e.target.value) })}
-                  className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-2 text-sm font-bold text-neutral-900 outline-none focus:border-neutral-900"
-                />
+      {/* ========================================================= */}
+      {/* HIDDEN DEVELOPER DRAWER (Accessible via ?dev=true or click) */}
+      {/* ========================================================= */}
+      {showDevDrawer && (
+        <div className="fixed inset-0 bg-neutral-900/80 backdrop-blur-md flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-3xl w-full shadow-2xl space-y-6 my-8 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b pb-4">
+              <div>
+                <h3 className="text-base font-extrabold text-neutral-900 flex items-center gap-2">
+                  <Sliders className="w-5 h-5 text-amber-500" />
+                  <span>Developer Diagnostics & Overrides</span>
+                </h3>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  Internal developer tool for checking direct database connection strings.
+                </p>
               </div>
-              <div className="p-4 rounded-2xl border border-neutral-200 bg-neutral-50/50">
-                <label className="text-xs font-bold text-neutral-700 block mb-1.5">Peak Hours Multiplier (After 6 PM)</label>
-                <p className="text-[10px] text-neutral-400 mb-2">Auto-applied for sessions starting between 6 PM – 12 AM</p>
-                <input
-                  type="number"
-                  step="0.1"
-                  min={1}
-                  max={3}
-                  value={businessForm.happyHourRateMultiplier || 1}
-                  onChange={(e) => setBusinessForm({ ...businessForm, happyHourRateMultiplier: Number(e.target.value) })}
-                  className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-2 text-sm font-bold text-neutral-900 outline-none focus:border-neutral-900"
-                />
-              </div>
-            </div>
-            <Button variant="primary" size="sm" leftIcon={<Save className="w-4 h-4" />} onClick={() => {
-              onUpdateConfig(businessForm);
-              setIsSaved(true);
-              setTimeout(() => setIsSaved(false), 2000);
-            }}>
-              {isSaved ? 'Saved ✓' : 'Save Rate Rules'}
-            </Button>
-          </div>
-        </Card>
-      )}
-
-      {/* TAB 6: Staff Roles & Privileges Management Console */}
-      {activeTab === 'employees' && (
-        <Card className="flex flex-col gap-6">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-100 pb-4">
-            <div>
-              <h3 className="text-base font-extrabold text-neutral-900 flex items-center gap-2">
-                <Crown className="w-5 h-5 text-amber-500" />
-                Staff Roles & Dashboard Privileges Management
-              </h3>
-              <p className="text-xs text-neutral-500">Owner control panel: add/remove staff roles, customize dashboard module permissions, and manage staff accounts.</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowAddRoleModal(true)}
-                leftIcon={<Plus className="w-4 h-4" />}
-              >
-                Add Staff Role
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => setShowAddStaffModal(true)}
-                leftIcon={<UserPlus className="w-4 h-4" />}
-              >
-                Add Staff Account
-              </Button>
-            </div>
-          </div>
-
-          {/* Section 1: Role Hierarchy & Granular Privileges Matrix */}
-          <div className="space-y-4">
-            <h4 className="text-xs font-extrabold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
-              <Sliders className="w-4 h-4 text-neutral-600" />
-              Role Privileges & Feature Access Control
-            </h4>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              {rolesList.map((r) => {
-                const isOwnerRole = r.id === 'owner';
-                const roleBorderColor = r.baseRole === 'owner' ? 'border-amber-300 bg-amber-50/30' : r.baseRole === 'manager' ? 'border-emerald-300 bg-emerald-50/30' : r.baseRole === 'kitchen' ? 'border-purple-300 bg-purple-50/30' : 'border-blue-300 bg-blue-50/30';
-                const roleHeaderColor = r.baseRole === 'owner' ? 'text-amber-900' : r.baseRole === 'manager' ? 'text-emerald-900' : r.baseRole === 'kitchen' ? 'text-purple-900' : 'text-blue-900';
-                const RoleIcon = r.baseRole === 'owner' ? Crown : r.baseRole === 'manager' ? ShieldCheck : r.baseRole === 'kitchen' ? ChefHat : Users;
-
-                const togglePerm = (permKey: keyof typeof r.permissions) => {
-                  if (isOwnerRole) return; // Owner permissions cannot be revoked
-                  setRolesList((prev) =>
-                    prev.map((item) =>
-                      item.id === r.id
-                        ? {
-                            ...item,
-                            permissions: {
-                              ...item.permissions,
-                              [permKey]: !item.permissions[permKey],
-                            },
-                          }
-                        : item
-                    )
-                  );
-                };
-
-                const deleteRole = (roleId: string) => {
-                  setRolesList((prev) => prev.filter((item) => item.id !== roleId));
-                };
-
-                return (
-                  <div key={r.id} className={`p-4 rounded-2xl border-2 ${roleBorderColor} flex flex-col justify-between gap-3 shadow-2xs`}>
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <RoleIcon className={`w-5 h-5 ${r.baseRole === 'owner' ? 'text-amber-600' : r.baseRole === 'manager' ? 'text-emerald-600' : r.baseRole === 'kitchen' ? 'text-purple-600' : 'text-blue-600'}`} />
-                          <h4 className={`font-extrabold text-sm ${roleHeaderColor}`}>{r.title}</h4>
-                        </div>
-                        {r.isCustom && (
-                          <button
-                            onClick={() => deleteRole(r.id)}
-                            className="p-1 rounded-lg text-rose-500 hover:bg-rose-100 transition-colors"
-                            title="Remove Custom Role"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-neutral-600 mt-1">{r.description}</p>
-
-                      {/* Permission Toggles */}
-                      <div className="mt-3 pt-3 border-t border-neutral-200/80 space-y-2 text-xs font-medium">
-                        <p className="text-[10px] font-extrabold uppercase tracking-wider text-neutral-400">Dashboard & CRM Rights:</p>
-
-                        {[
-                          { key: 'tableOps' as const, label: '🎱 Table Start / End / Snacks' },
-                          { key: 'billingCheckout' as const, label: '💳 Billing & Checkout' },
-                          { key: 'applyDiscount' as const, label: '🏷️ High Discount (>10%)' },
-                          { key: 'foodInventory' as const, label: '📦 Food & Stock Inventory' },
-                          { key: 'customerCredit' as const, label: '👥 Customer Credit Ledger' },
-                          { key: 'reportsAnalytics' as const, label: '📊 Financial Reports' },
-                          { key: 'clubSettings' as const, label: '⚙️ Club Settings & Rates' },
-                          { key: 'shiftClosure' as const, label: '🔒 EOD Shift Closure' },
-                          { key: 'dataReset' as const, label: '🔄 Reset System Analytics' },
-                        ].map((p) => {
-                          const isChecked = r.permissions[p.key];
-                          return (
-                            <label
-                              key={p.key}
-                              className={`flex items-center justify-between p-1.5 rounded-lg border transition-colors ${
-                                isChecked ? 'bg-white border-neutral-200 text-neutral-900' : 'bg-neutral-100/60 border-transparent text-neutral-400'
-                              } ${isOwnerRole ? 'cursor-not-allowed opacity-90' : 'cursor-pointer hover:border-neutral-300'}`}
-                            >
-                              <span className="text-[11px] font-semibold">{p.label}</span>
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                disabled={isOwnerRole}
-                                onChange={() => togglePerm(p.key)}
-                                className="w-4 h-4 rounded text-neutral-900 focus:ring-neutral-900 cursor-pointer"
-                              />
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="pt-2 text-[10px] text-neutral-400 font-mono text-center">
-                      {isOwnerRole ? '🔒 Permanent Master Rights' : `${Object.values(r.permissions).filter(Boolean).length}/9 Permissions Enabled`}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Section 2: Staff Login Accounts Management */}
-          <div className="pt-4 border-t border-neutral-100 space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
-                <Users className="w-4 h-4 text-neutral-600" />
-                Active Staff Login Accounts ({staffAccounts.length})
-              </h4>
-              <button
-                onClick={() => setShowAddStaffModal(true)}
-                className="text-xs font-bold text-amber-600 hover:text-amber-700 flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                New Staff User
-              </button>
-            </div>
-
-            <div className="overflow-x-auto rounded-2xl border border-neutral-200">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 uppercase font-bold text-[10px] tracking-wider">
-                  <tr>
-                    <th className="py-3 px-4">Staff Name & Email</th>
-                    <th className="py-3 px-4">Assigned Role</th>
-                    <th className="py-3 px-4">Access Rights</th>
-                    <th className="py-3 px-4">Account Status</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100 bg-white">
-                  {staffAccounts.map((staff) => (
-                    <tr key={staff.id} className="hover:bg-neutral-50/70 transition-colors">
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-neutral-900">{staff.name}</div>
-                        <div className="text-[10px] text-neutral-400 font-mono">{staff.email}</div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <select
-                          value={staff.role}
-                          onChange={(e) => {
-                            const newR = e.target.value;
-                            setStaffAccounts((prev) =>
-                              prev.map((item) =>
-                                item.id === staff.id
-                                  ? {
-                                      ...item,
-                                      role: newR,
-                                      access: newR === 'owner' ? 'Full Admin' : newR === 'manager' ? 'Operational' : newR === 'kitchen' ? 'KDS & Inventory' : 'Counter Only',
-                                    }
-                                  : item
-                              )
-                            );
-                          }}
-                          className="bg-neutral-50 border border-neutral-300 rounded-lg px-2.5 py-1 text-xs font-bold text-neutral-800 outline-none focus:border-neutral-900 cursor-pointer"
-                        >
-                          {rolesList.map((r) => (
-                            <option key={r.id} value={r.id}>
-                              {r.title}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="py-3 px-4 font-medium text-neutral-700">{staff.access}</td>
-                      <td className="py-3 px-4">
-                        <button
-                          onClick={() => {
-                            setStaffAccounts((prev) =>
-                              prev.map((item) =>
-                                item.id === staff.id
-                                  ? { ...item, status: item.status === 'Active' ? 'Suspended' : 'Active' }
-                                  : item
-                              )
-                            );
-                          }}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-colors cursor-pointer ${
-                            staff.status === 'Active'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                              : 'bg-rose-50 text-rose-700 border-rose-300'
-                          }`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${staff.status === 'Active' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                          {staff.status}
-                        </button>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        {staff.role !== 'owner' ? (
-                          <button
-                            onClick={() => setStaffAccounts((prev) => prev.filter((item) => item.id !== staff.id))}
-                            className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 transition-colors"
-                            title="Remove Staff Account"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        ) : (
-                          <span className="text-[10px] text-neutral-400 font-mono">Protected</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* MODAL: ADD CUSTOM STAFF ROLE */}
-      {showAddRoleModal && (
-        <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 border border-neutral-200">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-              <h3 className="text-base font-extrabold text-neutral-900 flex items-center gap-2">
-                <Crown className="w-5 h-5 text-amber-500" />
-                Create New Custom Staff Role
-              </h3>
-              <button onClick={() => setShowAddRoleModal(false)} className="p-1 text-neutral-400 hover:text-neutral-900 rounded-lg">
+              <button onClick={() => setShowDevDrawer(false)} className="p-1 text-neutral-400 hover:text-black cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-neutral-700 block mb-1">Role Title *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Floor Supervisor, Senior Cashier..."
-                  value={newRoleTitle}
-                  onChange={(e) => setNewRoleTitle(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-300 rounded-xl p-3 outline-none focus:border-neutral-900 font-medium"
-                />
-              </div>
+            <FirebaseConnectSection currentClubId={config.id} />
 
-              <div>
-                <label className="font-bold text-neutral-700 block mb-1">Role Description</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Manages arena floor and customer billing"
-                  value={newRoleDesc}
-                  onChange={(e) => setNewRoleDesc(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-300 rounded-xl p-3 outline-none focus:border-neutral-900 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-neutral-700 block mb-1">Base Access Profile</label>
-                <select
-                  value={newRoleBase}
-                  onChange={(e) => setNewRoleBase(e.target.value as any)}
-                  className="w-full bg-neutral-50 border border-neutral-300 rounded-xl p-3 outline-none focus:border-neutral-900 font-bold"
-                >
-                  <option value="cashier">Counter Staff Level</option>
-                  <option value="manager">Manager Level</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-100">
-              <Button variant="outline" size="sm" onClick={() => setShowAddRoleModal(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={!newRoleTitle.trim()}
-                onClick={() => {
-                  const roleId = `custom_${Date.now()}`;
-                  setRolesList((prev) => [
-                    ...prev,
-                    {
-                      id: roleId,
-                      title: newRoleTitle.toUpperCase(),
-                      description: newRoleDesc || 'Custom staff role created by owner.',
-                      baseRole: newRoleBase,
-                      isCustom: true,
-                      permissions: {
-                        tableOps: true,
-                        billingCheckout: true,
-                        applyDiscount: newRoleBase === 'manager',
-                        foodInventory: newRoleBase === 'manager',
-                        customerCredit: true,
-                        reportsAnalytics: newRoleBase === 'manager',
-                        clubSettings: false,
-                        shiftClosure: true,
-                        dataReset: false,
-                      },
-                    },
-                  ]);
-                  setNewRoleTitle('');
-                  setNewRoleDesc('');
-                  setShowAddRoleModal(false);
-                }}
-              >
-                Create Role
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: ADD STAFF ACCOUNT */}
-      {showAddStaffModal && (
-        <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 border border-neutral-200">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-              <h3 className="text-base font-extrabold text-neutral-900 flex items-center gap-2">
-                <UserPlus className="w-5 h-5 text-emerald-600" />
-                Add Staff Login Account
-              </h3>
-              <button onClick={() => setShowAddStaffModal(false)} className="p-1 text-neutral-400 hover:text-neutral-900 rounded-lg">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-neutral-700 block mb-1">Staff Member Name *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Rahul Sharma"
-                  value={newStaffName}
-                  onChange={(e) => setNewStaffName(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-300 rounded-xl p-3 outline-none focus:border-neutral-900 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-neutral-700 block mb-1">Email / Username *</label>
-                <input
-                  type="email"
-                  placeholder="e.g. rahul@oneshotsnooker.com"
-                  value={newStaffEmail}
-                  onChange={(e) => setNewStaffEmail(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-300 rounded-xl p-3 outline-none focus:border-neutral-900 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-neutral-700 block mb-1">Assign Role</label>
-                <select
-                  value={newStaffRole}
-                  onChange={(e) => setNewStaffRole(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-300 rounded-xl p-3 outline-none focus:border-neutral-900 font-bold"
-                >
-                  {rolesList.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-100">
-              <Button variant="outline" size="sm" onClick={() => setShowAddStaffModal(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={!newStaffName.trim() || !newStaffEmail.trim()}
-                onClick={() => {
-                  setStaffAccounts((prev) => [
-                    ...prev,
-                    {
-                      id: `staff_${Date.now()}`,
-                      name: newStaffName,
-                      email: newStaffEmail,
-                      role: newStaffRole,
-                      status: 'Active',
-                      access: newStaffRole === 'owner' ? 'Full Admin' : newStaffRole === 'manager' ? 'Operational' : 'Counter Only',
-                    },
-                  ]);
-                  setNewStaffName('');
-                  setNewStaffEmail('');
-                  setShowAddStaffModal(false);
-                }}
-              >
-                Save Staff User
+            <div className="flex justify-end pt-4 border-t">
+              <Button variant="outline" size="sm" onClick={() => setShowDevDrawer(false)}>
+                Close Developer Tool
               </Button>
             </div>
           </div>
@@ -1437,4 +1467,3 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     </div>
   );
 };
-

@@ -7,50 +7,125 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isUser(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    function isOwner() {
+      return isSignedIn() && (
+        request.auth.token.email == 'owner@oneshotsnooker.com' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner'
+      );
+    }
+
+    function isManagerOrOwner() {
+      return isSignedIn() && (
+        isOwner() ||
+        request.auth.token.email == 'manager@oneshotsnooker.com' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'manager'
+      );
+    }
+
+    function isClubStaff() {
+      return isSignedIn();
     }
 
     // --- USER PROFILES ---
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow create, update: if isUser(userId) || isSignedIn();
-      allow delete: if false;
+      // Users can update their own profile, but cannot arbitrarily promote themselves to owner
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        request.auth.uid == userId && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']) || isOwner()
+        )
+      );
+      allow delete: if isOwner();
     }
 
     // --- STAFF INVITATIONS ---
     match /invitations/{invitationId} {
-      allow read, create, update: if isSignedIn() || true;
-      allow delete: if false;
+      allow read: if isSignedIn();
+      allow create, update, delete: if isManagerOrOwner();
     }
 
     // --- CLUB WORKSPACES & SUBCOLLECTIONS ---
     match /clubs/{clubId} {
-      allow read: if true;
-      allow write: if isSignedIn();
+      allow read: if isClubStaff();
+      allow write: if isOwner();
 
-      match /{allSubcollections=**} {
-        allow read: if true;
-        allow write: if isSignedIn() || true;
+      // Club Settings & Configuration (Owner Only)
+      match /config/{docId} {
+        allow read: if isClubStaff();
+        allow write: if isOwner();
+      }
+
+      // Gaming Tables & Active Sessions (Staff Accessible)
+      match /tables/{tableId} {
+        allow read: if isClubStaff();
+        allow write: if isClubStaff();
+      }
+
+      // Menu Catalog (Manager & Owner)
+      match /menuItems/{itemId} {
+        allow read: if isClubStaff();
+        allow write: if isManagerOrOwner();
+      }
+
+      // Kitchen Display / Food Orders (All Staff)
+      match /foodOrders/{orderId} {
+        allow read: if isClubStaff();
+        allow write: if isClubStaff();
+      }
+
+      // Customer Profiles & Credit Ledgers (Cashier, Manager, Owner)
+      match /customers/{customerId} {
+        allow read: if isClubStaff();
+        allow write: if isClubStaff();
+      }
+
+      // Billing History & Completed Receipts
+      match /history/{historyId} {
+        allow read: if isClubStaff();
+        allow create: if isClubStaff();
+        // Modification or deletion of receipts restricted to Owner
+        allow update, delete: if isOwner();
+      }
+
+      // Staff Roster & Employee Management (Owner Only)
+      match /employees/{employeeId} {
+        allow read: if isClubStaff();
+        allow write: if isOwner();
+      }
+
+      // Staff Attendance
+      match /attendance/{attId} {
+        allow read: if isClubStaff();
+        allow write: if isClubStaff();
+      }
+
+      // Club Expenses & Financial Costs (Manager & Owner Only)
+      match /expenses/{expenseId} {
+        allow read, write: if isManagerOrOwner();
+      }
+
+      // Table Maintenance Records
+      match /maintenance/{maintId} {
+        allow read, write: if isClubStaff();
+      }
+
+      // System Notifications
+      match /notifications/{notifId} {
+        allow read, write: if isClubStaff();
+      }
+
+      // Audit Logs — Append-only, never modifiable or deletable
+      match /auditLogs/{logId} {
+        allow read: if isManagerOrOwner();
+        allow create: if isClubStaff();
+        allow update, delete: if false;
       }
     }
 
-    // --- SAAS CLUBS DIRECTORY & PLATFORM COLLECTIONS ---
-    match /saasClubs/{clubId} {
-      allow read, write: if true;
-    }
-
-    match /saasAuditLogs/{logId} {
-      allow read, write: if true;
-    }
-
-    match /saasAnnouncements/{announcementId} {
-      allow read, write: if true;
-    }
-
-    // Connection verification
+    // Platform Health Ping Endpoint
     match /test/connection {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
 
     // Default Deny

@@ -134,3 +134,8 @@ export function exportInventoryToExcel(menuItems: MenuItem[], clubName: string =
   const csvContent = objectsToCSV(headers, rows);
   downloadCSV(filename, csvContent);
 }
+
+export const exportCustomerCreditLedgerCSV = exportCreditLedgerToExcel;
+export const exportBillingHistoryCSV = exportSalesToExcel;
+export const exportInventoryCSV = exportInventoryToExcel;
+

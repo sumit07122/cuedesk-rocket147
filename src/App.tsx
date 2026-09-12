@@ -715,14 +715,21 @@ function CueDeskApp() {
                 config={config}
                 tables={tables}
                 menuItems={menuItems}
+                employees={employees}
+                history={history}
+                customers={topCustomers}
                 onUpdateConfig={(newConf) => {
                   updateConfig(newConf, user?.email);
                   addToast('success', 'Settings Saved', 'Business configuration updated in Firestore.');
                 }}
                 onAddTable={handleAddTable}
+                onEditTable={saveTable}
                 onDeleteTable={handleDeleteTable}
                 onAddMenuItem={handleAddMenuItem}
+                onEditMenuItem={saveMenuItem}
                 onDeleteMenuItem={handleDeleteMenuItem}
+                onSaveEmployee={saveEmployee}
+                onDeleteEmployee={deleteEmployee}
                 onResetClub={async (type) => {
                   await resetClubData(type);
                   addToast(
