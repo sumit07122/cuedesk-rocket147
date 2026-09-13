@@ -21,9 +21,60 @@ import {
   PlusCircle,
   ShieldAlert,
   Wallet,
-  Eye
+  Eye,
+  MessageCircle,
+  Copy
 } from 'lucide-react';
 import { TopCustomer, BusinessConfig, UdhaarTransaction } from '../../types';
+
+// WhatsApp phone normalizer: ensures country code '91' for 10-digit Indian numbers & strips symbols
+const normalizeWhatsAppPhone = (phone: string): string => {
+  let cleaned = phone.replace(/[^0-9]/g, '');
+  cleaned = cleaned.replace(/^0+/, '');
+  if (cleaned.length === 10) {
+    cleaned = '91' + cleaned;
+  }
+  return cleaned;
+};
+
+// Formats branded WhatsApp message templates
+const getWhatsAppReminderText = (
+  cust: TopCustomer,
+  clubName: string = 'One Shot Snooker Gaming Club',
+  currencySymbol: string = '₹',
+  upiId?: string,
+  tone: 'gentle' | 'standard' | 'urgent' = 'standard'
+): string => {
+  const due = (cust.outstandingDue || 0).toFixed(0);
+  const dateStr = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const cName = clubName || 'One Shot Snooker Gaming Club';
+
+  if (tone === 'gentle') {
+    return `🎱 *${cName}*\n\n` +
+      `Hello ${cust.name}! Hope you had a great session at the club. 🎱\n\n` +
+      `This is a gentle update regarding your outstanding credit tab of *${currencySymbol}${due}* as of ${dateStr}.\n\n` +
+      (upiId ? `📲 *UPI Payment ID:* \`${upiId}\`\n\n` : '') +
+      `Whenever you visit next or find time, you can clear it. We look forward to having you back on the tables!`;
+  }
+
+  if (tone === 'urgent') {
+    return `⚠️ *PAYMENT NOTICE: ${cName}*\n\n` +
+      `Dear ${cust.name},\n` +
+      `Your credit tab has reached *${currencySymbol}${due}* (as of ${dateStr}) and is currently overdue.\n\n` +
+      `Please clear the pending amount today to maintain your active player credit line and avoid session booking restrictions.\n\n` +
+      (upiId ? `📲 *Pay via UPI:* \`${upiId}\`\n\n` : '') +
+      `If already settled, kindly share the payment screenshot. Thank you!`;
+  }
+
+  // standard
+  return `🎱 *${cName} — Pending Payment Reminder*\n\n` +
+    `Hello ${cust.name},\n` +
+    `You have an outstanding credit balance of *${currencySymbol}${due}* as of ${dateStr}.\n\n` +
+    `Kindly clear this at your earliest convenience.\n\n` +
+    (upiId ? `📲 *UPI ID for Payment:* \`${upiId}\`\n\n` : '') +
+    `Thank you for playing with us!\n` +
+    `— Team ${cName}`;
+};
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -71,6 +122,38 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
   // Delete Customer State
   const [deletingCustomer, setDeletingCustomer] = useState<TopCustomer | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // WhatsApp Reminder State
+  const [whatsAppCustomer, setWhatsAppCustomer] = useState<TopCustomer | null>(null);
+  const [whatsAppTone, setWhatsAppTone] = useState<'gentle' | 'standard' | 'urgent'>('standard');
+  const [whatsAppMessage, setWhatsAppMessage] = useState<string>('');
+  const [isCopied, setIsCopied] = useState(false);
+
+  const handleOpenWhatsAppModal = (cust: TopCustomer, tone: 'gentle' | 'standard' | 'urgent' = 'standard') => {
+    setWhatsAppCustomer(cust);
+    setWhatsAppTone(tone);
+    setWhatsAppMessage(getWhatsAppReminderText(cust, config.clubName, config.currencySymbol, config.upiId, tone));
+    setIsCopied(false);
+  };
+
+  const handleToneChange = (tone: 'gentle' | 'standard' | 'urgent') => {
+    if (!whatsAppCustomer) return;
+    setWhatsAppTone(tone);
+    setWhatsAppMessage(getWhatsAppReminderText(whatsAppCustomer, config.clubName, config.currencySymbol, config.upiId, tone));
+  };
+
+  const handleSendWhatsApp = () => {
+    if (!whatsAppCustomer) return;
+    const phone = normalizeWhatsAppPhone(whatsAppCustomer.phone);
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(whatsAppMessage)}`;
+    window.open(url, '_blank');
+  };
+
+  const handleCopyWhatsAppMessage = () => {
+    navigator.clipboard.writeText(whatsAppMessage);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 3000);
+  };
 
   const [isSaving, setIsSaving] = useState(false);
 
@@ -352,13 +435,25 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
             </div>
 
             {/* Drawer Footer Actions */}
-            <div className="p-4 border-t border-neutral-200 bg-neutral-50 grid grid-cols-2 gap-2 shrink-0">
+            <div className="p-4 border-t border-neutral-200 bg-neutral-50 grid grid-cols-2 sm:grid-cols-3 gap-2 shrink-0">
               <button
                 onClick={() => { setSettlingCustomer(viewingProfileCustomer); setViewingProfileCustomer(null); }}
-                className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
               >
                 <Wallet className="w-3.5 h-3.5" /> Settle Credit
               </button>
+              {(viewingProfileCustomer.outstandingDue || 0) > 0 && (
+                <button
+                  onClick={() => {
+                    const c = viewingProfileCustomer;
+                    setViewingProfileCustomer(null);
+                    handleOpenWhatsAppModal(c);
+                  }}
+                  className="py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 text-emerald-600" /> WhatsApp
+                </button>
+              )}
               <button
                 onClick={() => { handleOpenEditModal(viewingProfileCustomer); setViewingProfileCustomer(null); }}
                 className="py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
@@ -595,6 +690,15 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                         <Wallet className="w-3 h-3" /> Settle
                       </button>
                     )}
+                    {dueAmt > 0 && (
+                      <button
+                        onClick={() => handleOpenWhatsAppModal(cust)}
+                        className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-2xs cursor-pointer"
+                        title="Send WhatsApp Payment Reminder"
+                      >
+                        <MessageCircle className="w-3 h-3 text-emerald-600" /> WhatsApp
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         setAddingCreditCustomer(cust);
@@ -770,14 +874,12 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                           {/* WhatsApp Reminder Button */}
                           {dueAmt > 0 && (
                             <button
-                              onClick={() => {
-                                const msg = `Hello ${cust.name}, gentle payment reminder from ${config.clubName || 'One Shot Snooker Gaming Club'}. Your outstanding credit balance is ₹${dueAmt.toFixed(0)}. Kindly clear it at your earliest convenience. Thank you!`;
-                                window.open(`https://wa.me/${cust.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
-                              }}
-                              className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                              onClick={() => handleOpenWhatsAppModal(cust)}
+                              className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
                               title="Send WhatsApp Payment Reminder"
                             >
-                              <Send className="w-4 h-4" />
+                              <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>WhatsApp</span>
                             </button>
                           )}
 
@@ -1137,11 +1239,13 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                     size="sm"
                     variant="primary"
                     onClick={() => {
-                      const msg = `Hello ${viewingLedgerCustomer.name}, gentle payment reminder from ${config.clubName || 'One Shot Snooker Gaming Club'}. Your outstanding credit balance is ₹${(viewingLedgerCustomer.outstandingDue || 0).toFixed(0)}. Kindly clear it at your earliest convenience. Thank you!`;
-                      window.open(`https://wa.me/${viewingLedgerCustomer.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+                      const c = viewingLedgerCustomer;
+                      setViewingLedgerCustomer(null);
+                      handleOpenWhatsAppModal(c);
                     }}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs flex items-center gap-1.5 shadow-2xs"
                   >
+                    <MessageCircle className="w-3.5 h-3.5" />
                     WhatsApp Reminder
                   </Button>
                 )}
@@ -1176,6 +1280,145 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
               <Button variant="outline" size="sm" onClick={() => setViewingLedgerCustomer(null)}>
                 Close Audit View
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* WHATSAPP PAYMENT REMINDER MODAL */}
+      {/* ========================================================= */}
+      {whatsAppCustomer && (
+        <div className="fixed inset-0 bg-neutral-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 border border-emerald-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-xs">
+                  <MessageCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-neutral-900">WhatsApp Payment Reminder</h3>
+                  <p className="text-xs text-neutral-500 font-medium">Send balance statement & payment instructions</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setWhatsAppCustomer(null)}
+                className="p-1 text-neutral-400 hover:text-neutral-900 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Recipient Snapshot Card */}
+            <div className="p-3.5 bg-neutral-50 border border-neutral-200 rounded-2xl flex items-center justify-between">
+              <div>
+                <span className="font-extrabold text-neutral-900 text-sm">{whatsAppCustomer.name}</span>
+                <div className="flex items-center gap-1.5 text-xs text-neutral-500 font-mono mt-0.5">
+                  <Phone className="w-3 h-3 text-neutral-400" />
+                  <span>{whatsAppCustomer.phone}</span>
+                  <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-semibold border border-emerald-200">
+                    +{normalizeWhatsAppPhone(whatsAppCustomer.phone)}
+                  </span>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] uppercase font-bold text-neutral-400 block">Pending Due</span>
+                <span className="text-base font-black font-mono text-rose-600">
+                  ₹{(whatsAppCustomer.outstandingDue || 0).toFixed(0)}
+                </span>
+              </div>
+            </div>
+
+            {/* Template Tone Switcher */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-neutral-700 block">Select Reminder Template:</label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleToneChange('gentle')}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                    whatsAppTone === 'gentle'
+                      ? 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-2xs ring-1 ring-emerald-500'
+                      : 'bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50'
+                  }`}
+                >
+                  🌱 Gentle Notice
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleToneChange('standard')}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                    whatsAppTone === 'standard'
+                      ? 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-2xs ring-1 ring-emerald-500'
+                      : 'bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50'
+                  }`}
+                >
+                  📋 Standard Due
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleToneChange('urgent')}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                    whatsAppTone === 'urgent'
+                      ? 'bg-rose-50 border-rose-500 text-rose-900 shadow-2xs ring-1 ring-rose-500'
+                      : 'bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50'
+                  }`}
+                >
+                  ⚠️ Overdue Alert
+                </button>
+              </div>
+            </div>
+
+            {/* Message Preview Textarea */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-neutral-700">Message Preview & Customization:</label>
+                {config.upiId && (
+                  <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                    UPI: {config.upiId}
+                  </span>
+                )}
+              </div>
+              <textarea
+                rows={6}
+                value={whatsAppMessage}
+                onChange={(e) => setWhatsAppMessage(e.target.value)}
+                className="w-full bg-neutral-50 border border-neutral-300 rounded-xl p-3 text-xs font-mono text-neutral-800 outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 resize-none leading-relaxed"
+              />
+              <p className="text-[10px] text-neutral-400">
+                You can edit the text before sending. Formatting (*bold*, `code`) will appear nicely in WhatsApp.
+              </p>
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="flex items-center justify-between pt-3 border-t border-neutral-100 gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCopyWhatsAppMessage}
+                leftIcon={<Copy className="w-3.5 h-3.5" />}
+              >
+                {isCopied ? 'Copied Text!' : 'Copy Text'}
+              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setWhatsAppCustomer(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleSendWhatsApp}
+                  leftIcon={<MessageCircle className="w-4 h-4" />}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white border-none shadow-xs font-bold cursor-pointer"
+                >
+                  Open in WhatsApp
+                </Button>
+              </div>
             </div>
           </div>
         </div>

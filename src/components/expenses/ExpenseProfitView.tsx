@@ -19,8 +19,7 @@ import { ExpenseRecord, ExpenseCategory, SessionHistoryItem, BusinessConfig } fr
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
-import { Badge } from '../ui/Badge';
-import { formatCurrency } from '../../utils/formatters';
+import { formatCurrency, getSessionDate } from '../../utils/formatters';
 import { exportExpensesToExcel } from '../../utils/excelExport';
 
 interface ExpenseProfitViewProps {
@@ -69,7 +68,7 @@ export const ExpenseProfitView: React.FC<ExpenseProfitViewProps> = ({
 
   // Filtered History & Expenses
   const filteredHistory = history.filter((h) => {
-    const t = new Date(h.timestamp || h.startTime).getTime();
+    const t = getSessionDate(h).getTime();
     return t >= startTime;
   });
 

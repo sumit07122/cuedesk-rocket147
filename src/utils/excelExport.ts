@@ -1,5 +1,5 @@
 import { SessionHistoryItem, TopCustomer, MenuItem, ExpenseRecord, EmployeeUser, AttendanceRecord, Tournament } from '../types';
-import { formatCurrency } from './formatters';
+import { formatCurrency, getSessionDate } from './formatters';
 
 /**
  * Downloads a string payload as a CSV file compatible with Excel, Google Sheets, and LibreOffice.
@@ -55,7 +55,7 @@ export function exportSalesToExcel(history: SessionHistoryItem[], clubName: stri
 
   const rows = history.map(item => [
     item.receiptNo || item.id,
-    new Date(item.endTime || item.startTime).toLocaleString(),
+    getSessionDate(item).toLocaleString(),
     item.tableName,
     item.customerName || 'Walk-in Guest',
     item.customerPhone || 'N/A',

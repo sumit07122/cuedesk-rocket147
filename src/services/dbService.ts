@@ -404,75 +404,88 @@ export const subscribeHistory = (
   callback: (history: SessionHistoryItem[]) => void
 ) => {
   const historyRef = collection(db, 'clubs', clubId, 'history');
-  const q = query(historyRef, orderBy('startTime', 'desc'));
 
-  return onSnapshot(q, (snapshot) => {
+  return onSnapshot(historyRef, (snapshot) => {
     const list: SessionHistoryItem[] = [];
     snapshot.forEach((docSnap) => {
       list.push({ id: docSnap.id, ...docSnap.data() } as SessionHistoryItem);
+    });
+    list.sort((a, b) => {
+      const timeA = a.endTime || a.startTime || 0;
+      const timeB = b.endTime || b.startTime || 0;
+      return timeB - timeA;
     });
     callback(list);
   }, (err) => console.warn('subscribeHistory error:', err));
 };
 
-export const clearHistoryAndAnalytics = async (clubId: string = DEFAULT_CLUB_ID): Promise<void> => {
+export const clearHistoryAndAnalytics = async (
+  clubId: string = DEFAULT_CLUB_ID,
+  resetType: 'all' | 'history' | 'crm' = 'all'
+): Promise<void> => {
   try {
-    const collectionsToWipe = ['history', 'foodOrders', 'requests', 'notifications', 'expenses', 'attendance', 'auditLogs', 'inventoryAdjustments'];
+    let collectionsToWipe: string[] = [];
+    if (resetType === 'history') {
+      collectionsToWipe = ['history', 'foodOrders', 'requests', 'auditLogs'];
+    } else if (resetType === 'crm') {
+      collectionsToWipe = ['customers'];
+    } else {
+      // 'all' Full Club Reset
+      collectionsToWipe = [
+        'history', 
+        'foodOrders', 
+        'requests', 
+        'notifications', 
+        'expenses', 
+        'attendance', 
+        'auditLogs', 
+        'inventoryAdjustments',
+        'purchases',
+        'maintenance',
+        'customers'
+      ];
+    }
+
     for (const colName of collectionsToWipe) {
       try {
         const colRef = collection(db, 'clubs', clubId, colName);
         const snap = await getDocs(colRef);
         if (!snap.empty) {
-          const batch = writeBatch(db);
-          snap.forEach((d) => batch.delete(d.ref));
-          await batch.commit();
+          const docs = snap.docs;
+          for (let i = 0; i < docs.length; i += 400) {
+            const batch = writeBatch(db);
+            const chunk = docs.slice(i, i + 400);
+            chunk.forEach((d) => batch.delete(d.ref));
+            await batch.commit();
+          }
         }
       } catch (colErr) {
         console.warn(`Could not wipe collection ${colName} (safe to ignore if offline):`, colErr);
       }
     }
 
-    // Reset all tables to available and clear active sessions
-    try {
-      const tablesRef = collection(db, 'clubs', clubId, 'tables');
-      const tablesSnap = await getDocs(tablesRef);
-      if (!tablesSnap.empty) {
-        const tableBatch = writeBatch(db);
-        tablesSnap.forEach((d) => {
-          tableBatch.update(d.ref, {
-            status: 'available',
-            currentSession: null,
-            isMaintenance: false
+    // Reset all tables to available and clear active sessions (for 'history' and 'all')
+    if (resetType === 'history' || resetType === 'all') {
+      try {
+        const tablesRef = collection(db, 'clubs', clubId, 'tables');
+        const tablesSnap = await getDocs(tablesRef);
+        if (!tablesSnap.empty) {
+          const tableBatch = writeBatch(db);
+          tablesSnap.forEach((d) => {
+            tableBatch.update(d.ref, {
+              status: 'available',
+              currentSession: null,
+              isMaintenance: false
+            });
           });
-        });
-        await tableBatch.commit();
+          await tableBatch.commit();
+        }
+      } catch (tblErr) {
+        console.warn('Could not reset tables in Firestore (safe to ignore if offline):', tblErr);
       }
-    } catch (tblErr) {
-      console.warn('Could not reset tables in Firestore (safe to ignore if offline):', tblErr);
-    }
-
-    // Reset customer dues to 0
-    try {
-      const custRef = collection(db, 'clubs', clubId, 'customers');
-      const custSnap = await getDocs(custRef);
-      if (!custSnap.empty) {
-        const custBatch = writeBatch(db);
-        custSnap.forEach((d) => {
-          custBatch.update(d.ref, {
-            outstandingDue: 0,
-            sessionsCount: 0,
-            totalSpent: 0,
-            totalHoursPlayed: 0,
-            udhaarLedger: []
-          });
-        });
-        await custBatch.commit();
-      }
-    } catch (custErr) {
-      console.warn('Could not reset customer dues in Firestore:', custErr);
     }
   } catch (err) {
-    console.error('Error in complete club data reset:', err);
+    console.error('Error in club data reset:', err);
     throw err;
   }
 };

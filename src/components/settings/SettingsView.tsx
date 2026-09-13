@@ -84,7 +84,7 @@ interface SettingsViewProps {
   onDeleteMenuItem: (itemId: string) => void;
   onSaveEmployee?: (emp: EmployeeUser) => void;
   onDeleteEmployee?: (empId: string) => void;
-  onResetClub?: (type: 'all' | 'history') => Promise<void>;
+  onResetClub?: (type: 'all' | 'history' | 'crm') => Promise<void>;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -141,7 +141,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Danger Zone State
   const [dangerModalOpen, setDangerModalOpen] = useState(false);
-  const [dangerTarget, setDangerTarget] = useState<'history' | 'all' | null>(null);
+  const [dangerTarget, setDangerTarget] = useState<'history' | 'crm' | 'all' | null>(null);
   const [resetConfirmText, setResetConfirmText] = useState('');
   const RESET_KEYWORD = 'RESET ONESHOT';
   const [isClearingHistory, setIsClearingHistory] = useState(false);
@@ -1339,14 +1339,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               </div>
 
-              {/* 2 Destructive Action Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* 3 Destructive Action Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {/* 1. Reset Sales History */}
                 <div className="p-4 rounded-2xl bg-white border border-rose-200 flex flex-col justify-between gap-3 shadow-2xs">
                   <div>
-                    <h5 className="font-bold text-neutral-900 text-xs">Clear Sales & Session History</h5>
+                    <h5 className="font-bold text-neutral-900 text-xs">Clear Sales & Revenue History</h5>
                     <p className="text-[11px] text-neutral-500 mt-1">
-                      Wipes all billing receipts and revenue counters back to ₹0, keeping gaming stations, catalog, and staff intact.
+                      Wipes all billing receipts, session history, active timers, and revenue counters back to ₹0, keeping CRM players, catalog, and staff intact.
                     </p>
                   </div>
                   <Button
@@ -1359,16 +1359,38 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     }}
                     className="bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 justify-center font-bold"
                   >
-                    Reset Sales History
+                    Reset Sales & Revenue
                   </Button>
                 </div>
 
-                {/* 2. Full Club Reset */}
+                {/* 2. Wipe CRM Database */}
+                <div className="p-4 rounded-2xl bg-white border border-rose-200 flex flex-col justify-between gap-3 shadow-2xs">
+                  <div>
+                    <h5 className="font-bold text-neutral-900 text-xs">Wipe CRM Customer Database</h5>
+                    <p className="text-[11px] text-neutral-500 mt-1">
+                      Deletes all customer profiles, contact numbers, and credit/udhaar ledgers from CRM, keeping sales history and tables intact.
+                    </p>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setDangerTarget('crm');
+                      setResetConfirmText('');
+                      setDangerModalOpen(true);
+                    }}
+                    className="bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 justify-center font-bold"
+                  >
+                    Wipe CRM Database
+                  </Button>
+                </div>
+
+                {/* 3. Full Club Reset */}
                 <div className="p-4 rounded-2xl bg-white border border-rose-300 flex flex-col justify-between gap-3 shadow-2xs">
                   <div>
-                    <h5 className="font-bold text-rose-900 text-xs">Full Club Data Reset</h5>
+                    <h5 className="font-bold text-rose-900 text-xs">Full Club Factory Reset</h5>
                     <p className="text-[11px] text-neutral-500 mt-1">
-                      Wipes sales history, orders, player credit dues, and restores all table stations to empty state for client handover.
+                      Completely wipes all sales receipts, revenue, CRM customers, orders, expenses, and restores all tables to fresh empty state.
                     </p>
                   </div>
                   <Button
@@ -1381,7 +1403,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     }}
                     className="bg-rose-600 text-white hover:bg-rose-700 border-none justify-center font-bold shadow-xs"
                   >
-                    Full Club Reset
+                    Full Factory Reset
                   </Button>
                 </div>
               </div>
@@ -1422,7 +1444,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
             <div className="space-y-3 text-xs">
               <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 leading-relaxed font-medium">
-                ⚠️ You are about to permanently delete <strong>{dangerTarget === 'all' ? 'ALL sales history, customer dues, orders, and telemetry logs' : 'sales session receipts'}</strong> for <strong>{config.clubName}</strong>.
+                ⚠️ You are about to permanently delete{' '}
+                <strong>
+                  {dangerTarget === 'all'
+                    ? 'ALL club data: sales receipts, revenue, CRM customer database, orders, and telemetry logs'
+                    : dangerTarget === 'crm'
+                    ? 'ALL CRM customer records, phone numbers, and credit/udhaar ledgers'
+                    : 'all billing receipts, session history, and revenue counters'}
+                </strong>{' '}
+                for <strong>{config.clubName}</strong>.
               </div>
 
               <div>
@@ -1458,7 +1488,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   if (resetConfirmText.trim().toUpperCase() !== RESET_KEYWORD) return;
                   setIsClearingHistory(true);
                   try {
-                    const target = dangerTarget === 'history' ? 'history' : 'all';
+                    const target = dangerTarget || 'all';
                     if (onResetClub) {
                       await onResetClub(target);
                     }

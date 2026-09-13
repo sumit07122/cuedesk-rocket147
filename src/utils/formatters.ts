@@ -1,4 +1,4 @@
-import { SessionData, OrderItem } from '../types';
+import { SessionData, OrderItem, SessionHistoryItem } from '../types';
 
 export function formatCurrency(amount: number, symbol: any = '₹'): string {
   let sym = '₹';
@@ -104,4 +104,46 @@ export function calculateBillTotals(
     taxAmount: 0,  // always 0 — no tax
     grandTotal
   };
+}
+
+/**
+ * Safely resolves the Date object of a SessionHistoryItem or any session object.
+ * Robust against numeric millisecond timestamps, ISO date strings, and Indian locale strings (e.g. "13/09/2026, 03:25 pm").
+ */
+export function getSessionDate(item?: Partial<SessionHistoryItem> | null): Date {
+  if (!item) return new Date();
+
+  // 1. Prefer numeric timestamps (endTime or startTime)
+  const numericTime = item.endTime || item.startTime;
+  if (typeof numericTime === 'number' && !isNaN(numericTime) && numericTime > 0) {
+    return new Date(numericTime);
+  }
+
+  // 2. Parse string timestamp if available
+  if (item.timestamp && typeof item.timestamp === 'string') {
+    // Standard ISO or standard string parse
+    const standardParsed = Date.parse(item.timestamp);
+    if (!isNaN(standardParsed)) {
+      return new Date(standardParsed);
+    }
+
+    // Handle DD/MM/YYYY or DD-MM-YYYY (e.g. 13/09/2026, 03:25 pm)
+    const dmyMatch = item.timestamp.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*(am|pm)?)?/i);
+    if (dmyMatch) {
+      const [, d, m, y, hours, mins, secs, ampm] = dmyMatch;
+      let hourNum = hours ? parseInt(hours, 10) : 0;
+      const minNum = mins ? parseInt(mins, 10) : 0;
+      const secNum = secs ? parseInt(secs, 10) : 0;
+      if (ampm) {
+        if (ampm.toLowerCase() === 'pm' && hourNum < 12) hourNum += 12;
+        if (ampm.toLowerCase() === 'am' && hourNum === 12) hourNum = 0;
+      }
+      const parsedDate = new Date(Number(y), Number(m) - 1, Number(d), hourNum, minNum, secNum);
+      if (!isNaN(parsedDate.getTime())) {
+        return parsedDate;
+      }
+    }
+  }
+
+  return new Date();
 }

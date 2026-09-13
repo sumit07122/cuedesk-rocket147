@@ -46,6 +46,20 @@
   background: rgba(0, 0, 0, 0.22);
 }
 
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
+}
+.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
 /* ─── No Scrollbar Utility ─────────────────────────────────── */
 .no-scrollbar::-webkit-scrollbar {
   display: none;

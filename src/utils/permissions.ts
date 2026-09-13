@@ -74,6 +74,9 @@ const ROLE_ALLOWED_PAGES: Record<UserRole, PageView[]> = {
     'reports', 
     'settings', 
     'kds',
+    'tournaments',
+    'lockers',
+    'arena',
     'login'
   ],
   manager: [
@@ -87,6 +90,9 @@ const ROLE_ALLOWED_PAGES: Record<UserRole, PageView[]> = {
     'maintenance', 
     'reports', 
     'kds',
+    'tournaments',
+    'lockers',
+    'arena',
     'login'
   ],
   cashier: [
@@ -97,6 +103,9 @@ const ROLE_ALLOWED_PAGES: Record<UserRole, PageView[]> = {
     'menu-inventory', 
     'customers', 
     'kds',
+    'tournaments',
+    'lockers',
+    'arena',
     'login'
   ],
   kitchen: [

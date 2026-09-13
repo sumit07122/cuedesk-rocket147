@@ -107,6 +107,9 @@ export type PageView =
   | 'reports'
   | 'settings'
   | 'kds'
+  | 'tournaments'
+  | 'lockers'
+  | 'arena'
   | 'login';
 
 export type TableType = 'snooker' | 'pool' | 'american_pool' | 'table_tennis' | 'ps5' | 'ps4' | 'magnet_table' | 'carom' | 'vip' | 'xbox' | 'pc_rig';

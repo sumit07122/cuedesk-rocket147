@@ -140,7 +140,7 @@ export const useRealtimeClubData = (clubId: string) => {
       if (data) setHistory(data);
     });
     const unsubCustomers = subscribeTopCustomers(clubId, (data) => {
-      if (data && data.length > 0) setTopCustomers(data);
+      if (data) setTopCustomers(data);
     });
     const unsubRequests = subscribeSessionRequests(clubId, (data) => setSessionRequests(data || []));
     const unsubLogs = subscribeAuditLogs(clubId, (data) => setAuditLogs(data || []));
@@ -148,7 +148,7 @@ export const useRealtimeClubData = (clubId: string) => {
     const unsubPurchases = subscribePurchaseRecords(clubId, (data) => setPurchaseRecords(data || []));
     const unsubAdjustments = subscribeInventoryAdjustments(clubId, (data) => setInventoryAdjustments(data || []));
     const unsubEmployees = subscribeEmployees(clubId, (data) => {
-      if (data && data.length > 0) setEmployees(data);
+      if (data) setEmployees(data);
     });
     const unsubAttendance = subscribeAttendance(clubId, (data) => {
       if (data) setAttendance(data);
@@ -333,6 +333,7 @@ export const useRealtimeClubData = (clubId: string) => {
   };
 
   const handleDeleteCustomerCRM = async (customerId: string) => {
+    setTopCustomers((prev) => prev.filter((c) => c.id !== customerId));
     await deleteCustomerCRM(clubId, customerId);
   };
 
@@ -417,18 +418,35 @@ export const useRealtimeClubData = (clubId: string) => {
     await clearAllNotifications(clubId, ids);
   };
 
-  const handleResetClubData = async (resetType: 'all' | 'history' = 'all') => {
+  const handleResetClubData = async (resetType: 'all' | 'history' | 'crm' = 'all') => {
     setIsLoading(true);
     try {
       if (resetType === 'history') {
         setHistory([]);
+        setFoodOrders([]);
+        setSessionRequests([]);
+        setTables((prev) =>
+          prev.map((t) => ({
+            ...t,
+            status: 'available',
+            currentSession: null,
+            isMaintenance: false,
+          }))
+        );
         try {
-          await clearHistoryAndAnalytics(clubId);
+          await clearHistoryAndAnalytics(clubId, 'history');
         } catch (err) {
           console.warn('Remote clearHistoryAndAnalytics error (safe fallback):', err);
         }
+      } else if (resetType === 'crm') {
+        setTopCustomers([]);
+        try {
+          await clearHistoryAndAnalytics(clubId, 'crm');
+        } catch (err) {
+          console.warn('Remote clear CRM error (safe fallback):', err);
+        }
       } else {
-        // Full Club Reset: wipe transactions, restore tables and customer ledgers
+        // Full Club Reset: wipe all collections, restore tables and clear customer CRM
         setHistory([]);
         setFoodOrders([]);
         setSessionRequests([]);
@@ -436,6 +454,9 @@ export const useRealtimeClubData = (clubId: string) => {
         setExpenses([]);
         setAttendance([]);
         setAuditLogs([]);
+        setPurchaseRecords([]);
+        setInventoryAdjustments([]);
+        setTopCustomers([]);
 
         // Reset all tables to available
         setTables((prev) =>
@@ -447,21 +468,9 @@ export const useRealtimeClubData = (clubId: string) => {
           }))
         );
 
-        // Reset customer outstanding dues & session stats
-        setTopCustomers((prev) =>
-          prev.map((c) => ({
-            ...c,
-            outstandingDue: 0,
-            sessionsCount: 0,
-            totalSpent: 0,
-            totalHoursPlayed: 0,
-            udhaarLedger: [],
-          }))
-        );
-
         // Clear remote collections if online
         try {
-          await clearHistoryAndAnalytics(clubId);
+          await clearHistoryAndAnalytics(clubId, 'all');
         } catch (err) {
           console.warn('Remote full wipe warning (safe fallback):', err);
         }

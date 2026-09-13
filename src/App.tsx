@@ -27,8 +27,10 @@ import { ExpenseProfitView } from './components/expenses/ExpenseProfitView';
 import { TableMaintenanceView } from './components/maintenance/TableMaintenanceView';
 import { ReportsView } from './components/reports/ReportsView';
 import { SettingsView } from './components/settings/SettingsView';
-import { SuperAdminView } from './components/saas/SuperAdminView';
 import { KitchenDisplayView } from './components/kds/KitchenDisplayView';
+import { CueLockersView } from './components/lockers/CueLockersView';
+import { TournamentView } from './components/tournaments/TournamentView';
+import { ArenaHubView } from './components/arena/ArenaHubView';
 import { LoginView } from './components/auth/LoginView';
 import { ToastContainer, ToastMessage } from './components/ui/Toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -38,8 +40,8 @@ import { OfflineBanner } from './components/common/OfflineBanner';
 import { createNotification } from './services/dbService';
 import { RoleGuard } from './components/common/RoleGuard';
 import { CheckCircle2, Sparkles, CircleDot, ChefHat } from 'lucide-react';
-import { UserRole } from './types';
 import { soundEffects } from './utils/soundEffects';
+import { getSessionDate } from './utils/formatters';
 
 function CueDeskApp() {
   const { user, currentClubId, role, signOutUser, switchClub, isLoading: isAuthLoading, hasPermission } = useAuth();
@@ -184,7 +186,15 @@ function CueDeskApp() {
   const occupiedCount = tables.filter((t) => t.status === 'occupied' || t.status === 'payment_pending').length;
   const availableTables = tables.filter((t) => t.status === 'available');
 
-  const revenueToday = history.reduce((sum, h) => sum + h.grandTotal, 0);
+  const todayDate = new Date();
+  const isSameCalendarDay = (d1: Date, d2: Date) =>
+    d1.getFullYear() === d2.getFullYear() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getDate() === d2.getDate();
+
+  const revenueToday = history
+    .filter((h) => isSameCalendarDay(getSessionDate(h), todayDate))
+    .reduce((sum, h) => sum + (Number(h.grandTotal) || 0), 0);
   const pendingPaymentsTotal = tables
     .filter((t) => (t.status === 'occupied' || t.status === 'payment_pending') && t.currentSession)
     .reduce((sum, t) => {
@@ -376,7 +386,7 @@ function CueDeskApp() {
         addToast('warning', 'New Credit Customer Created', `${historyItem.customerName} added to CRM. Dues: ₹${historyItem.grandTotal.toFixed(0)}`);
       }
     } else {
-      // Standard paid — update customer's totalSpent in CRM if record exists
+      // Standard paid — update customer's totalSpent in CRM if record exists, or auto-enroll into CRM
       const matchedCustomer = topCustomers.find(
         (c) => c.name.toLowerCase() === historyItem.customerName.toLowerCase() || 
                (historyItem.customerPhone && c.phone === historyItem.customerPhone)
@@ -384,13 +394,30 @@ function CueDeskApp() {
       if (matchedCustomer) {
         await saveCustomer({
           ...matchedCustomer,
-          totalSpent: (matchedCustomer.totalSpent || 0) + historyItem.grandTotal,
+          totalSpent: (Number(matchedCustomer.totalSpent) || 0) + (Number(historyItem.grandTotal) || 0),
           sessionsCount: (matchedCustomer.sessionsCount || 0) + 1,
-          totalHoursPlayed: (matchedCustomer.totalHoursPlayed || 0) + Math.round((historyItem.durationSeconds / 3600) * 10) / 10,
+          totalHoursPlayed: (matchedCustomer.totalHoursPlayed || 0) + Math.round(((historyItem.durationSeconds || 0) / 3600) * 10) / 10,
           lastVisit: 'Today',
         }).catch(() => {}); // non-blocking
+      } else if (historyItem.customerName && historyItem.customerName.trim().toLowerCase() !== 'walk-in guest') {
+        // Auto-create customer profile in CRM for paying customer
+        await saveCustomer({
+          id: `cust-${Date.now()}`,
+          name: historyItem.customerName.trim(),
+          phone: historyItem.customerPhone?.trim() || 'N/A',
+          sessionsCount: 1,
+          totalSpent: Number(historyItem.grandTotal) || 0,
+          totalHoursPlayed: Math.round(((historyItem.durationSeconds || 0) / 3600) * 10) / 10,
+          dateJoined: new Date().toISOString().split('T')[0],
+          membershipStatus: 'Regular',
+          tier: 'silver',
+          creditLimit: config.maxCreditLimit || 2000,
+          lastVisit: 'Today',
+          outstandingDue: 0,
+          udhaarLedger: []
+        }).catch(() => {});
       }
-      addToast('success', `Payment Settled!`, `Receipt #${historyItem.receiptNo} • ${config.currencySymbol}${historyItem.grandTotal.toFixed(2)}`);
+      addToast('success', `Payment Settled!`, `Receipt #${historyItem.receiptNo} • ${config.currencySymbol}${(historyItem.grandTotal || 0).toFixed(2)}`);
     }
   };
 
@@ -479,6 +506,7 @@ function CueDeskApp() {
         occupiedCount={occupiedCount}
         totalTables={tables.length}
         clubs={saasClubs}
+        clubName={config.clubName}
         onOpenOnboarding={() => setIsOnboardingOpen(true)}
         onOpenSuperAdmin={() => setActivePage('super-admin')}
         onLogout={() => {
@@ -653,6 +681,25 @@ function CueDeskApp() {
                 addToast('success', 'Order Updated', `Order status changed to ${status.toUpperCase()}`);
               }}
             />
+          ) : activePage === 'tournaments' ? (
+            <RoleGuard requiredPage="tournaments" onNavigateHome={() => setActivePage('dashboard')}>
+              <TournamentView
+                currencySymbol={config.currencySymbol}
+              />
+            </RoleGuard>
+          ) : activePage === 'lockers' ? (
+            <RoleGuard requiredPage="lockers" onNavigateHome={() => setActivePage('dashboard')}>
+              <CueLockersView
+                currencySymbol={config.currencySymbol}
+                onSaveLocker={(_locker) => {
+                  addToast('success', 'Locker Updated', `${_locker.lockerNumber} updated.`);
+                }}
+              />
+            </RoleGuard>
+          ) : activePage === 'arena' ? (
+            <RoleGuard requiredPage="arena" onNavigateHome={() => setActivePage('dashboard')}>
+              <ArenaHubView />
+            </RoleGuard>
           ) : activePage === 'customers' ? (
             <CustomerCRMView
               customers={topCustomers}
@@ -759,8 +806,10 @@ function CueDeskApp() {
                     'success',
                     'Club Reset Completed',
                     type === 'history'
-                      ? 'Sales and session history wiped clean.'
-                      : 'Full club data reset: sessions cleared, tables ready, dues set to ₹0.'
+                      ? 'Sales and revenue history wiped clean.'
+                      : type === 'crm'
+                      ? 'CRM customer database wiped clean.'
+                      : 'Full club data reset completed.'
                   );
                 }}
               />

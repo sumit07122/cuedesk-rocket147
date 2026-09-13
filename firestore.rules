@@ -74,10 +74,37 @@ service cloud.firestore {
         allow write: if isClubStaff();
       }
 
+      // Online Customer Session Requests & Waitlist Queue
+      match /requests/{requestId} {
+        allow read, write: if isClubStaff();
+      }
+
+      // Inventory Procurement & Supplier Purchases
+      match /purchases/{purchaseId} {
+        allow read: if isClubStaff();
+        allow write: if isManagerOrOwner();
+      }
+
+      // Stock Waste, Breakage & Inventory Audits
+      match /inventoryAdjustments/{adjId} {
+        allow read: if isClubStaff();
+        allow write: if isManagerOrOwner();
+      }
+
       // Customer Profiles & Credit Ledgers (Cashier, Manager, Owner)
       match /customers/{customerId} {
         allow read: if isClubStaff();
         allow write: if isClubStaff();
+      }
+
+      // Cue Lockers & Member Storage
+      match /lockers/{lockerId} {
+        allow read, write: if isClubStaff();
+      }
+
+      // Tournaments & Brackets
+      match /tournaments/{tournamentId} {
+        allow read, write: if isClubStaff();
       }
 
       // Billing History & Completed Receipts
