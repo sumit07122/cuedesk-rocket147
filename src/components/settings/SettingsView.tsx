@@ -39,6 +39,7 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
+import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatPerMinuteRate } from '../../utils/formatters';
 import { exportClubBackup, downloadBackupFile, restoreClubBackup, ClubBackupSnapshot } from '../../utils/backupService';
 import { getAvailableAutoSnapshots, restoreAutoSnapshot, performDailyAutoSnapshot } from '../../utils/autoSnapshot';
@@ -127,12 +128,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [newMenuCost, setNewMenuCost] = useState<number>(60.00);
   const [newMenuStock, setNewMenuStock] = useState<number>(50);
 
+  const { user, updateUserPassword, sendPasswordReset } = useAuth();
+
   // Staff State
   const [showAddStaff, setShowAddStaff] = useState(false);
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
   const [newStaffPhone, setNewStaffPhone] = useState('');
   const [newStaffRole, setNewStaffRole] = useState<'owner' | 'manager' | 'cashier' | 'kitchen'>('cashier');
+
+  // Staff Password Change Modal State
+  const [passwordModalEmp, setPasswordModalEmp] = useState<EmployeeUser | null>(null);
+  const [newEmpPassword, setNewEmpPassword] = useState('');
+  const [confirmEmpPassword, setConfirmEmpPassword] = useState('');
+  const [showEmpPass, setShowEmpPass] = useState(false);
+  const [empPassMsg, setEmpPassMsg] = useState<{ text: string; isError: boolean } | null>(null);
+  const [isUpdatingEmpPass, setIsUpdatingEmpPass] = useState(false);
+
+  // Self Account Password State
+  const [myNewPass, setMyNewPass] = useState('');
+  const [myConfirmPass, setMyConfirmPass] = useState('');
+  const [myPassMsg, setMyPassMsg] = useState<{ text: string; isError: boolean } | null>(null);
+  const [isUpdatingMyPass, setIsUpdatingMyPass] = useState(false);
 
   // Backup State
   const [isExporting, setIsExporting] = useState(false);
@@ -469,10 +486,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-xs font-bold"
                         >
                           <option value="snooker">Snooker Tournament Table</option>
-                          <option value="pool">American Pool Table</option>
-                          <option value="table_tennis">Table Tennis Arena</option>
-                          <option value="ps5">PlayStation 5 Console Lounge</option>
-                          <option value="ps4">PlayStation 4 Console Lounge</option>
+                          <option value="pool">9ft American Pool Table</option>
+                          <option value="american_pool">Brunswick Pro Pool Table</option>
+                          <option value="table_tennis">Table Tennis Court</option>
                           <option value="magnet_board">Magnet Board Arena</option>
                         </select>
                       </div>
@@ -574,6 +590,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        leftIcon={<Lock className="w-3.5 h-3.5" />}
+                        onClick={() => {
+                          setPasswordModalEmp(emp);
+                          setNewEmpPassword('');
+                          setConfirmEmpPassword('');
+                          setEmpPassMsg(null);
+                        }}
+                        className="text-[11px] h-8 px-2.5 bg-neutral-100 hover:bg-neutral-200 border-neutral-200 text-neutral-800 font-bold"
+                      >
+                        Password
+                      </Button>
                       <Badge variant={emp.status === 'active' ? 'success' : 'neutral'}>
                         {emp.status}
                       </Badge>
@@ -683,6 +713,144 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         }}
                       >
                         Create Account
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Change Staff Password Modal */}
+              {passwordModalEmp && (
+                <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+                  <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-neutral-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-neutral-900 text-white flex items-center justify-center font-bold text-xs">
+                          <Lock className="w-4 h-4 text-amber-400" />
+                        </div>
+                        <div>
+                          <h4 className="font-extrabold text-neutral-900 text-sm">Change User Password</h4>
+                          <p className="text-[11px] text-neutral-500 font-medium">
+                            {passwordModalEmp.name} • <span className="font-mono">{passwordModalEmp.email}</span>
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setPasswordModalEmp(null)}
+                        className="p-1 text-neutral-400 hover:text-black rounded-lg cursor-pointer"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-3 text-xs">
+                      <div>
+                        <label className="font-bold text-neutral-700 block mb-1">New Password (min 6 chars)</label>
+                        <div className="relative">
+                          <Input
+                            type={showEmpPass ? 'text' : 'password'}
+                            placeholder="Enter new password..."
+                            value={newEmpPassword}
+                            onChange={(e) => setNewEmpPassword(e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowEmpPass(!showEmpPass)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                          >
+                            {showEmpPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="font-bold text-neutral-700 block mb-1">Confirm New Password</label>
+                        <Input
+                          type={showEmpPass ? 'text' : 'password'}
+                          placeholder="Re-enter new password..."
+                          value={confirmEmpPassword}
+                          onChange={(e) => setConfirmEmpPassword(e.target.value)}
+                        />
+                      </div>
+
+                      {empPassMsg && (
+                        <div className={`p-2.5 rounded-xl text-xs font-semibold ${
+                          empPassMsg.isError
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        }`}>
+                          {empPassMsg.text}
+                        </div>
+                      )}
+
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!passwordModalEmp.email) return;
+                            try {
+                              await sendPasswordReset(passwordModalEmp.email);
+                              setEmpPassMsg({
+                                text: `Password reset email sent to ${passwordModalEmp.email}.`,
+                                isError: false
+                              });
+                            } catch (err: any) {
+                              setEmpPassMsg({
+                                text: err.message || 'Could not send reset email.',
+                                isError: true
+                              });
+                            }
+                          }}
+                          className="text-[11px] text-neutral-600 hover:text-neutral-900 underline font-semibold cursor-pointer"
+                        >
+                          Or send Firebase reset link to user email
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-100">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setPasswordModalEmp(null)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        disabled={isUpdatingEmpPass || !newEmpPassword || !confirmEmpPassword}
+                        onClick={async () => {
+                          if (!newEmpPassword || newEmpPassword.length < 6) {
+                            setEmpPassMsg({ text: 'Password must be at least 6 characters.', isError: true });
+                            return;
+                          }
+                          if (newEmpPassword !== confirmEmpPassword) {
+                            setEmpPassMsg({ text: 'Passwords do not match.', isError: true });
+                            return;
+                          }
+
+                          setIsUpdatingEmpPass(true);
+                          try {
+                            await updateUserPassword(passwordModalEmp.email, newEmpPassword);
+                            if (onSaveEmployee) {
+                              onSaveEmployee({
+                                ...passwordModalEmp,
+                                password: newEmpPassword
+                              });
+                            }
+                            setEmpPassMsg({ text: `Password for ${passwordModalEmp.name} updated successfully!`, isError: false });
+                            setTimeout(() => {
+                              setPasswordModalEmp(null);
+                            }, 1200);
+                          } catch (err: any) {
+                            setEmpPassMsg({ text: err.message || 'Failed to update password.', isError: true });
+                          } finally {
+                            setIsUpdatingEmpPass(false);
+                          }
+                        }}
+                      >
+                        {isUpdatingEmpPass ? 'Updating...' : 'Save New Password'}
                       </Button>
                     </div>
                   </div>
@@ -1237,11 +1405,60 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/80 space-y-3">
                   <h5 className="font-bold text-neutral-900">Change Account Password</h5>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Input type="password" placeholder="New Password (min 6 characters)" />
-                    <Input type="password" placeholder="Confirm New Password" />
+                    <Input
+                      type="password"
+                      placeholder="New Password (min 6 characters)"
+                      value={myNewPass}
+                      onChange={(e) => setMyNewPass(e.target.value)}
+                    />
+                    <Input
+                      type="password"
+                      placeholder="Confirm New Password"
+                      value={myConfirmPass}
+                      onChange={(e) => setMyConfirmPass(e.target.value)}
+                    />
                   </div>
-                  <Button variant="secondary" size="sm" onClick={() => alert('Password update link sent to your registered email.')}>
-                    Update Password
+                  {myPassMsg && (
+                    <div className={`p-2.5 rounded-xl text-xs font-semibold ${
+                      myPassMsg.isError
+                        ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    }`}>
+                      {myPassMsg.text}
+                    </div>
+                  )}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={isUpdatingMyPass || !myNewPass || !myConfirmPass}
+                    onClick={async () => {
+                      if (!myNewPass || myNewPass.length < 6) {
+                        setMyPassMsg({ text: 'Password must be at least 6 characters.', isError: true });
+                        return;
+                      }
+                      if (myNewPass !== myConfirmPass) {
+                        setMyPassMsg({ text: 'Passwords do not match.', isError: true });
+                        return;
+                      }
+                      setIsUpdatingMyPass(true);
+                      try {
+                        const targetEmail = user?.email || 'owner@oneshotsnooker.com';
+                        await updateUserPassword(targetEmail, myNewPass);
+                        const selfEmp = employees.find((e) => e.email.toLowerCase() === targetEmail.toLowerCase() || e.role === (user?.role || 'owner'));
+                        if (selfEmp && onSaveEmployee) {
+                          onSaveEmployee({ ...selfEmp, password: myNewPass });
+                        }
+                        setMyPassMsg({ text: 'Your account password was updated successfully!', isError: false });
+                        setMyNewPass('');
+                        setMyConfirmPass('');
+                      } catch (err: any) {
+                        setMyPassMsg({ text: err.message || 'Failed to update password.', isError: true });
+                      } finally {
+                        setIsUpdatingMyPass(false);
+                      }
+                    }}
+                  >
+                    {isUpdatingMyPass ? 'Saving...' : 'Update Password'}
                   </Button>
                 </div>
 

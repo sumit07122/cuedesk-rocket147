@@ -88,17 +88,17 @@ export const initialTables: TableItem[] = [
   { 
     id: 'tbl-6', 
     number: 6, 
-    name: 'PS5 Console Lounge 01 — 4K OLED', 
-    type: 'ps5', 
+    name: 'Snooker Table 03 — Star Championship Pro', 
+    type: 'snooker', 
     status: 'available', 
-    hourlyRate: 180.00, 
-    perMinuteRate: 3.00 
+    hourlyRate: 260.00, 
+    perMinuteRate: 4.33 
   },
   { 
     id: 'tbl-7', 
     number: 7, 
-    name: 'PS4 Station 01 — EA FC & Tekken Arena', 
-    type: 'ps4', 
+    name: 'English Pool Table 02 — SuperLeague', 
+    type: 'pool', 
     status: 'available', 
     hourlyRate: 150.00, 
     perMinuteRate: 2.50 

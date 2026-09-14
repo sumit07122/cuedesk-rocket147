@@ -13,8 +13,6 @@ import {
   TrendingUp,
   ChefHat,
   Trophy,
-  Key,
-  Gamepad2,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
@@ -133,20 +131,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: Trophy, 
           minRole: 'cashier',
           tooltip: 'Knockouts & League Brackets'
-        },
-        { 
-          id: 'lockers', 
-          label: 'Cue Lockers', 
-          icon: Key, 
-          minRole: 'cashier',
-          tooltip: 'VIP Cue Storage Allocations'
-        },
-        { 
-          id: 'arena', 
-          label: 'Gaming & PS5', 
-          icon: Gamepad2, 
-          minRole: 'cashier',
-          tooltip: 'PS5 & Multi-Game Lounge'
         },
         { 
           id: 'customers', 

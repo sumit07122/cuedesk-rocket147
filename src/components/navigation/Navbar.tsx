@@ -41,8 +41,6 @@ const pageTitles: Record<PageView, { title: string; subtitle: string }> = {
   settings: { title: 'Club Settings', subtitle: 'Pricing, tables, roles & backup' },
   kds: { title: 'Kitchen Display', subtitle: 'Live snack & drink order queue' },
   tournaments: { title: 'Tournaments & Leagues', subtitle: 'Knockout brackets, live scoring & prize pools' },
-  lockers: { title: 'Cue Locker Storage', subtitle: 'VIP member locker allocation & rental renewals' },
-  arena: { title: 'Gaming Lounge & PS5', subtitle: 'PS5 console stations & multi-gaming bay controller' },
   login: { title: 'Sign In', subtitle: 'CueDesk Manager Portal' },
 };
 

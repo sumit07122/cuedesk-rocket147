@@ -263,8 +263,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             { id: 'pool', label: '🎱 Pool' },
             { id: 'american_pool', label: '🎱 American Pool' },
             { id: 'table_tennis', label: '🏓 Table Tennis' },
-            { id: 'ps5', label: '🎮 PS5' },
-            { id: 'ps4', label: '🎮 PS4' },
             { id: 'magnet_table', label: '🧲 Magnet Board' },
           ].map((tab) => (
             <button

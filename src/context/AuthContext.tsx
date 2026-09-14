@@ -5,6 +5,7 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   sendPasswordResetEmail,
+  updatePassword,
   User as FbUser 
 } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
@@ -35,6 +36,7 @@ export interface AuthContextType {
     inviteCode?: string
   ) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
+  updateUserPassword: (email: string, newPass: string) => Promise<void>;
   signOutUser: () => Promise<void>;
   switchClub: (clubId: string) => void;
   switchRole: (role: UserRole) => void;
@@ -206,6 +208,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       lastLogin: Date.now()
     };
 
+    const customPassMap = JSON.parse(localStorage.getItem('cuedesk_user_passwords') || '{}');
+    if (customPassMap[cleanEmail] && customPassMap[cleanEmail] !== pass.trim()) {
+      setIsLoading(false);
+      throw new Error('Incorrect password. Please verify your credentials or ask the admin for assistance.');
+    }
+
     setUser(reviewUser);
     try {
       localStorage.removeItem('cuedesk_logged_out');
@@ -296,6 +304,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch (err) {
       console.error('Password Reset Error:', err);
       throw err;
+    }
+  };
+
+  // Update User Password (for current user or staff accounts)
+  const updateUserPassword = async (emailStr: string, newPass: string) => {
+    const clean = emailStr.trim().toLowerCase();
+    try {
+      const existing = JSON.parse(localStorage.getItem('cuedesk_user_passwords') || '{}');
+      existing[clean] = newPass.trim();
+      localStorage.setItem('cuedesk_user_passwords', JSON.stringify(existing));
+    } catch {}
+
+    // If Firebase Auth currentUser matches, update Firebase password directly
+    if (auth.currentUser && auth.currentUser.email?.toLowerCase() === clean) {
+      try {
+        await updatePassword(auth.currentUser, newPass.trim());
+      } catch (err) {
+        console.warn('Firebase Auth updatePassword notice:', err);
+      }
     }
   };
 
@@ -411,6 +438,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       signInWithEmail,
       signUpWithEmail,
       sendPasswordReset,
+      updateUserPassword,
       signOutUser,
       switchClub,
       switchRole,

@@ -402,6 +402,7 @@ export interface EmployeeUser {
   role: UserRole;
   joiningDate: string;
   status: 'active' | 'inactive';
+  password?: string;
   lastActiveTime?: number;
   loginHistory?: { timestamp: number; ip?: string; deviceInfo?: string }[];
 }

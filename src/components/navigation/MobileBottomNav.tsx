@@ -15,9 +15,7 @@ import {
   QrCode,
   X,
   ChevronRight,
-  Trophy,
-  Key,
-  Gamepad2
+  Trophy
 } from 'lucide-react';
 import { PageView } from '../../types';
 
@@ -39,8 +37,6 @@ const moreItems = [
   { id: 'menu-inventory' as PageView, label: 'Food & Inventory', icon: Utensils },
   { id: 'kds' as PageView, label: 'Kitchen Display', icon: ChefHat },
   { id: 'tournaments' as PageView, label: 'Tournaments & Leagues', icon: Trophy },
-  { id: 'lockers' as PageView, label: 'Cue Lockers', icon: Key },
-  { id: 'arena' as PageView, label: 'Gaming Lounge & PS5', icon: Gamepad2 },
   { id: 'employees' as PageView, label: 'Staff & Attendance', icon: UserCheck },
   { id: 'expenses' as PageView, label: 'Expenses & Profit', icon: TrendingUp },
   { id: 'reports' as PageView, label: 'Reports & Analytics', icon: BarChart3 },

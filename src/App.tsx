@@ -28,9 +28,7 @@ import { TableMaintenanceView } from './components/maintenance/TableMaintenanceV
 import { ReportsView } from './components/reports/ReportsView';
 import { SettingsView } from './components/settings/SettingsView';
 import { KitchenDisplayView } from './components/kds/KitchenDisplayView';
-import { CueLockersView } from './components/lockers/CueLockersView';
 import { TournamentView } from './components/tournaments/TournamentView';
-import { ArenaHubView } from './components/arena/ArenaHubView';
 import { LoginView } from './components/auth/LoginView';
 import { ToastContainer, ToastMessage } from './components/ui/Toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -691,19 +689,6 @@ function CueDeskApp() {
               <TournamentView
                 currencySymbol={config.currencySymbol}
               />
-            </RoleGuard>
-          ) : activePage === 'lockers' ? (
-            <RoleGuard requiredPage="lockers" onNavigateHome={() => setActivePage('dashboard')}>
-              <CueLockersView
-                currencySymbol={config.currencySymbol}
-                onSaveLocker={(_locker) => {
-                  addToast('success', 'Locker Updated', `${_locker.lockerNumber} updated.`);
-                }}
-              />
-            </RoleGuard>
-          ) : activePage === 'arena' ? (
-            <RoleGuard requiredPage="arena" onNavigateHome={() => setActivePage('dashboard')}>
-              <ArenaHubView />
             </RoleGuard>
           ) : activePage === 'customers' ? (
             <CustomerCRMView
