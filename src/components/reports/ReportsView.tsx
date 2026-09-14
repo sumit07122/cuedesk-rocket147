@@ -33,6 +33,7 @@ import { StatCard } from '../dashboard/StatCard';
 import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
+import { Button } from '../ui/Button';
 import { formatCurrency, formatTimerString, getSessionDate } from '../../utils/formatters';
 
 interface ReportsViewProps {
@@ -306,35 +307,49 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         </div>
 
         <div className="h-72 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            {revenueTimeframe === 'weekly' ? (
-              <BarChart data={dynamicWeeklyData}>
-                <XAxis dataKey="day" stroke="#888888" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis stroke="#888888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(val) => `${currencySymbol}${val}`} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#171717', borderRadius: '12px', color: '#fff', border: 'none', fontSize: '12px' }}
-                  formatter={(val: any) => [`${currencySymbol}${val}`, 'Revenue']}
-                />
-                <Bar dataKey="revenue" fill="#171717" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            ) : (
-              <AreaChart data={dynamicHourlyData}>
-                <defs>
-                  <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#171717" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#171717" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="time" stroke="#888888" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis stroke="#888888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(val) => `${currencySymbol}${val}`} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#171717', borderRadius: '12px', color: '#fff', border: 'none', fontSize: '12px' }}
-                  formatter={(val: any) => [`${currencySymbol}${val}`, 'Revenue']}
-                />
-                <Area type="monotone" dataKey="revenue" stroke="#171717" strokeWidth={2.5} fillOpacity={1} fill="url(#revenueGrad)" />
-              </AreaChart>
-            )}
-          </ResponsiveContainer>
+          {revenueTimeframe === 'weekly' && weeklyRevenue === 0 ? (
+            <div className="h-full w-full flex flex-col items-center justify-center text-center p-6 bg-neutral-50/50 rounded-2xl border border-dashed border-neutral-200">
+              <Calendar className="w-8 h-8 text-neutral-300 mb-2" />
+              <p className="text-xs font-bold text-neutral-600">No session revenue recorded yet this week</p>
+              <p className="text-[11px] text-neutral-400">Fresh slate — weekly bars will generate automatically as sessions are completed</p>
+            </div>
+          ) : revenueTimeframe === 'daily' && todayRevenue === 0 ? (
+            <div className="h-full w-full flex flex-col items-center justify-center text-center p-6 bg-neutral-50/50 rounded-2xl border border-dashed border-neutral-200">
+              <TrendingUp className="w-8 h-8 text-neutral-300 mb-2" />
+              <p className="text-xs font-bold text-neutral-600">No session revenue recorded today</p>
+              <p className="text-[11px] text-neutral-400">Fresh slate — hourly flow updates live as games and orders are settled</p>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              {revenueTimeframe === 'weekly' ? (
+                <BarChart data={dynamicWeeklyData}>
+                  <XAxis dataKey="day" stroke="#888888" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#888888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(val) => `${currencySymbol}${val}`} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#171717', borderRadius: '12px', color: '#fff', border: 'none', fontSize: '12px' }}
+                    formatter={(val: any) => [`${currencySymbol}${val}`, 'Revenue']}
+                  />
+                  <Bar dataKey="revenue" fill="#171717" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              ) : (
+                <AreaChart data={dynamicHourlyData}>
+                  <defs>
+                    <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#171717" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="#171717" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="time" stroke="#888888" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#888888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(val) => `${currencySymbol}${val}`} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#171717', borderRadius: '12px', color: '#fff', border: 'none', fontSize: '12px' }}
+                    formatter={(val: any) => [`${currencySymbol}${val}`, 'Revenue']}
+                  />
+                  <Area type="monotone" dataKey="revenue" stroke="#171717" strokeWidth={2.5} fillOpacity={1} fill="url(#revenueGrad)" />
+                </AreaChart>
+              )}
+            </ResponsiveContainer>
+          )}
         </div>
       </Card>
 
@@ -352,38 +367,48 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             </span>
           </div>
 
-          <div className="h-56 w-full flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={dynamicPaymentMethods}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={75}
-                  paddingAngle={4}
-                  dataKey="value"
-                >
-                  {dynamicPaymentMethods.map((entry, index) => (
-                    <Cell key={`pay-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#171717', borderRadius: '12px', color: '#fff', border: 'none', fontSize: '12px' }}
-                  formatter={(val: any) => [`${val}%`, 'Share']}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2 text-xs pt-2 border-t border-neutral-100 text-center">
-            {dynamicPaymentMethods.map((method) => (
-              <div key={method.name} className="p-2.5 rounded-xl bg-neutral-50 border border-neutral-200/70 flex flex-col items-center">
-                <span className="text-neutral-500 font-medium">{method.name}</span>
-                <strong className="text-neutral-900 font-mono text-sm mt-0.5">{method.value}%</strong>
+          {totalPayCount === 0 ? (
+            <div className="h-56 w-full flex flex-col items-center justify-center text-center p-6 bg-neutral-50/50 rounded-2xl border border-dashed border-neutral-200">
+              <CreditCard className="w-8 h-8 text-neutral-300 mb-2" />
+              <p className="text-xs font-bold text-neutral-600">No payment transactions yet</p>
+              <p className="text-[11px] text-neutral-400">UPI, Cash, and Card breakdown will show after bills are settled</p>
+            </div>
+          ) : (
+            <>
+              <div className="h-56 w-full flex items-center justify-center">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={dynamicPaymentMethods}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={55}
+                      outerRadius={75}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {dynamicPaymentMethods.map((entry, index) => (
+                        <Cell key={`pay-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#171717', borderRadius: '12px', color: '#fff', border: 'none', fontSize: '12px' }}
+                      formatter={(val: any) => [`${val}%`, 'Share']}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
               </div>
-            ))}
-          </div>
+
+              <div className="grid grid-cols-3 gap-2 text-xs pt-2 border-t border-neutral-100 text-center">
+                {dynamicPaymentMethods.map((method) => (
+                  <div key={method.name} className="p-2.5 rounded-xl bg-neutral-50 border border-neutral-200/70 flex flex-col items-center">
+                    <span className="text-neutral-500 font-medium">{method.name}</span>
+                    <strong className="text-neutral-900 font-mono text-sm mt-0.5">{method.value}%</strong>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </Card>
 
         {/* Revenue Split (Table vs Food) */}
@@ -393,41 +418,51 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             <p className="text-xs text-neutral-500">Table hourly rental fees vs Snack & Beverage sales</p>
           </div>
 
-          <div className="h-56 w-full flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={dynamicCategorySales}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={75}
-                  paddingAngle={4}
-                  dataKey="value"
-                >
-                  {dynamicCategorySales.map((entry, index) => (
-                    <Cell key={`cat-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#171717', borderRadius: '12px', color: '#fff', border: 'none', fontSize: '12px' }}
-                  formatter={(val: any) => [`${currencySymbol}${val}`, 'Sales']}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-neutral-100">
-            {dynamicCategorySales.map((cat) => (
-              <div key={cat.name} className="flex items-center justify-between p-2 rounded-xl bg-neutral-50 border border-neutral-200/60">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                  <span className="text-neutral-600 truncate font-medium">{cat.name}</span>
-                </div>
-                <strong className="text-neutral-900 font-mono">{currencySymbol}{cat.value}</strong>
+          {totalRevenue === 0 ? (
+            <div className="h-56 w-full flex flex-col items-center justify-center text-center p-6 bg-neutral-50/50 rounded-2xl border border-dashed border-neutral-200">
+              <Receipt className="w-8 h-8 text-neutral-300 mb-2" />
+              <p className="text-xs font-bold text-neutral-600">No sales transactions yet</p>
+              <p className="text-[11px] text-neutral-400">Playtime vs Cafe sales split will calculate automatically</p>
+            </div>
+          ) : (
+            <>
+              <div className="h-56 w-full flex items-center justify-center">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={dynamicCategorySales}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={55}
+                      outerRadius={75}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {dynamicCategorySales.map((entry, index) => (
+                        <Cell key={`cat-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#171717', borderRadius: '12px', color: '#fff', border: 'none', fontSize: '12px' }}
+                      formatter={(val: any) => [`${currencySymbol}${val}`, 'Sales']}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
               </div>
-            ))}
-          </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-neutral-100">
+                {dynamicCategorySales.map((cat) => (
+                  <div key={cat.name} className="flex items-center justify-between p-2 rounded-xl bg-neutral-50 border border-neutral-200/60">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                      <span className="text-neutral-600 truncate font-medium">{cat.name}</span>
+                    </div>
+                    <strong className="text-neutral-900 font-mono">{currencySymbol}{cat.value}</strong>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </Card>
       </div>
 

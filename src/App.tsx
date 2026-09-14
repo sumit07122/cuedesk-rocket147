@@ -195,6 +195,10 @@ function CueDeskApp() {
   const revenueToday = history
     .filter((h) => isSameCalendarDay(getSessionDate(h), todayDate))
     .reduce((sum, h) => sum + (Number(h.grandTotal) || 0), 0);
+  const expensesToday = expenses
+    .filter((e) => isSameCalendarDay(new Date(e.date || e.timestamp), todayDate))
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const netProfitToday = revenueToday - expensesToday;
   const pendingPaymentsTotal = tables
     .filter((t) => (t.status === 'occupied' || t.status === 'payment_pending') && t.currentSession)
     .reduce((sum, t) => {
@@ -566,6 +570,7 @@ function CueDeskApp() {
           <DashboardView
               tables={tables}
               revenueToday={revenueToday}
+              netProfitToday={netProfitToday}
               pendingPaymentsTotal={pendingPaymentsTotal}
               currencySymbol={config.currencySymbol}
               sessionRequests={sessionRequests}
@@ -832,6 +837,7 @@ function CueDeskApp() {
             <DashboardView
               tables={tables}
               revenueToday={revenueToday}
+              netProfitToday={netProfitToday}
               pendingPaymentsTotal={pendingPaymentsTotal}
               currencySymbol={config.currencySymbol}
               sessionRequests={sessionRequests}

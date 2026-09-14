@@ -58,7 +58,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   taxRatePercent,
   enableTax,
   lowStockCount = 0,
-  netProfitToday = revenueToday * 0.7,
+  netProfitToday = 0,
   sessionRequests = [],
   notifications = [],
   widgetConfig = {
@@ -220,7 +220,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             value={formatCurrency(revenueToday, currencySymbol)}
             subtitle="Sessions + Orders"
             icon={DollarSign}
-            trend={{ value: '+14% vs yesterday', positive: true }}
+            trend={revenueToday > 0 ? { value: 'Today Active', positive: true } : undefined}
             variant="dark"
           />
         )}
