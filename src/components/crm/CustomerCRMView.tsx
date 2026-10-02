@@ -31,102 +31,6 @@ import {
 } from 'lucide-react';
 import { TopCustomer, BusinessConfig, UdhaarTransaction, SessionHistoryItem } from '../../types';
 
-// WhatsApp phone normalizer: ensures country code '91' for 10-digit Indian numbers & strips symbols
-const normalizeWhatsAppPhone = (phone: string): string => {
-  let cleaned = phone.replace(/[^0-9]/g, '');
-  cleaned = cleaned.replace(/^0+/, '');
-  if (cleaned.length === 10) {
-    cleaned = '91' + cleaned;
-  }
-  return cleaned;
-};
-
-// Formats branded WhatsApp message templates
-const getWhatsAppReminderText = (
-  cust: TopCustomer,
-  clubName: string = 'One Shot Snooker Gaming Club',
-  currencySymbol: string = '₹',
-  upiId?: string,
-  tone: 'gentle' | 'standard' | 'urgent' = 'standard'
-): string => {
-  const due = (cust.outstandingDue || 0).toFixed(0);
-  const dateStr = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-  const cName = clubName || 'One Shot Snooker Gaming Club';
-
-  if (tone === 'gentle') {
-    return `🎱 *${cName}*\n\n` +
-      `Hello ${cust.name}! Hope you had a great session at the club. 🎱\n\n` +
-      `This is a gentle update regarding your outstanding credit tab of *${currencySymbol}${due}* as of ${dateStr}.\n\n` +
-      (upiId ? `📲 *UPI Payment ID:* \`${upiId}\`\n\n` : '') +
-      `Whenever you visit next or find time, you can clear it. We look forward to having you back on the tables!`;
-  }
-
-  if (tone === 'urgent') {
-    return `⚠️ *PAYMENT NOTICE: ${cName}*\n\n` +
-      `Dear ${cust.name},\n` +
-      `Your credit tab has reached *${currencySymbol}${due}* (as of ${dateStr}) and is currently overdue.\n\n` +
-      `Please clear the pending amount today to maintain your active player credit line and avoid session booking restrictions.\n\n` +
-      (upiId ? `📲 *Pay via UPI:* \`${upiId}\`\n\n` : '') +
-      `If already settled, kindly share the payment screenshot. Thank you!`;
-  }
-
-  // standard
-  return `🎱 *${cName} — Pending Payment Reminder*\n\n` +
-    `Hello ${cust.name},\n` +
-    `You have an outstanding credit balance of *${currencySymbol}${due}* as of ${dateStr}.\n\n` +
-    `Kindly clear this at your earliest convenience.\n\n` +
-    (upiId ? `📲 *UPI ID for Payment:* \`${upiId}\`\n\n` : '') +
-    `Thank you for playing with us!\n` +
-    `— Team ${cName}`;
-};
-
-// Formats detailed Member Account Statement for 1-click WhatsApp sharing
-const getCustomerStatementText = (
-  cust: TopCustomer,
-  clubName: string = 'One Shot Snooker Gaming Club',
-  currencySymbol: string = '₹',
-  upiId?: string
-): string => {
-  const dateStr = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-  const dues = (cust.outstandingDue || 0).toFixed(0);
-  const wallet = (cust.walletBalance || 0).toFixed(0);
-  const spent = (cust.totalSpent || 0).toFixed(0);
-  const sessions = cust.sessionsCount || 0;
-  const hours = (cust.totalHoursPlayed || 0).toFixed(1);
-  const cName = clubName || 'One Shot Snooker Gaming Club';
-
-  let text = `🎱 *${cName} — Customer Account Statement*\n` +
-    `👤 *Player:* ${cust.name} (${cust.phone})\n` +
-    `🪪 *Customer ID:* ${getCustomerNumber(cust)}\n` +
-    `📅 *Statement Date:* ${dateStr}\n\n` +
-    `📊 *Activity Summary:*\n` +
-    `• Total Sessions: ${sessions}\n` +
-    `• Gaming Time: ${hours} hours\n` +
-    `• Lifetime Spend: ${currencySymbol}${spent}\n` +
-    `• Advance / Wallet Balance: ${currencySymbol}${wallet}\n` +
-    `• Current Credit Due: *${currencySymbol}${dues}*\n\n`;
-
-  const recentTx = (cust.udhaarLedger || []).slice(0, 3);
-  if (recentTx.length > 0) {
-    text += `📜 *Recent Account Transactions:*\n`;
-    recentTx.forEach((tx) => {
-      const d = new Date(tx.timestamp).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-      const sign = tx.type === 'payment_received' || tx.type === 'deposit_added' ? '✓' : '+';
-      text += `• ${d}: ${sign} ${currencySymbol}${tx.amount} (${tx.description})\n`;
-    });
-    text += `\n`;
-  }
-
-  if (Number(dues) > 0) {
-    text += `⚠️ *Outstanding Balance to Clear:* ${currencySymbol}${dues}\n`;
-    if (upiId) text += `📲 *Pay via UPI:* \`${upiId}\`\n\n`;
-  } else {
-    text += `🟢 *All account dues are cleared!*\n\n`;
-  }
-
-  text += `Thank you for choosing ${cName}! 🎱`;
-  return text;
-};
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -135,6 +39,13 @@ import { formatCurrency } from '../../utils/formatters';
 import { exportCreditLedgerToExcel } from '../../utils/excelExport';
 import { useAuth } from '../../context/AuthContext';
 import { createCustomerIdentity, getCustomerNumber } from '../../utils/customerIdentity';
+import { 
+  normalizeWhatsAppPhone, 
+  createPaymentDoneWhatsAppMessage, 
+  createDueReminderWhatsAppMessage, 
+  createStatementWhatsAppMessage,
+  openWhatsApp 
+} from '../../utils/whatsapp';
 
 interface CustomerCRMViewProps {
   customers: TopCustomer[];
@@ -189,37 +100,127 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
   // Sorting
   const [sortBy, setSortBy] = useState<'dues' | 'spent' | 'sessions' | 'recent' | 'name'>('dues');
 
-  // WhatsApp Reminder State
+  // WhatsApp Messaging & Receipt Automation State
   const [whatsAppCustomer, setWhatsAppCustomer] = useState<TopCustomer | null>(null);
+  const [whatsAppType, setWhatsAppType] = useState<'daily_payment' | 'due_reminder' | 'statement'>('daily_payment');
   const [whatsAppTone, setWhatsAppTone] = useState<'gentle' | 'standard' | 'urgent'>('standard');
+  const [whatsAppPaymentAmount, setWhatsAppPaymentAmount] = useState<string>('');
+  const [whatsAppPaymentMethod, setWhatsAppPaymentMethod] = useState<string>('UPI');
   const [whatsAppMessage, setWhatsAppMessage] = useState<string>('');
   const [isCopied, setIsCopied] = useState(false);
 
-  const handleOpenWhatsAppModal = (cust: TopCustomer, tone: 'gentle' | 'standard' | 'urgent' = 'standard') => {
+  const buildWhatsAppText = (
+    type: 'daily_payment' | 'due_reminder' | 'statement',
+    cust: TopCustomer,
+    paidAmountStr: string,
+    paidMethod: string,
+    tone: 'gentle' | 'standard' | 'urgent'
+  ): string => {
+    const custSessions = history.filter(h => h.customerId === cust.id || (h.customerPhone && cust.phone && h.customerPhone.replace(/\D/g, '') === cust.phone.replace(/\D/g, '')));
+    const latestSession = custSessions[0];
+
+    if (type === 'daily_payment') {
+      const amt = Number(paidAmountStr) > 0 
+        ? Number(paidAmountStr) 
+        : (latestSession ? (latestSession.amountPaid || latestSession.grandTotal) : 0);
+
+      return createPaymentDoneWhatsAppMessage({
+        customerName: cust.name,
+        phone: cust.phone,
+        amountPaid: amt,
+        paymentMethod: paidMethod || 'UPI',
+        receiptNo: latestSession?.receiptNo,
+        tableName: latestSession?.tableName,
+        durationText: latestSession?.durationSeconds ? `${Math.max(1, Math.round(latestSession.durationSeconds / 60))} mins` : undefined,
+        tableFee: latestSession?.tableFee,
+        foodFee: latestSession?.foodFee,
+        discountAmount: latestSession?.discountAmount,
+        remainingDue: cust.outstandingDue,
+        clubName: config.clubName || 'One Shot Gaming Club',
+        upiId: config.upiId,
+      });
+    }
+
+    if (type === 'due_reminder') {
+      return createDueReminderWhatsAppMessage({
+        customerName: cust.name,
+        phone: cust.phone,
+        outstandingDue: cust.outstandingDue || 0,
+        clubName: config.clubName || 'One Shot Gaming Club',
+        currencySymbol: config.currencySymbol || '₹',
+        upiId: config.upiId,
+        tone: tone,
+      });
+    }
+
+    return createStatementWhatsAppMessage({
+      customerName: cust.name,
+      phone: cust.phone,
+      sessionsCount: cust.sessionsCount,
+      totalHoursPlayed: cust.totalHoursPlayed,
+      totalSpent: cust.totalSpent,
+      outstandingDue: cust.outstandingDue,
+      membershipStatus: (cust as any).membershipStatus || ((cust.totalSpent || 0) > 3000 ? 'Gold Member' : 'Club Member'),
+      clubName: config.clubName || 'One Shot Gaming Club',
+      currencySymbol: config.currencySymbol || '₹',
+      upiId: config.upiId,
+    });
+  };
+
+  const handleOpenWhatsAppModal = (
+    cust: TopCustomer, 
+    initialType?: 'daily_payment' | 'due_reminder' | 'statement'
+  ) => {
+    const custSessions = history.filter(h => h.customerId === cust.id || (h.customerPhone && cust.phone && h.customerPhone.replace(/\D/g, '') === cust.phone.replace(/\D/g, '')));
+    const latestSession = custSessions[0];
+
+    const type: 'daily_payment' | 'due_reminder' | 'statement' = 
+      initialType || 
+      (latestSession && (Date.now() - new Date(latestSession.startTime).getTime() < 86400000) ? 'daily_payment' : (cust.outstandingDue || 0) > 0 ? 'due_reminder' : 'daily_payment');
+
+    const defaultAmt = latestSession ? String(latestSession.amountPaid || latestSession.grandTotal || '') : '';
+    const defaultMethod = latestSession?.paymentMethod || 'UPI';
+
     setWhatsAppCustomer(cust);
-    setWhatsAppTone(tone);
-    setWhatsAppMessage(getWhatsAppReminderText(cust, config.clubName, config.currencySymbol, config.upiId, tone));
+    setWhatsAppType(type);
+    setWhatsAppPaymentAmount(defaultAmt);
+    setWhatsAppPaymentMethod(defaultMethod);
+    setWhatsAppTone('standard');
+    setWhatsAppMessage(buildWhatsAppText(type, cust, defaultAmt, defaultMethod, 'standard'));
     setIsCopied(false);
   };
 
-  const handleShareStatement = (cust: TopCustomer) => {
-    const text = getCustomerStatementText(cust, config.clubName, config.currencySymbol, config.upiId);
-    const phone = normalizeWhatsAppPhone(cust.phone);
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank');
+  const handleWhatsAppTypeChange = (type: 'daily_payment' | 'due_reminder' | 'statement') => {
+    if (!whatsAppCustomer) return;
+    setWhatsAppType(type);
+    setWhatsAppMessage(buildWhatsAppText(type, whatsAppCustomer, whatsAppPaymentAmount, whatsAppPaymentMethod, whatsAppTone));
   };
 
   const handleToneChange = (tone: 'gentle' | 'standard' | 'urgent') => {
     if (!whatsAppCustomer) return;
     setWhatsAppTone(tone);
-    setWhatsAppMessage(getWhatsAppReminderText(whatsAppCustomer, config.clubName, config.currencySymbol, config.upiId, tone));
+    setWhatsAppMessage(buildWhatsAppText('due_reminder', whatsAppCustomer, whatsAppPaymentAmount, whatsAppPaymentMethod, tone));
+  };
+
+  const handlePaymentAmountChange = (amt: string) => {
+    if (!whatsAppCustomer) return;
+    setWhatsAppPaymentAmount(amt);
+    setWhatsAppMessage(buildWhatsAppText('daily_payment', whatsAppCustomer, amt, whatsAppPaymentMethod, whatsAppTone));
+  };
+
+  const handlePaymentMethodChange = (m: string) => {
+    if (!whatsAppCustomer) return;
+    setWhatsAppPaymentMethod(m);
+    setWhatsAppMessage(buildWhatsAppText('daily_payment', whatsAppCustomer, whatsAppPaymentAmount, m, whatsAppTone));
+  };
+
+  const handleShareStatement = (cust: TopCustomer) => {
+    handleOpenWhatsAppModal(cust, 'statement');
   };
 
   const handleSendWhatsApp = () => {
     if (!whatsAppCustomer) return;
-    const phone = normalizeWhatsAppPhone(whatsAppCustomer.phone);
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(whatsAppMessage)}`;
-    window.open(url, '_blank');
+    openWhatsApp(whatsAppCustomer.phone, whatsAppMessage);
   };
 
   const handleCopyWhatsAppMessage = () => {
@@ -1090,17 +1091,15 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                             </button>
                           )}
 
-                          {/* WhatsApp Reminder (Quick Action if Dues exist) */}
-                          {dueAmt > 0 && (
-                            <button
-                              onClick={() => handleOpenWhatsAppModal(cust)}
-                              className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs shrink-0"
-                              title="Send WhatsApp Payment Reminder"
-                            >
-                              <MessageCircle className="w-3 h-3 text-emerald-600" />
-                              <span className="hidden sm:inline">WhatsApp</span>
-                            </button>
-                          )}
+                          {/* WhatsApp Action for Every Customer */}
+                          <button
+                            onClick={() => handleOpenWhatsAppModal(cust)}
+                            className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs shrink-0"
+                            title={`Send WhatsApp daily payment receipt, balance reminder or statement to ${cust.name}`}
+                          >
+                            <MessageCircle className="w-3 h-3 text-emerald-600" />
+                            <span>WhatsApp</span>
+                          </button>
 
                           {/* View Full Profile */}
                           <button
@@ -1698,10 +1697,10 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
       )}
 
       {/* ========================================================= */}
-      {/* WHATSAPP PAYMENT REMINDER MODAL */}
+      {/* ONE SHOT GAMING CLUB — WHATSAPP AUTOMATION & RECEIPT MODAL */}
       {/* ========================================================= */}
       {whatsAppCustomer && (
-        <div className="fixed inset-0 bg-neutral-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-neutral-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
           <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 border border-emerald-200">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
@@ -1710,8 +1709,8 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                   <MessageCircle className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-extrabold text-neutral-900">WhatsApp Payment Reminder</h3>
-                  <p className="text-xs text-neutral-500 font-medium">Send balance statement & payment instructions</p>
+                  <h3 className="text-base font-extrabold text-neutral-900">WhatsApp Communication</h3>
+                  <p className="text-xs text-neutral-500 font-medium">Send daily payment receipts, due reminders & statements</p>
                 </div>
               </div>
               <button
@@ -1736,56 +1735,126 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
               </div>
               <div className="text-right">
                 <span className="text-[10px] uppercase font-bold text-neutral-400 block">Pending Due</span>
-                <span className="text-base font-black font-mono text-rose-600">
+                <span className={`text-base font-black font-mono ${(whatsAppCustomer.outstandingDue || 0) > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                   {formatCurrency(whatsAppCustomer.outstandingDue || 0, config.currencySymbol)}
                 </span>
               </div>
             </div>
 
-            {/* Template Tone Switcher */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-neutral-700 block">Select Reminder Template:</label>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleToneChange('gentle')}
-                  className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                    whatsAppTone === 'gentle'
-                      ? 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-2xs ring-1 ring-emerald-500'
-                      : 'bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50'
-                  }`}
-                >
-                  🌱 Gentle Notice
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleToneChange('standard')}
-                  className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                    whatsAppTone === 'standard'
-                      ? 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-2xs ring-1 ring-emerald-500'
-                      : 'bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50'
-                  }`}
-                >
-                  📋 Standard Due
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleToneChange('urgent')}
-                  className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                    whatsAppTone === 'urgent'
-                      ? 'bg-rose-50 border-rose-500 text-rose-900 shadow-2xs ring-1 ring-rose-500'
-                      : 'bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50'
-                  }`}
-                >
-                  ⚠️ Overdue Alert
-                </button>
-              </div>
+            {/* Mode / Purpose Switcher Tabs */}
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-neutral-100 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => handleWhatsAppTypeChange('daily_payment')}
+                className={`py-2 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                  whatsAppType === 'daily_payment'
+                    ? 'bg-white text-emerald-800 shadow-xs'
+                    : 'text-neutral-600 hover:text-neutral-900'
+                }`}
+              >
+                <span>💳</span>
+                <span className="truncate">Today's Receipt</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleWhatsAppTypeChange('due_reminder')}
+                className={`py-2 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                  whatsAppType === 'due_reminder'
+                    ? 'bg-white text-emerald-800 shadow-xs'
+                    : 'text-neutral-600 hover:text-neutral-900'
+                }`}
+              >
+                <span>📋</span>
+                <span className="truncate">Due Reminder</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleWhatsAppTypeChange('statement')}
+                className={`py-2 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                  whatsAppType === 'statement'
+                    ? 'bg-white text-emerald-800 shadow-xs'
+                    : 'text-neutral-600 hover:text-neutral-900'
+                }`}
+              >
+                <span>📊</span>
+                <span className="truncate">Statement</span>
+              </button>
             </div>
+
+            {/* Mode-Specific Parameter Controls */}
+            {whatsAppType === 'daily_payment' && (
+              <div className="grid grid-cols-2 gap-3 p-3 bg-emerald-50/50 rounded-2xl border border-emerald-100 text-xs">
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Payment Received Today ({config.currencySymbol || '₹'})</label>
+                  <input
+                    type="number"
+                    value={whatsAppPaymentAmount}
+                    onChange={(e) => handlePaymentAmountChange(e.target.value)}
+                    placeholder="Enter amount"
+                    className="w-full bg-white border border-neutral-300 rounded-xl px-3 py-1.5 font-mono font-bold text-neutral-900 outline-none focus:border-emerald-600 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Payment Mode</label>
+                  <select
+                    value={whatsAppPaymentMethod}
+                    onChange={(e) => handlePaymentMethodChange(e.target.value)}
+                    className="w-full bg-white border border-neutral-300 rounded-xl px-3 py-1.5 font-bold text-neutral-800 outline-none focus:border-emerald-600 text-xs cursor-pointer"
+                  >
+                    <option value="UPI">📱 UPI Payment</option>
+                    <option value="Cash">💵 Cash</option>
+                    <option value="Card">💳 Card</option>
+                    <option value="Split">⚡ Split Payment</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {whatsAppType === 'due_reminder' && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-neutral-700 block">Select Reminder Tone:</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleToneChange('gentle')}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      whatsAppTone === 'gentle'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-2xs ring-1 ring-emerald-500'
+                        : 'bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50'
+                    }`}
+                  >
+                    🌱 Gentle Notice
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToneChange('standard')}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      whatsAppTone === 'standard'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-2xs ring-1 ring-emerald-500'
+                        : 'bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50'
+                    }`}
+                  >
+                    📋 Standard Due
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToneChange('urgent')}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      whatsAppTone === 'urgent'
+                        ? 'bg-rose-50 border-rose-500 text-rose-900 shadow-2xs ring-1 ring-rose-500'
+                        : 'bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50'
+                    }`}
+                  >
+                    ⚠️ Overdue Alert
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Message Preview Textarea */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-neutral-700">Message Preview & Customization:</label>
+                <label className="text-xs font-bold text-neutral-700">Pre-Written Message Preview:</label>
                 {config.upiId && (
                   <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
                     UPI: {config.upiId}
@@ -1793,13 +1862,13 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                 )}
               </div>
               <textarea
-                rows={6}
+                rows={7}
                 value={whatsAppMessage}
                 onChange={(e) => setWhatsAppMessage(e.target.value)}
                 className="w-full bg-neutral-50 border border-neutral-300 rounded-xl p-3 text-xs font-mono text-neutral-800 outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 resize-none leading-relaxed"
               />
               <p className="text-[10px] text-neutral-400">
-                You can edit the text before sending. Formatting (*bold*, `code`) will appear nicely in WhatsApp.
+                You can review or edit the text before sending. Formats (*bold*, `code`) will appear formatted in WhatsApp.
               </p>
             </div>
 
@@ -1828,7 +1897,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                   leftIcon={<MessageCircle className="w-4 h-4" />}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white border-none shadow-xs font-bold cursor-pointer"
                 >
-                  Open in WhatsApp
+                  Send on WhatsApp
                 </Button>
               </div>
             </div>

@@ -267,7 +267,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
         pStatus = 'partially_paid';
       }
 
-      const receiptNo = `REC-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const receiptNo = `OSG-REC-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
       
       let splitBreakdownData: SplitPaymentBreakdown | undefined = undefined;
       if (paymentMethod === 'split') {

@@ -13,7 +13,8 @@ import {
   TrendingUp,
   ChevronLeft,
   ChevronRight,
-  Wrench
+  Wrench,
+  X
 } from 'lucide-react';
 import { PageView, UserRole } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -25,6 +26,8 @@ interface SidebarProps {
   totalTables: number;
   onLogout: () => void;
   clubName?: string;
+  isMobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 interface NavItem {
@@ -48,7 +51,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   occupiedCount,
   totalTables,
   onLogout,
-  clubName = 'One Shot Snooker Club',
+  clubName = 'One Shot Gaming Club',
+  isMobileOpen = false,
+  onCloseMobile,
 }) => {
   const { user, currentClubId, role, hasPermission, switchRole, isReviewMode } = useAuth();
 
@@ -162,8 +167,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <aside 
-      className={`hidden lg:flex flex-col bg-[#0B0F17] border-r border-[#1C2333] h-screen sticky top-0 shrink-0 select-none z-30 transition-all duration-300 ease-in-out ${
+    <>
+      <aside 
+        className={`hidden lg:flex flex-col bg-[#0B0F17] border-r border-[#1C2333] h-screen sticky top-0 shrink-0 select-none z-30 transition-all duration-300 ease-in-out ${
         isCollapsed ? 'w-[72px]' : 'w-64'
       }`}
     >
@@ -188,13 +194,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {!isCollapsed && (
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                <h1 className="text-base font-black text-white tracking-tight leading-none">CueDesk</h1>
+                <h1 className="text-sm font-black text-white tracking-tight leading-none uppercase">One Shot</h1>
                 <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 tracking-wider">
-                  OS
+                  ERP
                 </span>
               </div>
               <p className="text-[10px] font-semibold text-neutral-400 tracking-wider uppercase mt-1 truncate">
-                {clubName}
+                Gaming Club
               </p>
             </div>
           )}
@@ -358,28 +364,132 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           )}
         </div>
-
-        {/* Quick Role Preview Bar (Expanded only) */}
-        {!isCollapsed && isReviewMode && switchRole && (
-          <div className="p-1 bg-[#131825] rounded-xl border border-[#1E2638] flex items-center gap-1">
-            {(['owner', 'manager'] as UserRole[]).map((r) => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => switchRole(r)}
-                className={`flex-1 text-[9px] font-extrabold py-1.5 rounded-lg uppercase tracking-wider transition-all cursor-pointer ${
-                  role === r
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs'
-                    : 'text-neutral-400 hover:text-neutral-200'
-                }`}
-                title={`Switch role to ${r.toUpperCase()}`}
-              >
-                {r.toUpperCase()}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
     </aside>
+
+    {/* ─── MOBILE SLIDE-IN DRAWER SIDEBAR ─── */}
+    {isMobileOpen && (
+      <div className="lg:hidden fixed inset-0 z-50 flex">
+        {/* Backdrop */}
+        <div 
+          className="fixed inset-0 bg-black/75 backdrop-blur-xs transition-opacity" 
+          onClick={onCloseMobile} 
+        />
+
+        {/* Drawer Content */}
+        <div className="relative w-72 max-w-[85vw] bg-[#0B0F17] border-r border-[#1C2333] flex flex-col h-full shadow-2xl z-10 select-none animate-in slide-in-from-left duration-200">
+          {/* Header */}
+          <div className="p-4 border-b border-[#1C2333] flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <img
+                src="/logo.png"
+                alt="One Shot Gaming Club"
+                className="w-9 h-9 rounded-xl object-cover ring-1 ring-amber-400/40"
+              />
+              <div>
+                <h2 className="text-xs font-black text-white tracking-wider uppercase">One Shot</h2>
+                <p className="text-[10px] font-extrabold text-amber-400 tracking-widest uppercase">Gaming Club ERP</p>
+              </div>
+            </div>
+            <button
+              onClick={onCloseMobile}
+              className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Live Status Pill */}
+          <div className="p-3 border-b border-[#1C2333]/60 bg-[#090C13]">
+            <div className="px-3 py-2 rounded-xl bg-[#131825] border border-[#1E2638] flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                </span>
+                <span className="text-[11px] font-semibold text-neutral-300">Live Floor</span>
+              </div>
+              <span className="text-[10px] font-mono font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                {occupiedCount}/{totalTables} Tables Active
+              </span>
+            </div>
+          </div>
+
+          {/* Navigation Links */}
+          <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+            {sections.map((sec, secIdx) => {
+              const visibleItems = sec.items.filter((item) => hasPermission(item.minRole));
+              if (visibleItems.length === 0) return null;
+
+              return (
+                <div key={secIdx} className="space-y-1">
+                  <div className="px-2 py-1 text-[10px] font-extrabold uppercase tracking-widest text-neutral-500 font-mono">
+                    {sec.title}
+                  </div>
+                  {visibleItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activePage === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setActivePage(item.id);
+                          if (onCloseMobile) onCloseMobile();
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          isActive
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow-xs'
+                            : 'text-neutral-400 hover:text-neutral-100 hover:bg-[#141A26]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Icon className={`w-4 h-4 ${isActive ? 'text-amber-400' : 'text-neutral-400'}`} />
+                          <span>{item.label}</span>
+                        </div>
+                        {item.badge && (
+                          <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md ${
+                            item.badgeType === 'live'
+                              ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                              : 'bg-neutral-800 text-neutral-300'
+                          }`}>
+                            {item.badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </nav>
+
+          {/* User Profile & Sign Out Footer */}
+          <div className="p-4 border-t border-[#1C2333] bg-[#090C13] flex items-center justify-between">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 text-black font-black text-xs flex items-center justify-center shrink-0">
+                {role.charAt(0).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-xs font-bold text-neutral-200 truncate">{user?.displayName || 'Club Master'}</h4>
+                <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  {role}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                if (onCloseMobile) onCloseMobile();
+                onLogout();
+              }}
+              title="Sign Out"
+              className="p-2 text-neutral-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 };

@@ -267,6 +267,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     const roleMap: Record<string, UserRole> = {
+      'owner@oneshotgaming.com': 'owner',
+      'manager@oneshotgaming.com': 'manager',
       'owner@oneshotsnooker.com': 'owner',
       'manager@oneshotsnooker.com': 'manager',
       'owner@cuedesk.com': 'owner',

@@ -8,7 +8,8 @@ import {
   ChevronDown,
   Download,
   Volume2,
-  VolumeX
+  VolumeX,
+  Menu
 } from 'lucide-react';
 import { PageView, NotificationItem } from '../../types';
 import { Button } from '../ui/Button';
@@ -22,6 +23,7 @@ interface NavbarProps {
   activePage: PageView;
   setActivePage: (page: PageView) => void;
   onQuickStartSession: () => void;
+  onOpenMobileMenu?: () => void;
   notifications?: NotificationItem[];
   onMarkNotificationRead?: (id: string) => Promise<void>;
   onResolveNotification?: (id: string) => Promise<void>;
@@ -44,13 +46,14 @@ const pageTitles: Record<PageView, { title: string; subtitle: string }> = {
   lockers: { title: 'Cue Lockers', subtitle: 'Member locker allocations & cue sticks' },
   arena: { title: 'Gaming Arena', subtitle: 'Arcade, VR & station tracking' },
   'super-admin': { title: 'Platform Super Admin', subtitle: 'Multi-club workspace management & plans' },
-  login: { title: 'Sign In', subtitle: 'CueDesk Manager Portal' },
+  login: { title: 'Sign In', subtitle: 'One Shot Gaming Club ERP' },
 };
 
 export const Navbar: React.FC<NavbarProps> = ({
   activePage,
   setActivePage,
   onQuickStartSession,
+  onOpenMobileMenu,
   notifications = [],
   onMarkNotificationRead = async () => {},
   onResolveNotification,
@@ -100,17 +103,29 @@ export const Navbar: React.FC<NavbarProps> = ({
     <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-neutral-200/80 shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
       <div className="flex items-center justify-between px-3 sm:px-5 h-14">
 
-        {/* LEFT: Logo + Page Title */}
-        <div className="flex items-center gap-2.5 min-w-0">
-          {/* Mobile Logo — actual logo image */}
+        {/* LEFT: Mobile Menu Button + Page Title */}
+        <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+          {/* Mobile Hamburger Drawer Trigger */}
           <button
-            className="lg:hidden flex items-center gap-2 shrink-0 cursor-pointer"
+            type="button"
+            onClick={onOpenMobileMenu}
+            className="lg:hidden p-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 active:scale-95 text-neutral-800 transition-colors cursor-pointer shrink-0"
+            title="Open Menu"
+            aria-label="Open Navigation Drawer"
+          >
+            <Menu className="w-4 h-4 text-neutral-900" />
+          </button>
+
+          {/* Mobile Club Logo */}
+          <button
+            className="lg:hidden flex items-center shrink-0 cursor-pointer"
             onClick={() => setActivePage('dashboard')}
+            title="One Shot Gaming Club"
           >
             <img
               src="/logo.png"
-              alt="CueDesk"
-              className="w-9 h-9 rounded-xl object-cover ring-2 ring-amber-400/30 shadow-md"
+              alt="One Shot Gaming Club"
+              className="w-8 h-8 rounded-xl object-cover ring-1 ring-amber-400/40 shadow-xs"
             />
           </button>
 

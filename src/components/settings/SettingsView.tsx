@@ -219,9 +219,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-200/80 pb-5">
         <div>
           <h2 className="text-xl sm:text-2xl font-black text-neutral-900 tracking-tight flex items-center gap-2">
-            <span>Club Management Panel</span>
+            <span>One Shot Gaming Club ERP</span>
             <span className="text-[11px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
-              Local Club
+              One Shot OS
             </span>
           </h2>
           <p className="text-xs sm:text-sm text-neutral-500 mt-1">
@@ -413,6 +413,66 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       onChange={(e) => setBusinessForm({ ...businessForm, currencyCode: e.target.value })}
                       className="flex-1 font-bold"
                     />
+                  </div>
+                </div>
+
+                {/* Dedicated Club Defaults & Fresh Data Reset Actions */}
+                <div className="pt-4 border-t border-neutral-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-extrabold text-neutral-900 text-xs flex items-center gap-1.5">
+                      <span>🎱</span>
+                      <span>One Shot Gaming Club Dedicated Defaults</span>
+                    </h4>
+                    <p className="text-[11px] text-neutral-500 mt-0.5">
+                      Set all configurations to official One Shot Gaming Club presets (rates, currency, UPI, address).
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setBusinessForm({
+                          ...businessForm,
+                          clubName: 'One Shot Gaming Club',
+                          tagline: 'Premium Cue Sports & Gaming Lounge',
+                          address: 'Level 2, Grand Arena Plaza, Metro Ave',
+                          phone: '+91 98765 43210',
+                          whatsappNumber: '+91 98765 43210',
+                          currencySymbol: '₹',
+                          currencyCode: 'INR',
+                          defaultHourlyRate: 200,
+                          minimumChargeMinutes: 15,
+                          upiId: 'oneshotgaming@upi',
+                          upiName: 'One Shot Gaming Club',
+                          receiptFooterMsg: 'Thank you for playing at One Shot Gaming Club! Visit again.',
+                          operatingHours: '10:00 AM – 11:30 PM',
+                          timeZone: 'Asia/Kolkata',
+                        });
+                        alert('Official One Shot Gaming Club defaults loaded! Click "Save Changes" to save to database.');
+                      }}
+                      className="text-xs font-bold"
+                    >
+                      Load One Shot Defaults
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        if (confirm('Reset all club data to fresh initial state? All tables will be set to available and test sessions cleared.')) {
+                          if (onResetClubData) {
+                            await onResetClubData();
+                            alert('One Shot Gaming Club data has been reset to fresh pristine state!');
+                          }
+                        }
+                      }}
+                      className="text-xs font-bold border-rose-300 text-rose-700 hover:bg-rose-50"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                      Reset to Fresh Data
+                    </Button>
                   </div>
                 </div>
               </div>

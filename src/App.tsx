@@ -100,6 +100,7 @@ function StaffClubApp() {
 
   // View state
   const [activePage, setActivePage] = useState<PageView>('dashboard');
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
 
   // Daily Background Auto-Snapshot Trigger
   React.useEffect(() => {
@@ -442,13 +443,15 @@ function StaffClubApp() {
       {/* Toast Notifications Overlay */}
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
 
-      {/* Desktop Left Sidebar */}
+      {/* Desktop & Mobile Drawer Sidebar */}
       <Sidebar
         activePage={activePage}
         setActivePage={setActivePage}
         occupiedCount={occupiedCount}
         totalTables={tables.length}
         clubName={config.clubName}
+        isMobileOpen={isMobileDrawerOpen}
+        onCloseMobile={() => setIsMobileDrawerOpen(false)}
         onLogout={() => {
           signOutUser();
           addToast('info', 'Signed Out', 'You have been signed out to the login screen.');
@@ -462,6 +465,7 @@ function StaffClubApp() {
           activePage={activePage}
           setActivePage={setActivePage}
           notifications={notifications}
+          onOpenMobileMenu={() => setIsMobileDrawerOpen(true)}
           onMarkNotificationRead={async (id) => markNotificationRead(id)}
           onResolveNotification={async (id) => resolveNotification(id)}
           onDeleteNotification={async (id) => deleteNotification(id)}

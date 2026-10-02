@@ -120,23 +120,23 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         
         {/* Logo & Brand Header */}
         <div className="flex flex-col items-center text-center">
-          <div className="relative group cursor-pointer mb-2">
+          <div className="relative group cursor-pointer mb-3">
             <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-amber-500 to-amber-300 opacity-40 blur-md group-hover:opacity-75 transition duration-500" />
             <img
               src="/logo.png"
-              alt="CueDesk - One Shot Snooker Gaming Club Management"
-              className="relative w-24 h-24 rounded-3xl object-cover shadow-2xl ring-1 ring-amber-400/30"
+              alt="One Shot Gaming Club ERP"
+              className="relative w-20 h-20 rounded-2xl object-cover shadow-2xl ring-2 ring-amber-400/40"
             />
           </div>
           
           <h1 className="text-2xl font-black tracking-tight text-white flex items-center justify-center gap-2">
-            CueDesk
+            ONE SHOT
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-widest">
-              ONE SHOT
+              GAMING CLUB
             </span>
           </h1>
-          <p className="text-[11px] font-medium text-amber-200/70 mt-0.5 tracking-wide uppercase">
-            One Shot Snooker Gaming Club
+          <p className="text-[11px] font-medium text-amber-200/70 mt-1 tracking-wider uppercase font-mono">
+            Dedicated Club Management & ERP System
           </p>
         </div>
 
@@ -170,7 +170,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                     type="email"
                     required
                     autoComplete="off"
-                    placeholder="Enter email address..."
+                    placeholder="Enter registered email address..."
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-[#18181f] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-neutral-500 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all font-medium"
@@ -218,39 +218,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 </div>
               </div>
 
-              {/* Quick Fill Demo Accounts */}
-              <div className="pt-2 border-t border-white/10 flex flex-col gap-1.5">
-                <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Quick Fill Demo Account:</span>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmail('owner@oneshotsnooker.com');
-                      setPassword('owner123');
-                    }}
-                    className="py-2 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-xs font-bold text-amber-300 border border-amber-500/30 transition-all text-center cursor-pointer active:scale-95 flex items-center justify-center gap-1.5"
-                  >
-                    <span>👑</span>
-                    <span>Owner</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmail('manager@oneshotsnooker.com');
-                      setPassword('manager123');
-                    }}
-                    className="py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-neutral-200 border border-white/10 transition-all text-center cursor-pointer active:scale-95 flex items-center justify-center gap-1.5"
-                  >
-                    <span>💼</span>
-                    <span>Manager</span>
-                  </button>
-                </div>
-              </div>
-
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full mt-1 py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider transition-all duration-200 hover:shadow-lg hover:shadow-amber-500/20 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider transition-all duration-200 hover:shadow-lg hover:shadow-amber-500/20 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
               >
                 {loading ? (
                   <>
@@ -365,7 +336,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         {/* Security Badge Footer */}
         <div className="flex items-center justify-center gap-2 text-[11px] font-semibold text-neutral-500">
           <ShieldCheck className="w-4 h-4 text-emerald-500" />
-          <span>Encrypted Portal • Official CueDesk OS</span>
+          <span>Enterprise 256-Bit SSL Encrypted • One Shot Gaming Club ERP</span>
         </div>
 
       </div>

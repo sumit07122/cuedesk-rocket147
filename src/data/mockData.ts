@@ -2,8 +2,8 @@ import { TableItem, MenuItem, SessionHistoryItem, TopCustomer, BusinessConfig, N
 
 export const initialBusinessConfig: BusinessConfig = {
   id: 'club-royal-cue',
-  clubName: 'One Shot Snooker Gaming Club',
-  tagline: 'Premium Cue Sports & Gaming Club',
+  clubName: 'One Shot Gaming Club',
+  tagline: 'Premium Cue Sports & Gaming Lounge',
   address: 'Level 2, Grand Arena Plaza, Metro Ave',
   phone: '+91 98765 43210',
   whatsappNumber: '+91 98765 43210',
@@ -11,9 +11,9 @@ export const initialBusinessConfig: BusinessConfig = {
   currencyCode: 'INR',
   defaultHourlyRate: 200.00,
   minimumChargeMinutes: 15,
-  upiId: 'oneshot@upi',
-  upiName: 'One Shot Snooker Gaming Club',
-  receiptFooterMsg: 'Thank you for playing at One Shot Snooker Gaming Club! See you soon.',
+  upiId: 'oneshotgaming@upi',
+  upiName: 'One Shot Gaming Club',
+  receiptFooterMsg: 'Thank you for playing at One Shot Gaming Club! Visit again.',
   operatingHours: '10:00 AM – 11:30 PM',
   timeZone: 'Asia/Kolkata',
   roundingRule: 'nearest_1',
@@ -115,7 +115,7 @@ export const initialSessionHistory: SessionHistoryItem[] = [
     balanceDue: 0,
     paymentMethod: 'upi',
     paymentStatus: 'paid',
-    receiptNo: 'REC-00101',
+    receiptNo: 'OSG-REC-00101',
     timestamp: new Date(now - 3600000 * 2).toISOString(),
     foodOrders: [
       { id: 'o-1', menuId: 'm2', name: 'Cold Coffee Frappe', price: 140, quantity: 1, category: 'cold_drinks', addedAt: new Date(now - 3600000 * 2.5).toISOString() }
@@ -140,7 +140,7 @@ export const initialSessionHistory: SessionHistoryItem[] = [
     balanceDue: 0,
     paymentMethod: 'cash',
     paymentStatus: 'paid',
-    receiptNo: 'REC-00102',
+    receiptNo: 'OSG-REC-00102',
     timestamp: new Date(now - 3600000 * 1).toISOString(),
     foodOrders: [
       { id: 'o-2', menuId: 'm1', name: 'Kadak Masala Chai', price: 50, quantity: 2, category: 'tea_coffee', addedAt: new Date(now - 3600000 * 1.5).toISOString() }
@@ -152,7 +152,7 @@ export const initialTopCustomers: TopCustomer[] = [
   {
     id: 'cust-1',
     clubId: 'club-royal-cue',
-    customerNumber: 'CUST-001',
+    customerNumber: 'OSG-CUST-1001',
     name: 'Rahul Sharma',
     phone: '+91 98765 11223',
     totalSpent: 5400,
@@ -169,7 +169,7 @@ export const initialTopCustomers: TopCustomer[] = [
   {
     id: 'cust-2',
     clubId: 'club-royal-cue',
-    customerNumber: 'CUST-002',
+    customerNumber: 'OSG-CUST-1002',
     name: 'Amit Verma',
     phone: '+91 98765 22334',
     totalSpent: 3200,
@@ -186,7 +186,7 @@ export const initialTopCustomers: TopCustomer[] = [
   {
     id: 'cust-3',
     clubId: 'club-royal-cue',
-    customerNumber: 'CUST-003',
+    customerNumber: 'OSG-CUST-1003',
     name: 'Vikram Singh',
     phone: '+91 98765 33445',
     totalSpent: 1900,
