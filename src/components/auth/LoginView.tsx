@@ -27,7 +27,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [inviteCode, setInviteCode] = useState('');
-  const [staffRole, setStaffRole] = useState<'manager' | 'worker'>('worker');
+  const [staffRole, setStaffRole] = useState<'owner' | 'manager'>('manager');
   const [showPassword, setShowPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -221,16 +221,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               {/* Quick Fill Demo Accounts */}
               <div className="pt-2 border-t border-white/10 flex flex-col gap-1.5">
                 <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Quick Fill Demo Account:</span>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => {
                       setEmail('owner@oneshotsnooker.com');
                       setPassword('owner123');
                     }}
-                    className="py-1.5 px-2 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-bold text-amber-300 border border-white/10 transition-colors text-center cursor-pointer active:scale-95"
+                    className="py-2 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-xs font-bold text-amber-300 border border-amber-500/30 transition-all text-center cursor-pointer active:scale-95 flex items-center justify-center gap-1.5"
                   >
-                    👑 Owner
+                    <span>👑</span>
+                    <span>Owner</span>
                   </button>
                   <button
                     type="button"
@@ -238,19 +239,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                       setEmail('manager@oneshotsnooker.com');
                       setPassword('manager123');
                     }}
-                    className="py-1.5 px-2 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-bold text-neutral-300 border border-white/10 transition-colors text-center cursor-pointer active:scale-95"
+                    className="py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-neutral-200 border border-white/10 transition-all text-center cursor-pointer active:scale-95 flex items-center justify-center gap-1.5"
                   >
-                    💼 Manager
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmail('cashier@oneshotsnooker.com');
-                      setPassword('cashier123');
-                    }}
-                    className="py-1.5 px-2 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-bold text-neutral-300 border border-white/10 transition-colors text-center cursor-pointer active:scale-95"
-                  >
-                    💵 Cashier
+                    <span>💼</span>
+                    <span>Manager</span>
                   </button>
                 </div>
               </div>
@@ -307,7 +299,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               <div><label className="text-xs font-bold text-neutral-300 block mb-1">Full name</label><input required value={fullName} onChange={(e) => setFullName(e.target.value)} autoComplete="name" className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-400" /></div>
               <div><label className="text-xs font-bold text-neutral-300 block mb-1">Invited email</label><input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-400" /></div>
               <div><label className="text-xs font-bold text-neutral-300 block mb-1">Phone (optional)</label><input value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-400" /></div>
-              <div><label className="text-xs font-bold text-neutral-300 block mb-1">Invited role</label><select value={staffRole} onChange={(e) => setStaffRole(e.target.value as 'manager' | 'worker')} className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-400"><option value="worker">Club worker</option><option value="manager">Club manager</option></select></div>
+              <div><label className="text-xs font-bold text-neutral-300 block mb-1">Invited role</label><select value={staffRole} onChange={(e) => setStaffRole(e.target.value as 'owner' | 'manager')} className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-400"><option value="manager">Club Manager</option></select></div>
               <div><label className="text-xs font-bold text-neutral-300 block mb-1">Invitation code</label><input required value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} autoComplete="one-time-code" className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-400" /></div>
               <div><label className="text-xs font-bold text-neutral-300 block mb-1">Create password</label><input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-400" /></div>
               <button type="submit" disabled={loading} className="w-full rounded-xl bg-amber-400 px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-black disabled:opacity-50">{loading ? 'Creating account…' : 'Create staff account'}</button>

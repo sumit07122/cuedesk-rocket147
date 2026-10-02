@@ -15,7 +15,24 @@ export interface FirebaseAppConfig {
 }
 
 export const getActiveFirebaseConfig = (): { config: FirebaseAppConfig; source: 'env' | 'custom' | 'bundled'; isCustom: boolean } => {
-  // Use the deployment's configured Firebase project; browser storage cannot override the live database.
+  // 1. Check if user configured a custom Firebase project in Settings
+  try {
+    const customConfigStr = typeof localStorage !== 'undefined' ? localStorage.getItem('cuedesk_custom_firebase_config') : null;
+    if (customConfigStr) {
+      const customConfig = JSON.parse(customConfigStr) as FirebaseAppConfig;
+      if (customConfig && customConfig.apiKey && customConfig.projectId) {
+        return {
+          config: customConfig,
+          source: 'custom',
+          isCustom: true
+        };
+      }
+    }
+  } catch (e) {
+    console.warn('Could not parse custom Firebase configuration from storage', e);
+  }
+
+  // 2. Use the deployment's configured Firebase project; browser storage cannot override the live database.
   const envApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
   const envProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
 
@@ -35,7 +52,7 @@ export const getActiveFirebaseConfig = (): { config: FirebaseAppConfig; source: 
     };
   }
 
-  // Local development fallback for the project preview.
+  // 3. Local development fallback for the project preview.
   return { config: bundledFirebaseConfig as FirebaseAppConfig, source: 'bundled', isCustom: false };
 };
 

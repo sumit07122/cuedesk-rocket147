@@ -95,6 +95,7 @@ function StaffClubApp() {
     resolveNotification,
     deleteNotification,
     clearAllNotifications,
+    resetClubData,
   } = useRealtimeClubData(currentClubId, role);
 
   // View state
@@ -664,6 +665,10 @@ function StaffClubApp() {
                 onDeleteMenuItem={handleDeleteMenuItem}
                 onSaveEmployee={saveEmployee}
                 onDeleteEmployee={deleteEmployee}
+                onResetClubData={async () => {
+                  await resetClubData();
+                  addToast('success', 'Club Reset Complete', 'All club stations and catalog have been reset.');
+                }}
               />
             </RoleGuard>
           ) : (

@@ -32,7 +32,8 @@ import {
   RotateCcw,
   Clock,
   Eye,
-  EyeOff
+  EyeOff,
+  Database
 } from 'lucide-react';
 import { TableItem, MenuItem, BusinessConfig, TableType, TopCustomer, SessionHistoryItem, EmployeeUser } from '../../types';
 import { Card } from '../ui/Card';
@@ -51,6 +52,7 @@ import {
   exportBillingHistoryCSV
 } from '../../utils/excelExport';
 import { SystemHealthSection } from './SystemHealthSection';
+import { FirebaseConnectSection } from './FirebaseConnectSection';
 
 export type SettingsSectionId = 
   | 'profile'
@@ -59,6 +61,7 @@ export type SettingsSectionId =
   | 'menu'
   | 'reports'
   | 'backup'
+  | 'firebase'
   | 'notifications'
   | 'security'
   | 'health';
@@ -71,6 +74,7 @@ interface SettingsViewProps {
   history?: SessionHistoryItem[];
   customers?: TopCustomer[];
   onUpdateConfig: (newConfig: BusinessConfig) => void | Promise<void>;
+  onResetClubData?: () => void | Promise<void>;
   onAddTable: (table: Omit<TableItem, 'id' | 'status'>) => void;
   onEditTable?: (table: TableItem) => void;
   onDeleteTable: (tableId: string) => void;
@@ -89,6 +93,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   history = [],
   customers = [],
   onUpdateConfig,
+  onResetClubData,
   onAddTable,
   onEditTable,
   onDeleteTable,
@@ -128,7 +133,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
   const [newStaffPhone, setNewStaffPhone] = useState('');
-  const [newStaffRole, setNewStaffRole] = useState<'owner' | 'manager' | 'worker'>('worker');
+  const [newStaffRole, setNewStaffRole] = useState<'owner' | 'manager'>('manager');
 
   // Staff Password Change Modal State
   const [passwordModalEmp, setPasswordModalEmp] = useState<EmployeeUser | null>(null);
@@ -203,6 +208,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     { id: 'menu', label: 'Menu & Food', icon: Utensils, badge: `${menuItems.length}` },
     { id: 'reports', label: 'Reports & Export', icon: BarChart3 },
     { id: 'backup', label: 'Backup & Restore', icon: HardDrive },
+    { id: 'firebase', label: 'Firebase Cloud DB', icon: Database },
     { id: 'security', label: 'Security & Audit', icon: ShieldCheck },
     { id: 'health', label: 'System Health', icon: Activity },
   ];
@@ -1256,7 +1262,41 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </Button>
                 </div>
               </div>
+
+              {/* Reset Club Data Card */}
+              <div className="pt-6 border-t border-rose-200 bg-rose-50/60 p-5 rounded-2xl border border-rose-200/90 space-y-3">
+                <div className="flex items-center gap-2 text-rose-800 font-extrabold text-sm">
+                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                  <span>Reset Club Data to Clean Initial Slate</span>
+                </div>
+                <p className="text-xs text-rose-800/80 leading-relaxed">
+                  Reset all tables to free/available, restore default snooker & pool tables, re-seed fresh cafe snacks, and clear any test sessions. Perfect if your test sessions got stuck or for starting fresh.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-rose-300 text-rose-700 hover:bg-rose-100 hover:text-rose-900 cursor-pointer font-bold bg-white"
+                  onClick={async () => {
+                    if (confirm('Are you sure you want to reset all club data to clean defaults? All tables will be set to available and test sessions cleared.')) {
+                      if (onResetClubData) {
+                        await onResetClubData();
+                        alert('Club data has been reset to clean default state!');
+                      }
+                    }
+                  }}
+                >
+                  <RotateCcw className="w-4 h-4 mr-1.5" />
+                  Reset Club Data to Clean Defaults
+                </Button>
+              </div>
             </Card>
+          )}
+
+          {/* ========================================================= */}
+          {/* FIREBASE CLOUD DB */}
+          {/* ========================================================= */}
+          {activeSection === 'firebase' && (
+            <FirebaseConnectSection currentClubId={config.id} />
           )}
 
           {/* ========================================================= */}

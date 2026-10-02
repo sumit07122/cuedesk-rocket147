@@ -53,7 +53,7 @@ export const EmployeeManagementView: React.FC<EmployeeManagementViewProps> = ({
       name: '',
       email: '',
       phone: '',
-      role: 'worker',
+      role: 'manager',
       status: 'active',
       joiningDate: new Date().toISOString().split('T')[0]
     });
@@ -330,13 +330,12 @@ export const EmployeeManagementView: React.FC<EmployeeManagementViewProps> = ({
                 <div>
                   <label className="block text-xs font-bold text-neutral-700 mb-1">Access Role *</label>
                   <select
-                    value={editingEmp.role || 'worker'}
+                    value={editingEmp.role || 'manager'}
                     onChange={(e) => setEditingEmp({ ...editingEmp, role: e.target.value as UserRole })}
                     className="w-full bg-neutral-50 border border-neutral-200 text-xs font-semibold rounded-xl p-2.5 outline-none"
                   >
-                    <option value="owner">Owner (Full System Control)</option>
-                    <option value="manager">Manager (Reports & Inventory)</option>
-                    <option value="worker">Club Worker (Tables, POS & Café)</option>
+                    <option value="owner">Owner (Full System Control & Settings)</option>
+                    <option value="manager">Manager (Operations, POS, Cafe & Reports)</option>
                   </select>
                 </div>
 

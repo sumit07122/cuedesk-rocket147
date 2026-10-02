@@ -70,7 +70,8 @@ import {
   markNotificationAsResolved,
   deleteNotification,
   clearAllNotifications,
-  logAuditEvent
+  logAuditEvent,
+  resetClubToDefault
 } from '../services/dbService';
 import { 
   initialBusinessConfig,
@@ -431,6 +432,38 @@ export const useRealtimeClubData = (clubId: string, role: UserRole = 'owner') =>
     await clearAllNotifications(clubId, ids);
   };
 
+  const handleResetClubData = async () => {
+    setIsLoading(true);
+    try {
+      setConfig({ ...initialBusinessConfig, id: clubId });
+      setTables(initialTables);
+      setMenuItems(initialMenuItems);
+      setHistory(initialSessionHistory);
+      setTopCustomers(initialTopCustomers);
+      setEmployees(initialEmployees);
+      setExpenses(initialExpenses);
+      setSessionRequests([]);
+      setNotifications([]);
+      setFoodOrders([]);
+      setPurchaseRecords([]);
+      setInventoryAdjustments([]);
+      setMaintenanceRecords([]);
+
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('cuedesk_session_') || key.startsWith('cuedesk_table_'))) {
+            localStorage.removeItem(key);
+          }
+        }
+      } catch {}
+
+      await resetClubToDefault(clubId);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     config,
     tables,
@@ -447,6 +480,7 @@ export const useRealtimeClubData = (clubId: string, role: UserRole = 'owner') =>
     maintenanceRecords,
     notifications,
     isLoading,
+    resetClubData: handleResetClubData,
     updateConfig: handleUpdateConfig,
     saveTable: handleSaveTable,
     deleteTable: handleDeleteTable,

@@ -362,19 +362,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Quick Role Preview Bar (Expanded only) */}
         {!isCollapsed && isReviewMode && switchRole && (
           <div className="p-1 bg-[#131825] rounded-xl border border-[#1E2638] flex items-center gap-1">
-            {(['owner', 'manager', 'worker'] as UserRole[]).map((r) => (
+            {(['owner', 'manager'] as UserRole[]).map((r) => (
               <button
                 key={r}
                 type="button"
                 onClick={() => switchRole(r)}
-                className={`flex-1 text-[9px] font-extrabold py-1 rounded-lg uppercase tracking-wider transition-all cursor-pointer ${
+                className={`flex-1 text-[9px] font-extrabold py-1.5 rounded-lg uppercase tracking-wider transition-all cursor-pointer ${
                   role === r
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs'
                     : 'text-neutral-400 hover:text-neutral-200'
                 }`}
-                title={`Switch preview role to ${r.toUpperCase()}`}
+                title={`Switch role to ${r.toUpperCase()}`}
               >
-                {r === 'worker' ? 'WORKER' : r.toUpperCase()}
+                {r.toUpperCase()}
               </button>
             ))}
           </div>

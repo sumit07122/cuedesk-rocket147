@@ -167,6 +167,53 @@ export const ensureClubInitialized = async (clubId: string = DEFAULT_CLUB_ID, cl
   }
 };
 
+/**
+ * Completely resets club data (tables, catalog, config) back to fresh pristine state.
+ */
+export const resetClubToDefault = async (clubId: string = DEFAULT_CLUB_ID): Promise<void> => {
+  try {
+    const batch = writeBatch(db);
+
+    // 1. Reset Club Settings
+    const configRef = doc(db, 'clubs', clubId, 'config', 'settings');
+    batch.set(configRef, { ...initialBusinessConfig, id: clubId }, { merge: true });
+
+    // 2. Reset Tables to initial clean available states
+    initialTables.forEach((tbl) => {
+      const tblRef = doc(db, 'clubs', clubId, 'tables', tbl.id);
+      batch.set(tblRef, {
+        ...tbl,
+        clubId,
+        status: 'available',
+        currentSession: null,
+      });
+    });
+
+    // 3. Reset Menu Items
+    initialMenuItems.forEach((item) => {
+      const itemRef = doc(db, 'clubs', clubId, 'menuItems', item.id);
+      batch.set(itemRef, { ...item, clubId });
+    });
+
+    // 4. Reset Top Customers
+    initialTopCustomers.forEach((cust) => {
+      const custRef = doc(db, 'clubs', clubId, 'customers', cust.id);
+      batch.set(custRef, { ...cust, clubId });
+    });
+
+    // 5. Reset Session History
+    initialSessionHistory.forEach((hist) => {
+      const histRef = doc(db, 'clubs', clubId, 'history', hist.id);
+      batch.set(histRef, { ...hist, clubId });
+    });
+
+    await batch.commit();
+    console.log(`Successfully reset Firestore club data to clean defaults for: ${clubId}`);
+  } catch (error) {
+    console.warn(`Firestore reset error for ${clubId} (likely offline or rules):`, error);
+  }
+};
+
 // --- CLUB SETTINGS ---
 
 export const subscribeClubSettings = (
