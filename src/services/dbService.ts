@@ -268,11 +268,11 @@ export const startTableSession = async (
         throw new Error(`Table ID ${tableId} not found.`);
       }
       const tableData = tableSnap.data() as TableItem;
-      if (tableData.status === 'occupied' && tableData.currentSession) {
-        throw new Error(`Table ${tableData.name} already has an active running session.`);
-      }
-      if (tableData.status === 'maintenance' || tableData.isMaintenance) {
+      if (tableData.isMaintenance) {
         throw new Error(`Table ${tableData.name} is currently under maintenance.`);
+      }
+      if (tableData.status !== 'available' || tableData.currentSession) {
+        throw new Error(`Table ${tableData.name} is not available for a new session.`);
       }
 
       transaction.update(tableRef, {
@@ -281,12 +281,6 @@ export const startTableSession = async (
       });
     });
 
-    await logAuditEvent(
-      clubId,
-      'SESSION_STARTED',
-      session.customerName || 'Staff',
-      `Session started on Table ${tableId} for ${session.customerName}`
-    );
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `clubs/${clubId}/tables/${tableId}`);
   }
@@ -381,6 +375,33 @@ export const addOrdersToSession = async (
       transaction.update(tableRef, { currentSession: sanitizeDataForFirestore(updatedSession) });
     });
   }
+};
+
+export const removeOrderFromSession = async (
+  clubId: string,
+  tableId: string,
+  sessionId: string,
+  orderId: string
+): Promise<void> => {
+  const tableRef = doc(db, 'clubs', clubId, 'tables', tableId);
+  await runTransaction(db, async (transaction) => {
+    const tableSnap = await transaction.get(tableRef);
+    if (!tableSnap.exists()) throw new Error('The table record no longer exists. Refresh and try again.');
+    const tableData = tableSnap.data() as TableItem;
+    const liveSession = tableData.currentSession;
+    if (tableData.status !== 'occupied' || !liveSession || liveSession.id !== sessionId) {
+      throw new Error('This table session changed. Refresh the table before editing its order.');
+    }
+    const currentOrders = liveSession.foodOrders || [];
+    const nextOrders = currentOrders.filter((item) => item.id !== orderId);
+    if (nextOrders.length === currentOrders.length) {
+      throw new Error('That order item is no longer on this bill. Refresh and try again.');
+    }
+    const foodTotal = nextOrders.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    transaction.update(tableRef, {
+      currentSession: sanitizeDataForFirestore({ ...liveSession, foodOrders: nextOrders, foodTotal }),
+    });
+  });
 };
 
 export const requestTableCheckout = async (clubId: string, tableId: string): Promise<void> => {
@@ -1293,15 +1314,17 @@ export const subscribeAuditLogs = (
 export const logAuditEvent = async (
   clubId: string,
   action: string,
-  performedBy: string,
+  _performedBy: string,
   details?: string
 ): Promise<void> => {
   try {
+    const actorEmail = auth.currentUser?.email;
+    if (!actorEmail) return;
     const logRef = collection(db, 'clubs', clubId, 'auditLogs');
     await addDoc(logRef, {
       clubId,
       action,
-      performedBy,
+      performedBy: actorEmail,
       timestamp: Date.now(),
       details: details || '',
       deviceInfo: getDeviceInfo()
@@ -1319,6 +1342,7 @@ export const refundSessionPayment = async (
 ): Promise<void> => {
   const histRef = doc(db, 'clubs', clubId, 'history', historyId);
   const auditRef = doc(collection(db, 'clubs', clubId, 'auditLogs'));
+  const actorEmail = auth.currentUser?.email || performedBy;
   await runTransaction(db, async (transaction) => {
     const historySnap = await transaction.get(histRef);
     if (!historySnap.exists()) throw new Error('The bill could not be found. Refresh and try again.');
@@ -1366,7 +1390,7 @@ export const refundSessionPayment = async (
     transaction.update(histRef, {
       paymentStatus: 'refunded',
       refundReason: reason,
-      refundedBy: performedBy,
+      refundedBy: actorEmail,
       refundedAt,
       refundedAmount: Math.max(0, Number(historyRecord.amountPaid) || 0),
     });
@@ -1385,7 +1409,7 @@ export const refundSessionPayment = async (
         receiptId: historyId,
         customerId,
         recordedByEmail: auth.currentUser?.email || '',
-        recordedBy: performedBy,
+        recordedBy: actorEmail,
       };
       transaction.update(customerRefs.get(customerId)!, {
         outstandingDue: increment(-refundableDue),
@@ -1423,7 +1447,7 @@ export const refundSessionPayment = async (
       id: auditRef.id,
       clubId,
       action: 'REFUND_ISSUED',
-      performedBy,
+      performedBy: actorEmail,
       timestamp: refundedAt,
       details: `Refunded receipt #${historyRecord.receiptNo}; paid amount ${historyRecord.amountPaid}; reversed due ${historyRecord.balanceDue}. Reason: ${reason}`,
     });

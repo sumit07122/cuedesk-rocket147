@@ -1,13 +1,17 @@
 import { exportClubBackup, downloadBackupFile, restoreClubBackup, ClubBackupSnapshot } from './backupService';
+import { getBusinessDateKey } from './formatters';
 
 const SNAPSHOT_PREFIX = 'oneshot_daily_snapshot_';
 
 /**
  * Checks if a daily backup snapshot was generated today, and creates one automatically if missing.
  */
-export async function performDailyAutoSnapshot(clubId: string = 'oneshot-club'): Promise<ClubBackupSnapshot | null> {
+export async function performDailyAutoSnapshot(
+  clubId: string = 'club-royal-cue',
+  timeZone: string = 'Asia/Kolkata'
+): Promise<ClubBackupSnapshot | null> {
   try {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getBusinessDateKey(Date.now(), timeZone);
     const snapshotKey = `${SNAPSHOT_PREFIX}${todayStr}`;
 
     // Check if snapshot already exists for today

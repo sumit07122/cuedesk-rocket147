@@ -105,7 +105,10 @@ export function calculateTableFee(
   const minutes = seconds > 0
     ? Math.max(Math.ceil(seconds / 60), Math.max(0, Number(minimumChargeMinutes) || 0))
     : 0;
-  const fee = (minutes / 60) * session.hourlyRate;
+  let fee = (minutes / 60) * session.hourlyRate;
+  if (session.isMember && session.memberDiscountPercent && session.memberDiscountPercent > 0) {
+    fee = fee * (1 - session.memberDiscountPercent / 100);
+  }
   return Math.max(0, fee);
 }
 

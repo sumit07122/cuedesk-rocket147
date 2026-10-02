@@ -13,7 +13,7 @@ import {
   TrendingUp,
   ChevronLeft,
   ChevronRight,
-  BookOpen
+  Wrench
 } from 'lucide-react';
 import { PageView, UserRole } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -109,7 +109,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'Customer CRM', 
           icon: Users, 
           minRole: 'worker',
-          tooltip: 'Member Profiles & Credit Ledgers'
+          tooltip: 'Customer profiles and account history'
         },
       ]
     },
@@ -136,6 +136,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: BarChart3, 
           minRole: 'manager',
           tooltip: 'Financial Reports & Insights'
+        },
+        { 
+          id: 'maintenance', 
+          label: 'Table Maintenance', 
+          icon: Wrench, 
+          minRole: 'manager',
+          tooltip: 'Repairs, re-clothing & table service records'
         },
         { 
           id: 'settings', 

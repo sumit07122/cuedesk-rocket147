@@ -16,6 +16,7 @@ import { MobileBottomNav } from './components/navigation/MobileBottomNav';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { BillingView } from './components/billing/BillingView';
 import { TableDetailsModal } from './components/tables/TableDetailsModal';
+import { StartSessionModal } from './components/tables/StartSessionModal';
 import { TransferTableModal } from './components/tables/TransferTableModal';
 import { AddSnackModal } from './components/tables/AddSnackModal';
 import { ReceiptModal } from './components/billing/ReceiptModal';
@@ -37,7 +38,8 @@ import { createNotification } from './services/dbService';
 import { RoleGuard } from './components/common/RoleGuard';
 import { CheckCircle2, Sparkles, CircleDot } from 'lucide-react';
 import { soundEffects } from './utils/soundEffects';
-import { getBusinessDateKey } from './utils/formatters';
+import { calculateBillTotals, getBusinessDateKey } from './utils/formatters';
+import { getFriendlyErrorMessage } from './utils/errorHandler';
 
 function StaffClubApp() {
   const { user, currentClubId, role, signOutUser, hasPermission } = useAuth();
@@ -55,7 +57,6 @@ function StaffClubApp() {
     purchaseRecords,
     inventoryAdjustments,
     employees,
-    attendance,
     expenses,
     maintenanceRecords,
     notifications,
@@ -67,6 +68,7 @@ function StaffClubApp() {
     transferSession,
     togglePause,
     addOrders,
+    removeOrder,
     requestCheckout,
     finalizeBill,
     refundPayment,
@@ -85,8 +87,6 @@ function StaffClubApp() {
     deleteCustomer,
     saveEmployee,
     deleteEmployee,
-    checkInEmployee,
-    checkOutEmployee,
     saveExpense,
     deleteExpense,
     recordMaintenance,
@@ -95,7 +95,7 @@ function StaffClubApp() {
     resolveNotification,
     deleteNotification,
     clearAllNotifications,
-  } = useRealtimeClubData(currentClubId);
+  } = useRealtimeClubData(currentClubId, role);
 
   // View state
   const [activePage, setActivePage] = useState<PageView>('dashboard');
@@ -103,9 +103,9 @@ function StaffClubApp() {
   // Daily Background Auto-Snapshot Trigger
   React.useEffect(() => {
     if (currentClubId && !isDataLoading) {
-      performDailyAutoSnapshot(currentClubId);
+      performDailyAutoSnapshot(currentClubId, config.timeZone || 'Asia/Kolkata');
     }
-  }, [currentClubId, isDataLoading]);
+  }, [currentClubId, config.timeZone, isDataLoading]);
 
   // Toast Notifications
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -169,6 +169,9 @@ function StaffClubApp() {
   const [activeReceiptItem, setActiveReceiptItem] = useState<SessionHistoryItem | null>(null);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
 
+  const [isStartSessionModalOpen, setIsStartSessionModalOpen] = useState(false);
+  const [startSessionTargetTable, setStartSessionTargetTable] = useState<TableItem | null>(null);
+
   // Derived Metrics
   const occupiedCount = tables.filter((t) => t.status === 'occupied' || t.status === 'payment_pending').length;
   const availableTables = tables.filter((t) => t.status === 'available');
@@ -203,9 +206,17 @@ function StaffClubApp() {
     .filter((t) => (t.status === 'occupied' || t.status === 'payment_pending') && t.currentSession)
     .reduce((sum, t) => {
       const s = t.currentSession!;
-      const hrs = Math.max(0.5, (Date.now() - s.startTime) / (1000 * 3600));
-      const food = s.foodOrders ? s.foodOrders.reduce((fSum, item) => fSum + item.price * item.quantity, 0) : 0;
-      return sum + hrs * s.hourlyRate + food;
+      const estimate = calculateBillTotals(
+        s,
+        0,
+        false,
+        0,
+        Date.now(),
+        [],
+        config.roundingRule,
+        config.minimumChargeMinutes || 0
+      );
+      return sum + estimate.grandTotal;
     }, 0);
 
   const pendingRequests = sessionRequests.filter((r) => r.status === 'pending');
@@ -216,8 +227,8 @@ function StaffClubApp() {
 
   // 1. Instant Start Table (No upfront prompt - customer details recorded on checkout)
   const handleInstantStartTable = async (table: TableItem) => {
-    if (!table || table.status === 'occupied') return;
-    const hourlyRate = table.hourlyRate || config.pricingPlans?.[0]?.hourlyRate || 300;
+    if (!table || table.status !== 'available' || table.currentSession) return;
+    const hourlyRate = table.hourlyRate || config.defaultHourlyRate || 180;
     const newSession: SessionData = {
       id: `sess-${Date.now()}`,
       tableId: table.id,
@@ -232,9 +243,49 @@ function StaffClubApp() {
       rateType: 'standard',
     };
 
-    await startSession(table.id, newSession, user?.email);
-    soundEffects.playStartChime();
-    addToast('success', `Table #${table.number} Started!`, `Session is running. Name & payment will be recorded when closing.`);
+    try {
+      await startSession(table.id, newSession, user?.email);
+      soundEffects.playStartChime();
+      addToast('success', `Table #${table.number} Started!`, `Session is running. Name & payment will be recorded when closing.`);
+    } catch (error) {
+      addToast('error', 'Session Not Started', getFriendlyErrorMessage(error));
+    }
+  };
+
+  // 1b. Start Table with Customer Details / Modal Selection
+  const handleStartSessionWithDetails = async (
+    tableId: string,
+    customerName: string,
+    customerPhone: string,
+    hourlyRate: number
+  ) => {
+    const targetTable = tables.find((t) => t.id === tableId);
+    if (!targetTable || targetTable.status !== 'available' || targetTable.currentSession) {
+      addToast('warning', 'Table Unavailable', 'Selected table is no longer available.');
+      return;
+    }
+    const rate = hourlyRate || targetTable.hourlyRate || config.defaultHourlyRate || 180;
+    const newSession: SessionData = {
+      id: `sess-${Date.now()}`,
+      tableId: targetTable.id,
+      customerName: customerName.trim() || `Table #${targetTable.number}`,
+      customerPhone: customerPhone.trim(),
+      startTime: Date.now(),
+      hourlyRate: rate,
+      isPaused: false,
+      totalPausedSeconds: 0,
+      foodOrders: [],
+      foodTotal: 0,
+      rateType: 'standard',
+    };
+
+    try {
+      await startSession(targetTable.id, newSession, user?.email);
+      soundEffects.playStartChime();
+      addToast('success', `Table #${targetTable.number} Started!`, `Session is running for ${newSession.customerName}.`);
+    } catch (error) {
+      addToast('error', 'Session Not Started', getFriendlyErrorMessage(error));
+    }
   };
 
   // 2. Pause / Resume Session
@@ -298,11 +349,15 @@ function StaffClubApp() {
     const targetTable = tables.find((t) => t.id === tableId);
     if (!targetTable || !targetTable.currentSession) return;
 
-    const remainingOrders = targetTable.currentSession.foodOrders.filter((o) => o.id !== orderId);
-    const updatedSession = { ...targetTable.currentSession, foodOrders: remainingOrders };
-    await startSession(tableId, updatedSession, user?.email);
+    const order = targetTable.currentSession.foodOrders.find((item) => item.id === orderId);
+    if (!order || !window.confirm(`Remove ${order.name} from this table bill?`)) return;
 
-    addToast('info', `Item Removed`, `Order item removed from bill.`);
+    try {
+      await removeOrder(tableId, targetTable.currentSession.id, orderId, user?.email);
+      addToast('info', 'Item Removed', `${order.name} removed from the bill.`);
+    } catch (error) {
+      addToast('error', 'Item Not Removed', error instanceof Error ? error.message : 'Refresh the table and try again.');
+    }
   };
 
   // 7. Finalize bill, customer activity, balances and audit record atomically.
@@ -409,14 +464,9 @@ function StaffClubApp() {
           onMarkNotificationRead={async (id) => markNotificationRead(id)}
           onResolveNotification={async (id) => resolveNotification(id)}
           onDeleteNotification={async (id) => deleteNotification(id)}
-          onClearAllNotifications={async () => clearAllNotifications()}
           onQuickStartSession={() => {
-            const avail = availableTables[0];
-            if (avail) {
-              handleInstantStartTable(avail);
-            } else {
-              addToast('warning', 'No Tables Available', 'All tables are currently occupied.');
-            }
+            setStartSessionTargetTable(null);
+            setIsStartSessionModalOpen(true);
           }}
         />
 
@@ -451,12 +501,8 @@ function StaffClubApp() {
                 setIsAddSnackOpen(true);
               }}
               onQuickStartAnySession={() => {
-                const avail = availableTables[0];
-                if (avail) {
-                  handleInstantStartTable(avail);
-                } else {
-                  addToast('warning', 'No Tables Available', 'All tables are currently occupied.');
-                }
+                setStartSessionTargetTable(null);
+                setIsStartSessionModalOpen(true);
               }}
             />
           ) : activePage === 'billing' ? (
@@ -543,7 +589,6 @@ function StaffClubApp() {
             <RoleGuard requiredPage="employees" onNavigateHome={() => setActivePage('dashboard')}>
               <EmployeeManagementView
                 employees={employees}
-                attendance={attendance}
                 clubName={config.clubName}
                 onSaveEmployee={async (emp) => {
                   const id = await saveEmployee(emp);
@@ -553,14 +598,6 @@ function StaffClubApp() {
                 onDeleteEmployee={async (id) => {
                   await deleteEmployee(id);
                   addToast('warning', 'Staff Member Removed', 'Account deleted.');
-                }}
-                onCheckIn={async (empId, empName, role, notes) => {
-                  await checkInEmployee(empId, empName, role, notes);
-                  addToast('success', 'Shift Check-In Recorded', `${empName} on active duty.`);
-                }}
-                onCheckOut={async (attendanceId) => {
-                  await checkOutEmployee(attendanceId);
-                  addToast('info', 'Shift Clocked Out', 'Working hours logged.');
                 }}
               />
             </RoleGuard>
@@ -658,12 +695,8 @@ function StaffClubApp() {
                 setIsAddSnackOpen(true);
               }}
               onQuickStartAnySession={() => {
-                const avail = availableTables[0];
-                if (avail) {
-                  handleInstantStartTable(avail);
-                } else {
-                  addToast('warning', 'No Tables Available', 'All tables are currently occupied.');
-                }
+                setStartSessionTargetTable(null);
+                setIsStartSessionModalOpen(true);
               }}
             />
           )}
@@ -732,6 +765,21 @@ function StaffClubApp() {
         onAddOrderItems={handleAddOrderItems}
       />
 
+      {/* Start Session Modal */}
+      <StartSessionModal
+        isOpen={isStartSessionModalOpen}
+        onClose={() => {
+          setIsStartSessionModalOpen(false);
+          setStartSessionTargetTable(null);
+        }}
+        table={startSessionTargetTable}
+        availableTables={availableTables}
+        currencySymbol={config.currencySymbol}
+        onConfirmStart={(tableId, custName, custPhone, rate) => {
+          handleStartSessionWithDetails(tableId, custName, custPhone, rate);
+        }}
+      />
+
       {/* Receipt Modal */}
       <ReceiptModal
         isOpen={isReceiptOpen}
@@ -746,7 +794,7 @@ function StaffClubApp() {
 function AppRouter() {
   const { user, isLoading } = useAuth();
   if (isLoading) {
-    return <div className="flex min-h-screen items-center justify-center bg-[#0a0a0c] text-sm font-semibold text-amber-300">Loading One Shot Club…</div>;
+    return <div className="flex min-h-screen items-center justify-center bg-[#0a0a0c] text-sm font-semibold text-amber-300">Loading CueDesk Club…</div>;
   }
   if (!user) {
     return <div className="min-h-screen bg-[#0a0a0c] selection:bg-amber-500 selection:text-black"><LoginView /></div>;

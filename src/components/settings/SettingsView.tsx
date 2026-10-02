@@ -42,7 +42,6 @@ import { Badge } from '../ui/Badge';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatPerMinuteRate } from '../../utils/formatters';
 import { exportClubBackup, downloadBackupFile, restoreClubBackup, ClubBackupSnapshot } from '../../utils/backupService';
-import { getAvailableAutoSnapshots, restoreAutoSnapshot, performDailyAutoSnapshot } from '../../utils/autoSnapshot';
 import { 
   exportSalesToExcel, 
   exportCreditLedgerToExcel, 
@@ -52,7 +51,6 @@ import {
   exportBillingHistoryCSV
 } from '../../utils/excelExport';
 import { SystemHealthSection } from './SystemHealthSection';
-import { FirebaseConnectSection } from './FirebaseConnectSection';
 
 export type SettingsSectionId = 
   | 'profile'
@@ -217,7 +215,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <h2 className="text-xl sm:text-2xl font-black text-neutral-900 tracking-tight flex items-center gap-2">
             <span>Club Management Panel</span>
             <span className="text-[11px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
-              One Shot Pro
+              Local Club
             </span>
           </h2>
           <p className="text-xs sm:text-sm text-neutral-500 mt-1">
@@ -1148,7 +1146,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <span>3. Local Browser Snapshot</span>
                   </div>
                   <p className="text-[11px] text-amber-800">
-                    Automated daily snapshot saved in browser storage. Acts as emergency cache on the counter PC.
+                    A browser-only recovery copy saved on this device. It is not a cloud backup and can be lost if browser data is cleared.
                   </p>
                 </div>
               </div>

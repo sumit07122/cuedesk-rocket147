@@ -248,6 +248,11 @@ export const TableCard: React.FC<TableCardProps> = ({
               End Session
             </Button>
           </>
+        ) : table.status === 'maintenance' || table.isMaintenance ? (
+          <div className="w-full py-2.5 px-3 rounded-xl bg-neutral-100 text-neutral-500 text-xs font-semibold flex items-center justify-center gap-1.5 border border-neutral-200">
+            <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+            Under Maintenance
+          </div>
         ) : (
           <Button
             variant="primary"

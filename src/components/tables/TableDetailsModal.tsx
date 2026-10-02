@@ -370,8 +370,37 @@ export const TableDetailsModal: React.FC<TableDetailsModalProps> = ({
             </div>
           </>
         ) : (
-          <div className="p-6 text-center text-xs text-neutral-500">
-            Table is currently empty and available for a new session.
+          <div className="p-6 flex flex-col items-center justify-center gap-4 bg-neutral-50 rounded-2xl border border-neutral-200">
+            <div className="text-center">
+              <h4 className="text-base font-extrabold text-neutral-900">
+                Table #{table?.number} ({table?.name})
+              </h4>
+              <p className="text-xs text-neutral-500 mt-1">
+                Standard Rate: {formatCurrency(table?.hourlyRate || 0, currencySymbol)}/hr ({formatPerMinuteRate(table?.perMinuteRate ? table.perMinuteRate * 60 : table?.hourlyRate || 0, currencySymbol)})
+              </p>
+            </div>
+            {table?.status === 'maintenance' || table?.isMaintenance ? (
+              <span className="text-xs font-semibold text-rose-600 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200">
+                This table is currently under repair / maintenance.
+              </span>
+            ) : (
+              <div className="flex items-center gap-3 mt-1">
+                <Button variant="outline" size="md" onClick={onClose}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
+                  leftIcon={<Play className="w-4 h-4 fill-current text-white" />}
+                  onClick={() => {
+                    onClose();
+                    if (table) onStartSession(table);
+                  }}
+                >
+                  Start Session Now
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>

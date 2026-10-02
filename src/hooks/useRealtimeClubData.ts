@@ -14,7 +14,6 @@ import {
   InventoryAdjustment,
   FoodOrderStatus,
   EmployeeUser,
-  AttendanceRecord,
   ExpenseRecord,
   MaintenanceRecord,
   NotificationItem,
@@ -32,7 +31,6 @@ import {
   subscribePurchaseRecords,
   subscribeInventoryAdjustments,
   subscribeEmployees,
-  subscribeAttendance,
   subscribeExpenses,
   subscribeMaintenance,
   subscribeNotifications,
@@ -44,6 +42,7 @@ import {
   transferTableSession,
   togglePauseTableSession,
   addOrdersToSession,
+  removeOrderFromSession,
   requestTableCheckout,
   finalizeSessionPayment,
   saveMenuItem,
@@ -62,8 +61,6 @@ import {
   deleteCustomerCRM,
   saveEmployee,
   deleteEmployee,
-  recordAttendanceCheckIn,
-  recordAttendanceCheckOut,
   saveExpense,
   deleteExpense,
   recordTableMaintenance,
@@ -82,13 +79,12 @@ import {
   initialSessionHistory,
   initialTopCustomers,
   initialEmployees,
-  initialAttendance,
   initialExpenses,
   initialMaintenanceRecords,
   initialNotifications
 } from '../data/mockData';
 
-export const useRealtimeClubData = (clubId: string) => {
+export const useRealtimeClubData = (clubId: string, role: UserRole = 'owner') => {
   const [config, setConfig] = useState<BusinessConfig>(initialBusinessConfig);
   const [tables, setTables] = useState<TableItem[]>(initialTables);
   const [menuItems, setMenuItems] = useState<MenuItem[]>(initialMenuItems);
@@ -100,7 +96,6 @@ export const useRealtimeClubData = (clubId: string) => {
   const [purchaseRecords, setPurchaseRecords] = useState<PurchaseRecord[]>([]);
   const [inventoryAdjustments, setInventoryAdjustments] = useState<InventoryAdjustment[]>([]);
   const [employees, setEmployees] = useState<EmployeeUser[]>(initialEmployees);
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>(initialAttendance);
   const [expenses, setExpenses] = useState<ExpenseRecord[]>(initialExpenses);
   const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>(initialMaintenanceRecords);
   const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications);
@@ -131,19 +126,25 @@ export const useRealtimeClubData = (clubId: string) => {
       if (data) setTopCustomers(data);
     });
     const unsubRequests = subscribeSessionRequests(clubId, (data) => setSessionRequests(data || []));
-    const unsubLogs = subscribeAuditLogs(clubId, (data) => setAuditLogs(data || []));
+    const canViewManagementRecords = role === 'owner' || role === 'manager';
+    const unsubLogs = canViewManagementRecords
+      ? subscribeAuditLogs(clubId, (data) => setAuditLogs(data || []))
+      : () => setAuditLogs([]);
     const unsubFoodOrders = subscribeFoodOrders(clubId, (data) => setFoodOrders(data || []));
-    const unsubPurchases = subscribePurchaseRecords(clubId, (data) => setPurchaseRecords(data || []));
-    const unsubAdjustments = subscribeInventoryAdjustments(clubId, (data) => setInventoryAdjustments(data || []));
+    const unsubPurchases = canViewManagementRecords
+      ? subscribePurchaseRecords(clubId, (data) => setPurchaseRecords(data || []))
+      : () => setPurchaseRecords([]);
+    const unsubAdjustments = canViewManagementRecords
+      ? subscribeInventoryAdjustments(clubId, (data) => setInventoryAdjustments(data || []))
+      : () => setInventoryAdjustments([]);
     const unsubEmployees = subscribeEmployees(clubId, (data) => {
       if (data) setEmployees(data);
     });
-    const unsubAttendance = subscribeAttendance(clubId, (data) => {
-      if (data) setAttendance(data);
-    });
-    const unsubExpenses = subscribeExpenses(clubId, (data) => {
-      if (data) setExpenses(data);
-    });
+    const unsubExpenses = canViewManagementRecords
+      ? subscribeExpenses(clubId, (data) => {
+        if (data) setExpenses(data);
+      })
+      : () => setExpenses([]);
     const unsubMaintenance = subscribeMaintenance(clubId, (data) => {
       if (data) setMaintenanceRecords(data);
     });
@@ -164,12 +165,11 @@ export const useRealtimeClubData = (clubId: string) => {
       unsubPurchases();
       unsubAdjustments();
       unsubEmployees();
-      unsubAttendance();
       unsubExpenses();
       unsubMaintenance();
       unsubNotifications();
     };
-  }, [clubId]);
+  }, [clubId, role]);
 
   // Handlers
   const handleUpdateConfig = async (newConfig: Partial<BusinessConfig>, userEmail: string = 'system') => {
@@ -205,6 +205,11 @@ export const useRealtimeClubData = (clubId: string) => {
   const handleAddOrders = async (tableId: string, currentSession: SessionData, orders: OrderItem[], userEmail: string = 'system') => {
     await addOrdersToSession(clubId, tableId, currentSession, orders);
     await logAuditEvent(clubId, 'ADD_FOOD_ORDERS', userEmail, `Added ${orders.length} order items to table ${tableId}`);
+  };
+
+  const handleRemoveOrder = async (tableId: string, sessionId: string, orderId: string, userEmail: string = 'system') => {
+    await removeOrderFromSession(clubId, tableId, sessionId, orderId);
+    await logAuditEvent(clubId, 'REMOVE_FOOD_ORDER', userEmail, `Removed an order item from table ${tableId}`);
   };
 
   const handleRequestCheckout = async (tableId: string, userEmail: string = 'system') => {
@@ -367,26 +372,9 @@ export const useRealtimeClubData = (clubId: string) => {
     await deleteEmployee(clubId, employeeId);
   };
 
-  const handleCheckIn = async (employeeId: string, employeeName: string, role: UserRole, notes?: string) => {
-    await recordAttendanceCheckIn(clubId, employeeId, employeeName, role, notes);
-    await createNotification(clubId, {
-      clubId,
-      type: 'employee_login',
-      title: 'Staff Checked In',
-      message: `${employeeName} checked in for shift duty.`,
-      timestamp: Date.now(),
-      read: false,
-      severity: 'success'
-    });
-  };
-
-  const handleCheckOut = async (attendanceId: string) => {
-    await recordAttendanceCheckOut(clubId, attendanceId);
-  };
-
   const handleSaveExpense = async (expense: Omit<ExpenseRecord, 'id'> & { id?: string }) => {
     await saveExpense(clubId, expense);
-    await logAuditEvent(clubId, 'RECORD_EXPENSE', expense.recordedBy, `Recorded expense ${expense.category}: $${expense.amount}`);
+    await logAuditEvent(clubId, 'RECORD_EXPENSE', expense.recordedBy, `Recorded expense ${expense.category}: ${expense.amount}`);
   };
 
   const handleDeleteExpense = async (expenseId: string) => {
@@ -455,7 +443,6 @@ export const useRealtimeClubData = (clubId: string) => {
     purchaseRecords,
     inventoryAdjustments,
     employees,
-    attendance,
     expenses,
     maintenanceRecords,
     notifications,
@@ -467,6 +454,7 @@ export const useRealtimeClubData = (clubId: string) => {
     transferSession: handleTransferTableSession,
     togglePause: handleTogglePause,
     addOrders: handleAddOrders,
+    removeOrder: handleRemoveOrder,
     requestCheckout: handleRequestCheckout,
     finalizeBill: handleFinalizeBill,
     refundPayment: handleRefundPayment,
@@ -488,8 +476,6 @@ export const useRealtimeClubData = (clubId: string) => {
     deleteCustomerCRM: handleDeleteCustomerCRM,
     saveEmployee: handleSaveEmployee,
     deleteEmployee: handleDeleteEmployee,
-    checkInEmployee: handleCheckIn,
-    checkOutEmployee: handleCheckOut,
     saveExpense: handleSaveExpense,
     deleteExpense: handleDeleteExpense,
     recordMaintenance: handleRecordMaintenance,

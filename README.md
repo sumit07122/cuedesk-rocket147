@@ -1,193 +1,89 @@
-# CueDesk – Enterprise Snooker & Pool Club Management SaaS
+# CueDesk — One Shot Club Management
 
-CueDesk is a cloud-native, multi-tenant SaaS management platform built for modern cue sports lounges, snooker arenas, and pool halls. Designed with offline-resilient Firestore synchronization, fine-grained role-based access control (RBAC), and flexible subscription tiered capacity limits.
+CueDesk is a lightweight management app for a local snooker and gaming club. It is configured for **One Shot Snooker Gaming Club**, Indian rupees (₹), and the `Asia/Kolkata` business time zone by default.
 
----
+## What it manages
 
-## 🚀 Key Features & Architectural Capabilities
+- Live table availability, game timers, pause/resume, table transfers, and checkout.
+- Customer records with a permanent club customer number, bills, payments, credit due, advance balance, and account history.
+- A verified, read-only customer page for a customer’s own visits, receipts, playing time, and account activity.
+- Food and drink items, orders, stock, table maintenance, club expenses, and reports.
+- Owner, manager, worker, and customer access. Customer accounts cannot edit records or receive staff controls.
 
-### 1. Multi-Tenant Workspace Isolation & SaaS Plan Tiers
-- **Dynamic Club Switcher**: Seamlessly toggle between multiple cue sports lounge workspaces without losing active state.
-- **Onboarding Wizard**: Self-service 2-step onboarding flow for launching new club workspaces with customized currency, time zones, default hourly rates, and initial table configurations.
-- **Subscription Plan Enforcement**:
-  - **Starter**: 4 Tables Max, 3 Staff Members ($29/mo).
-  - **Professional**: 12 Tables Max, 10 Staff Members ($79/mo).
-  - **Enterprise**: Unlimited Tables, Unlimited Staff ($199/mo).
-- **Super Admin HQ Console**: Platform-wide metrics (MRR, Total Workspaces, Tables Managed), trial extensions (+14 days), instant plan switching, feature flag overrides, and system telemetry audit logs.
+This installation does not use shifts, memberships, assigned member IDs, or multi-club subscriptions. Bills and ledger entries are retained; daily reports filter the history by the club’s time zone and do not reset or erase it.
 
-### 2. Live Table & Billing Management Engine
-- **Visual Table Matrix**: Real-time status badges (`Available`, `Occupied`, `Reserved`, `Maintenance`) with high-contrast color indicators.
-- **Precision Billing Counter**: Millisecond-accurate billing timer calculated dynamically against table hourly rates and peak-hour pricing rules.
-- **Food & Snack Integration**: In-session ordering for kitchen items with instant bill tab updates and stock inventory deduction.
-- **Flexible Checkout**: Multi-method payments (Cash, Credit Card, UPI, Membership Credits, Split Bills) with instant PDF/printable receipt modal.
+## Run locally
 
-### 3. CRM, Memberships & Snack Kitchen Inventory
-- **Customer CRM**: Member tiers (Gold, Silver, Bronze, VIP) with discount percentage enforcement on session rates.
-- **Kitchen & Snack POS**: Item category filters, low-stock thresholds, and reorder purchase logs.
-- **Employee Shift & Duty Logs**: Staff check-in/check-out logs, role assignments (Owner, Manager, Cashier), and activity audit trails.
+Requirements: Node.js 18 or later and npm.
 
-### 4. PWA & Mobile Self-Service View
-- **Customer Self-Service QR Mode**: Mobile-optimized touch interface for guests to view active table timers, order snacks directly to their table, and request staff assistance.
-- **Responsive Layout**: Touch-optimized 44px+ controls, safe area inset padding, and seamless viewport adaptation across iOS Safari and Android Chrome.
-
----
-
-## 📁 Folder Structure Overview
-
-```
-cuedesk/
-├── firestore.rules               # Firestore security rules with multi-tenant isolation
-├── firebase-blueprint.json       # Blueprint for collections and security schemas
-├── metadata.json                 # Application name, capabilities, and permissions
-├── .env.example                  # Environment variable declaration reference
-├── package.json                  # Dependencies & production build scripts
-├── vite.config.ts                # Vite build and server configuration
-├── src/
-│   ├── main.tsx                  # Application React 18 DOM root
-│   ├── App.tsx                   # Main layout container & page router
-│   ├── types.ts                  # Shared TypeScript interfaces & SaaS plan types
-│   ├── context/
-│   │   └── AuthContext.tsx       # Firebase authentication & RBAC provider
-│   ├── hooks/
-│   │   └── useRealtimeClubData.ts# Real-time Firestore hooks for multi-tenant data
-│   ├── services/
-│   │   ├── firebase.ts           # Firebase SDK initialization & auth setup
-│   │   └── dbService.ts          # Firestore CRUD, transactions & SaaS workspace APIs
-│   ├── data/
-│   │   ├── mockData.ts           # Fallback initial seeds & business defaults
-│   │   └── saasPlans.ts          # SaaS subscription plan tiers & starter profiles
-│   ├── utils/
-│   │   ├── errorHandler.ts       # Structured error logging & monitoring telemetry
-│   │   ├── rateLimiter.ts        # Client-side rate limiting for API safety
-│   │   ├── validation.ts        # Input validation helpers
-│   │   └── monitoring.ts        # Health check telemetry logger
-│   └── components/
-│       ├── auth/                 # Sign-in & Authentication views
-│       ├── dashboard/            # Table grid matrix & session drawer
-│       ├── pos/                  # Snack POS & Food Ordering view
-│       ├── crm/                  # Customer CRM & Membership tiers
-│       ├── staff/                # Employee attendance & shift logs
-│       ├── expenses/             # Operational expenses & profit tracker
-│       ├── maintenance/          # Table repair & technician logs
-│       ├── reports/              # Analytics, peak hours & data exports
-│       ├── settings/             # Business settings & SaaS subscription manager
-│       ├── saas/                 # Workspace Switcher, Onboarding Modal & Super Admin HQ
-│       ├── navigation/           # Navbar, Sidebar & Mobile Navigation
-│       └── ui/                   # Reusable UI primitives (Button, Card, Badge, Modal, Input)
-```
-
----
-
-## 🗄️ Database Schema & Firestore Collections
-
-Data is strictly scoped under tenant-isolated documents:
-
-### Multi-Tenant Path: `/saasClubs/{clubId}`
-- `id`: string (e.g. `club-royal-cue`)
-- `clubName`: string
-- `ownerId`: string
-- `planId`: `'starter' | 'professional' | 'enterprise'`
-- `subscriptionStatus`: `'active' | 'trial' | 'expired' | 'cancelled'`
-- `trialStartDate`: number (timestamp)
-- `trialEndDate`: number (timestamp)
-- `featureFlags`: `{ foodOrdering, inventory, crmMemberships, maintenance, employeeAttendance, expensesNetProfit, analyticsExport, tournamentModule }`
-
-### Scoped Club Subcollections: `/clubs/{clubId}/...`
-1. `/clubs/{clubId}/settings/config`: Business profile, hourly rates, taxes, currency.
-2. `/clubs/{clubId}/tables`: Live table objects (`status`, `type`, `hourlyRate`, `activeSession`).
-3. `/clubs/{clubId}/menuItems`: Snack items, category, stock count, cost price.
-4. `/clubs/{clubId}/sessionHistory`: Completed table sessions (`startTime`, `endTime`, `durationMinutes`, `totalAmount`, `paymentMethod`).
-5. `/clubs/{clubId}/customers`: Member directory (`name`, `phone`, `tier`, `discountPct`, `totalSpent`).
-6. `/clubs/{clubId}/employees`: Staff profiles (`name`, `role`, `shiftStatus`).
-7. `/clubs/{clubId}/expenses`: Operational cost records (`category`, `amount`, `date`).
-8. `/clubs/{clubId}/maintenanceRecords`: Table repair flags & technician logs.
-9. `/clubs/{clubId}/auditLogs`: System security & activity telemetry logs.
-
----
-
-## 🛠️ Installation & Local Development Guide
-
-### Prerequisites
-- Node.js (v18.0.0 or higher)
-- npm (v9.0.0 or higher)
-
-### 1. Clone & Install Dependencies
-```bash
-git clone https://github.com/your-org/cuedesk.git
-cd cuedesk
+```sh
 npm install
-```
-
-### 2. Configure Environment Variables
-Copy `.env.example` to `.env` and fill in your Firebase Web Credentials:
-```env
-VITE_FIREBASE_API_KEY=your_api_key
-VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=your_project_id
-VITE_FIREBASE_STORAGE_BUCKET=your_storage_bucket
-VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-VITE_FIREBASE_APP_ID=your_app_id
-```
-
-### 3. Run Development Server
-```bash
+cp .env.example .env
 npm run dev
 ```
-Access the application locally at `http://localhost:3000`.
 
----
+Open `http://localhost:3000`. Set the Firebase values in `.env` before signing into a live club database. The app can use its bundled preview Firebase configuration when the required environment values are absent; do not treat preview data as live club data.
 
-## 🚢 Deployment Guide (Vercel & Firebase)
+## Firebase setup
 
-### Deploying to Vercel
-1. Push your repository to GitHub / GitLab.
-2. Connect your repository in Vercel Dashboard.
-3. Configure Environment Variables in Vercel Project Settings matching `.env.example`.
-4. Build Command: `npm run build`
-5. Output Directory: `dist`
-6. Deploy!
+1. Create a Firebase project, enable Cloud Firestore, and enable Email/Password authentication.
+2. Add the production Vercel domain (and any preview domain you will use) to Firebase Authentication’s authorized domains. Require users to verify email before signing in.
+3. Configure the `VITE_FIREBASE_*` client values in the local `.env` and Vercel project environment settings. `VITE_FIREBASE_API_KEY` and `VITE_FIREBASE_PROJECT_ID` select the configured project; the remaining values use Firebase’s standard defaults when omitted.
+4. Deploy `firestore.rules` to the same Firebase project before using real customer or staff accounts. Vercel deployment does not deploy Firestore rules.
+5. Create the first owner’s Email/Password Auth account in Firebase and verify its email. In Firestore Console, create `/users/{AUTH_UID}` with fields like the following (replace the UID and email with the actual account values):
 
-### Deploying Firestore Security Rules
-Ensure rules are updated via Firebase CLI:
-```bash
-firebase deploy --only firestore:rules
+   ```json
+   {
+     "id": "AUTH_UID",
+     "uid": "AUTH_UID",
+     "email": "owner@example.com",
+     "displayName": "Club Owner",
+     "fullName": "Club Owner",
+     "role": "owner",
+     "clubId": "club-royal-cue",
+     "status": "active",
+     "createdAt": 1790900000000
+   }
+   ```
+
+   Use a number for `createdAt`. After the owner signs in, CueDesk initializes the club’s default settings. The owner can then add tables, invite staff, and link a customer’s verified email to that customer’s existing club profile.
+
+### Deploy Firestore rules
+
+Install or run the Firebase CLI, sign in to the intended Firebase account, and deploy the rules to the same project as the Vercel environment:
+
+```sh
+npx firebase-tools login
+npx firebase-tools deploy --only firestore:rules --project YOUR_FIREBASE_PROJECT_ID
 ```
 
-### Automated Test Suite & Type Safety
-- **Core Engine Test Suite**: Run `npm test` to execute unit tests verifying billing duration, per-minute calculations, member discounts, credit risk badging, WhatsApp reminders, and CSV exports.
-- **Strict Type Checking**: Run `npm run lint` (`tsc --noEmit`) to verify 100% type safety with zero compilation errors.
-- **Rollup Vendor Code-Splitting**: Production bundles are partitioned into dedicated cached vendor chunks (`vendor-react`, `vendor-firebase`, `vendor-charts`, `vendor-icons`), reducing initial bundle load to under 450 KB for instant counter responsiveness.
+Review the target project ID carefully before deployment. Do not put Firebase service-account credentials in Vercel’s `VITE_` variables or in the browser app.
 
----
+## Deploy to Vercel
 
-## 🔒 Security & Role Permissions Matrix
+- Import the Git repository into Vercel.
+- Set the project root to the folder containing this `package.json` if it is inside a subfolder.
+- Build command: `npm run build`
+- Output directory: `dist`
+- Add the Firebase client environment variables from `.env.example` to the Vercel environment, then redeploy.
+- The included `vercel.json` sends app routes to the single-page app entry point.
 
-| Feature / Action | Owner | Manager | Cashier | Customer QR Mode |
-| :--- | :---: | :---: | :---: | :---: |
-| Live Table Timer & Billing | ✅ | ✅ | ✅ | 👁 Read-Only |
-| Food POS & Snack Ordering | ✅ | ✅ | ✅ | ✅ Self-Service |
-| Process Session Payments | ✅ | ✅ | ✅ | ❌ |
-| Customer CRM & Memberships | ✅ | ✅ | 👁 Read-Only | ❌ |
-| Table Rates & Menu Config | ✅ | ✅ | ❌ | ❌ |
-| Staff Attendance & Duty Logs | ✅ | ✅ | ❌ | ❌ |
-| Expenses & Profit Analytics | ✅ | ✅ | ❌ | ❌ |
-| SaaS Plan & Super Admin HQ | ✅ | ❌ | ❌ | ❌ |
+Firebase Authentication, Firestore, and the Firestore rules are configured separately from Vercel. A successful Vercel build alone does not confirm database permissions or sign-in configuration.
 
----
+## Data, reports, and backups
 
-## ✅ Deployment Readiness Checklist
+Club records live in Firestore under `/clubs/club-royal-cue/...`. The main collections include `tables`, `history`, `customers`, `customerPortal`, `menuItems`, `expenses`, and `auditLogs`. Customer portal data is separated by customer and Firestore rules limit a customer to their own profile and activity.
 
-- [x] **Compile Verification**: Zero TypeScript errors during `npm run build`.
-- [x] **Automated Tests**: 40 unit tests passing cleanly with `npm test`.
-- [x] **Lint Verification**: `tsc --noEmit` passes with 0 defects.
-- [x] **Optimized Code Splitting**: Main bundle reduced from 1.9MB to 446KB with isolated vendor chunks.
-- [x] **Firebase Security Rules**: Hardened multi-tenant rules deployed in `firestore.rules`.
-- [x] **Multi-Tenant Isolation**: Verified complete data segregation across club workspaces.
-- [x] **Capacity Controls**: Enforced plan table and employee caps with friendly upgrade prompts.
-- [x] **Touch & Safe-Area Support**: Responsive layout optimized for mobile Safari & Android Chrome.
-- [x] **PWA Install Ready**: Web manifest and viewport headers set for standalone app usage.
+Daily totals use the club’s configured time zone. They are calculated from the permanent bill, payment, refund, and expense records; closing a day does not clear transaction history. Use **Settings → Backup & Restore → Download Complete JSON Backup** and save copies somewhere separate from the counter computer. The automatic browser snapshot is local to that browser/device and is not a cloud backup.
 
----
+Cash received is still entered by staff at checkout. The app records the signed-in account and constrains worker edits, but software cannot verify physical cash or make a browser-only system completely fraud-proof. Owners should reconcile receipts with cash/UPI totals and review the audit history. Server-side processing and a second-person approval for sensitive refunds or corrections are future hardening options.
 
-*CueDesk SaaS Platform — Engineered for Precision & Scale.*
+## Checks
 
+```sh
+npm run lint
+npm test
+npm run build
+```
+
+These checks cover TypeScript, the existing core-engine tests, and the production frontend build. Firestore security rules need a separate Firebase CLI/emulator validation and deployment.

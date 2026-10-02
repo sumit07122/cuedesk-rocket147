@@ -425,7 +425,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
               Production Billing & Ledger Console
             </h2>
             <Badge variant="outline" className="text-[10px] font-mono uppercase bg-neutral-100">
-              One Shot Engine
+              {config?.clubName || 'Billing Engine'}
             </Badge>
           </div>
           <p className="text-xs text-neutral-500 mt-0.5">
@@ -561,7 +561,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-neutral-100 gap-2">
                       <div>
                         <span className="text-xs uppercase font-bold text-neutral-400 tracking-wider">
-                          One Shot Snooker Gaming Official Session Statement
+                          {config?.clubName || 'Club'} Official Session Statement
                         </span>
                         <h3 className="text-xl sm:text-2xl font-extrabold text-neutral-900 tracking-tight mt-0.5">
                           Table #{currentTable.number} Billing Statement
@@ -1388,7 +1388,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
                         <div className="p-4 rounded-2xl bg-neutral-900 text-white flex items-center justify-between gap-4 mt-2 shadow-md">
                           <div>
                             <span className="text-[10px] uppercase tracking-wider text-neutral-400 block font-semibold">
-                              One Shot Snooker Instant UPI QR Code
+                              {config?.clubName || 'Club'} Instant UPI QR Code
                             </span>
                             <h4 className="text-sm font-bold mt-0.5">{upiName}</h4>
                             <p className="text-xs text-neutral-300 font-mono mt-0.5">{upiId}</p>
@@ -1627,7 +1627,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
       {activeTab === 'audit' && (
         <div className="bg-white rounded-3xl border border-neutral-200 p-6 flex flex-col gap-4 shadow-xs">
           <div>
-            <h3 className="text-base font-bold text-neutral-900">One Shot Security & Operational Audit Log</h3>
+            <h3 className="text-base font-bold text-neutral-900">{config?.clubName || 'Club'} Security & Operational Audit Log</h3>
             <p className="text-xs text-neutral-500">Immutable security trail for sessions, discounts, refunds & setting changes</p>
           </div>
 

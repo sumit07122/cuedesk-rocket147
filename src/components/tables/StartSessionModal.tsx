@@ -60,23 +60,29 @@ export const StartSessionModal: React.FC<StartSessionModalProps> = ({
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 pt-1">
         {/* Table Selector */}
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-neutral-700">Select Table</label>
-          <select
-            value={selectedTableId}
-            onChange={(e) => {
-              const selectedId = e.target.value;
-              setSelectedTableId(selectedId);
-            }}
-            className="w-full bg-white text-neutral-900 text-sm rounded-xl border border-neutral-200/90 px-3.5 py-2.5 outline-none focus:border-neutral-900"
-          >
-            {availableTables.map((t) => (
-              <option key={t.id} value={t.id}>
-                Table #{t.number.toString().padStart(2, '0')} — {t.name} ({formatPerMinuteRate(t.perMinuteRate ? t.perMinuteRate * 60 : t.hourlyRate, currencySymbol)} • {formatCurrency(t.hourlyRate, currencySymbol)}/hr)
-              </option>
-            ))}
-          </select>
-        </div>
+        {availableTables.length === 0 ? (
+          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 text-center font-medium">
+            All tables are currently occupied or in maintenance.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-neutral-700">Select Table</label>
+            <select
+              value={selectedTableId}
+              onChange={(e) => {
+                const selectedId = e.target.value;
+                setSelectedTableId(selectedId);
+              }}
+              className="w-full bg-white text-neutral-900 text-sm rounded-xl border border-neutral-200/90 px-3.5 py-2.5 outline-none focus:border-neutral-900"
+            >
+              {availableTables.map((t) => (
+                <option key={t.id} value={t.id}>
+                  Table #{t.number.toString().padStart(2, '0')} — {t.name} ({formatPerMinuteRate(t.perMinuteRate ? t.perMinuteRate * 60 : t.hourlyRate, currencySymbol)} • {formatCurrency(t.hourlyRate, currencySymbol)}/hr)
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Customer Name */}
         <Input
@@ -85,6 +91,7 @@ export const StartSessionModal: React.FC<StartSessionModalProps> = ({
           value={customerName}
           onChange={(e) => setCustomerName(e.target.value)}
           leftIcon={<User className="w-4 h-4" />}
+          disabled={availableTables.length === 0}
         />
 
         {/* Customer Phone */}
@@ -94,14 +101,17 @@ export const StartSessionModal: React.FC<StartSessionModalProps> = ({
           value={customerPhone}
           onChange={(e) => setCustomerPhone(e.target.value)}
           leftIcon={<Phone className="w-4 h-4" />}
+          disabled={availableTables.length === 0}
         />
 
-        <div className="flex items-center justify-between rounded-xl bg-neutral-50 border border-neutral-200 px-3 py-2.5">
-          <label className="text-xs font-semibold text-neutral-700">Configured Session Rate</label>
-          <span className="text-[11px] font-mono text-neutral-700 font-bold">
-            {formatPerMinuteRate(activeTargetTable?.hourlyRate || 0, currencySymbol)} ({formatCurrency(activeTargetTable?.hourlyRate || 0, currencySymbol)}/hr)
-          </span>
-        </div>
+        {activeTargetTable && (
+          <div className="flex items-center justify-between rounded-xl bg-neutral-50 border border-neutral-200 px-3 py-2.5">
+            <label className="text-xs font-semibold text-neutral-700">Configured Session Rate</label>
+            <span className="text-[11px] font-mono text-neutral-700 font-bold">
+              {formatPerMinuteRate(activeTargetTable?.hourlyRate || 0, currencySymbol)} ({formatCurrency(activeTargetTable?.hourlyRate || 0, currencySymbol)}/hr)
+            </span>
+          </div>
+        )}
 
         {/* Footer Buttons */}
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-neutral-100">
@@ -111,6 +121,7 @@ export const StartSessionModal: React.FC<StartSessionModalProps> = ({
           <Button
             type="submit"
             variant="primary"
+            disabled={!activeTargetTable || availableTables.length === 0}
             leftIcon={<Play className="w-4 h-4 fill-current text-white" />}
           >
             Start Timer & Session

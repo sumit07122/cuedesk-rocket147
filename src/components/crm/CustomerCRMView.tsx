@@ -860,7 +860,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                     <span className="text-[10px] text-neutral-400 font-semibold block uppercase">Due Amount</span>
                     {dueAmt > 0 ? (
                       <span className={`font-black font-mono ${isOverLimit ? 'text-rose-600' : 'text-amber-700'}`}>
-                        ₹{dueAmt.toFixed(0)} <span className="text-[9px] font-normal text-neutral-400">({limit.toFixed(0)})</span>
+                        {formatCurrency(dueAmt, config.currencySymbol)} <span className="text-[9px] font-normal text-neutral-400">({formatCurrency(limit, config.currencySymbol)})</span>
                       </span>
                     ) : (
                       <span className="font-bold text-emerald-600 flex items-center gap-1 text-[11px]">
@@ -1024,7 +1024,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                       </td>
 
                       <td className="py-3.5 px-4 font-mono font-bold text-neutral-700">
-                        ₹{limit.toFixed(0)}
+                        {formatCurrency(limit, config.currencySymbol)}
                       </td>
 
                       <td className="py-3.5 px-4 font-mono font-bold">
@@ -1033,7 +1033,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                             {formatCurrency(walletAmt, config?.currencySymbol || '₹')}
                           </span>
                         ) : (
-                          <span className="text-neutral-400 text-xs">₹0</span>
+                          <span className="text-neutral-400 text-xs">{formatCurrency(0, config.currencySymbol)}</span>
                         )}
                       </td>
 
@@ -1044,7 +1044,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                               ? 'bg-rose-100 text-rose-900 border-rose-300 animate-pulse'
                               : 'bg-amber-50 text-amber-900 border-amber-300'
                           }`}>
-                            ₹{dueAmt.toFixed(0)}
+                            {formatCurrency(dueAmt, config.currencySymbol)}
                           </span>
                         ) : (
                           <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
@@ -1074,91 +1074,83 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                       </td>
 
                       <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                          {/* View Profile Button */}
-                          <button
-                            onClick={() => setViewingProfileCustomer(cust)}
-                            className="px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-700 text-white text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer"
-                            title="View Full Profile"
-                          >
-                            <Eye className="w-3 h-3" />
-                            Profile
-                          </button>
-
-                          {/* Settle Dues Button */}
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Settle Dues Button (High Priority if Dues exist) */}
                           {dueAmt > 0 && (
                             <button
                               onClick={() => {
                                 setSettlingCustomer(cust);
                                 setSettleAmount(String(dueAmt));
                               }}
-                              className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold transition-all shadow-2xs flex items-center gap-1 cursor-pointer"
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold transition-all shadow-2xs flex items-center gap-1 cursor-pointer shrink-0"
+                              title="Settle Outstanding Balance"
                             >
                               <CreditCard className="w-3 h-3" />
                               Settle
                             </button>
                           )}
 
-                          {/* Advance Deposit Button */}
-                          <button
-                            onClick={() => {
-                              setDepositingCustomer(cust);
-                              setDepositAmount('1000');
-                            }}
-                            className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
-                            title="Add Advance Prepaid Deposit"
-                          >
-                            <PlusCircle className="w-3 h-3 text-blue-600" />
-                            <span>+ Deposit</span>
-                          </button>
-
-                          {/* Statement WhatsApp Button */}
-                          <button
-                            onClick={() => handleShareStatement(cust)}
-                            className="p-1.5 text-neutral-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
-                            title="Share Full Statement on WhatsApp"
-                          >
-                            <Share2 className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Add Credit Charge Button */}
-                          {canManageAccountBalances && <button
-                            onClick={() => setAddingCreditCustomer(cust)}
-                            className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
-                            title="Add Manual Credit Charge"
-                          >
-                            <PlusCircle className="w-3.5 h-3.5" />
-                          </button>}
-
-                          {/* WhatsApp Reminder Button */}
+                          {/* WhatsApp Reminder (Quick Action if Dues exist) */}
                           {dueAmt > 0 && (
                             <button
                               onClick={() => handleOpenWhatsAppModal(cust)}
-                              className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                              className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs shrink-0"
                               title="Send WhatsApp Payment Reminder"
                             >
-                              <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>WhatsApp</span>
+                              <MessageCircle className="w-3 h-3 text-emerald-600" />
+                              <span className="hidden sm:inline">WhatsApp</span>
                             </button>
                           )}
 
-                          {/* Edit Button */}
+                          {/* View Full Profile */}
                           <button
-                            onClick={() => handleOpenEditModal(cust)}
-                            className="p-1.5 text-neutral-400 hover:text-neutral-900 rounded-lg hover:bg-neutral-100 transition-colors cursor-pointer"
-                            title="Edit Profile"
+                            onClick={() => setViewingProfileCustomer(cust)}
+                            className="px-2.5 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-700 text-white text-[11px] font-extrabold transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                            title="View Full Customer Profile"
                           >
-                            <Edit className="w-3.5 h-3.5" />
+                            <Eye className="w-3 h-3" />
+                            Profile
                           </button>
 
-                          {/* Delete Button */}
-                          {canManageAccountBalances && <button
-                            onClick={() => setDeletingCustomer(cust)}
-                            className="p-1.5 text-neutral-400 hover:text-rose-600 rounded-lg hover:bg-neutral-100 transition-colors cursor-pointer"
-                            title="Delete Customer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>}
+                          {/* Secondary Action Icons */}
+                          <div className="flex items-center gap-0.5 border-l border-neutral-200 pl-1 ml-0.5">
+                            <button
+                              onClick={() => {
+                                setDepositingCustomer(cust);
+                                setDepositAmount('1000');
+                              }}
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                              title="Add Advance Deposit"
+                            >
+                              <PlusCircle className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              onClick={() => handleShareStatement(cust)}
+                              className="p-1.5 text-neutral-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                              title="Share Statement on WhatsApp"
+                            >
+                              <Share2 className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              onClick={() => handleOpenEditModal(cust)}
+                              className="p-1.5 text-neutral-400 hover:text-neutral-900 rounded-lg hover:bg-neutral-100 transition-colors cursor-pointer"
+                              title="Edit Profile"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+
+                            {canManageAccountBalances && (
+                              <button
+                                onClick={() => setDeletingCustomer(cust)}
+                                className="p-1.5 text-neutral-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                                title="Delete Profile"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -1225,17 +1217,17 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
             <div className="p-4 rounded-2xl bg-neutral-900 text-white flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-extrabold uppercase text-neutral-400 tracking-wider block">Outstanding Due</span>
-                <span className="text-2xl font-black font-mono text-rose-400">₹{(settlingCustomer.outstandingDue || 0).toFixed(2)}</span>
+                <span className="text-2xl font-black font-mono text-rose-400">{formatCurrency(settlingCustomer.outstandingDue || 0, config.currencySymbol)}</span>
               </div>
               <div className="text-right">
                 <span className="text-[10px] font-extrabold uppercase text-neutral-400 tracking-wider block">Credit Limit</span>
-                <span className="text-sm font-bold font-mono text-neutral-300">₹{(settlingCustomer.creditLimit || DEFAULT_CREDIT_LIMIT).toFixed(0)}</span>
+                <span className="text-sm font-bold font-mono text-neutral-300">{formatCurrency(settlingCustomer.creditLimit || DEFAULT_CREDIT_LIMIT, config.currencySymbol)}</span>
               </div>
             </div>
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="font-bold text-neutral-700 block mb-1">Settlement Amount Received (₹) *</label>
+                <label className="font-bold text-neutral-700 block mb-1">Settlement Amount Received ({config.currencySymbol}) *</label>
                 <input
                   type="number"
                   step="1"
@@ -1253,7 +1245,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                     onClick={() => setSettleAmount(String(Math.round(settlingCustomer.outstandingDue || 0)))}
                     className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-300 text-xs font-bold hover:bg-emerald-100 transition-colors cursor-pointer"
                   >
-                    Full ₹{Math.round(settlingCustomer.outstandingDue || 0)}
+                    Full {formatCurrency(Math.round(settlingCustomer.outstandingDue || 0), config.currencySymbol)}
                   </button>
                   {(settlingCustomer.outstandingDue || 0) > 500 && (
                     <button
@@ -1261,7 +1253,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                       onClick={() => setSettleAmount('500')}
                       className="px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-700 border border-neutral-200 text-xs font-bold hover:bg-neutral-200 transition-colors cursor-pointer"
                     >
-                      ₹500
+                      {formatCurrency(500, config.currencySymbol)}
                     </button>
                   )}
                   {(settlingCustomer.outstandingDue || 0) > 1000 && (
@@ -1270,7 +1262,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                       onClick={() => setSettleAmount('1000')}
                       className="px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-700 border border-neutral-200 text-xs font-bold hover:bg-neutral-200 transition-colors cursor-pointer"
                     >
-                      ₹1,000
+                      {formatCurrency(1000, config.currencySymbol)}
                     </button>
                   )}
                 </div>
@@ -1280,7 +1272,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                   <div className="flex justify-between items-center text-xs text-neutral-600 mt-2.5 bg-neutral-50 border border-neutral-200 p-2.5 rounded-xl">
                     <span className="font-medium">Remaining Credit Due:</span>
                     <span className={`font-mono font-extrabold ${Math.max(0, (settlingCustomer.outstandingDue || 0) - Number(settleAmount)) === 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      ₹{Math.max(0, (settlingCustomer.outstandingDue || 0) - Number(settleAmount)).toFixed(2)}
+                      {formatCurrency(Math.max(0, (settlingCustomer.outstandingDue || 0) - Number(settleAmount)), config.currencySymbol)}
                       {Math.max(0, (settlingCustomer.outstandingDue || 0) - Number(settleAmount)) === 0 && ' (Fully Cleared! 🎉)'}
                     </span>
                   </div>
@@ -1359,7 +1351,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="font-bold text-neutral-700 block mb-1">Credit Amount to Charge (₹) *</label>
+                <label className="font-bold text-neutral-700 block mb-1">Credit Amount to Charge ({config.currencySymbol}) *</label>
                 <input
                   type="number"
                   step="1"
@@ -1649,7 +1641,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
               <div>
                 <span className="text-[10px] uppercase font-extrabold text-neutral-400 tracking-wider">Current Outstanding Credit</span>
                 <div className="text-2xl font-black text-rose-400 font-mono">
-                  ₹{(viewingLedgerCustomer.outstandingDue || 0).toFixed(2)}
+                  {formatCurrency(viewingLedgerCustomer.outstandingDue || 0, config.currencySymbol)}
                 </div>
               </div>
 
@@ -1685,7 +1677,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                       </div>
                     </div>
                     <span className={`font-black font-mono ${tx.type === 'due_added' ? 'text-rose-600' : 'text-emerald-600'}`}>
-                      {tx.type === 'due_added' ? `+₹${tx.amount}` : `-₹${tx.amount}`}
+                      {tx.type === 'due_added' ? '+' : '-'}{formatCurrency(tx.amount, config.currencySymbol)}
                     </span>
                   </div>
                 ))
@@ -1745,7 +1737,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
               <div className="text-right">
                 <span className="text-[10px] uppercase font-bold text-neutral-400 block">Pending Due</span>
                 <span className="text-base font-black font-mono text-rose-600">
-                  ₹{(whatsAppCustomer.outstandingDue || 0).toFixed(0)}
+                  {formatCurrency(whatsAppCustomer.outstandingDue || 0, config.currencySymbol)}
                 </span>
               </div>
             </div>

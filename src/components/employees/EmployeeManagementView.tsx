@@ -4,12 +4,9 @@ import {
   UserCheck, 
   UserPlus, 
   Clock, 
-  Calendar, 
   ShieldCheck, 
   CheckCircle2, 
   XCircle, 
-  LogIn, 
-  LogOut, 
   Mail, 
   Phone, 
   History,
@@ -17,35 +14,29 @@ import {
   Trash2,
   Download
 } from 'lucide-react';
-import { EmployeeUser, AttendanceRecord, UserRole } from '../../types';
+import { EmployeeUser, UserRole } from '../../types';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
 import { useAuth } from '../../context/AuthContext';
-import { exportEmployeesToExcel, exportAttendanceToExcel } from '../../utils/excelExport';
+import { exportEmployeesToExcel } from '../../utils/excelExport';
 
 interface EmployeeManagementViewProps {
   employees: EmployeeUser[];
-  attendance: AttendanceRecord[];
   onSaveEmployee: (employee: Partial<EmployeeUser>) => Promise<string>;
   onDeleteEmployee: (employeeId: string) => Promise<void>;
-  onCheckIn: (employeeId: string, employeeName: string, role: UserRole, notes?: string) => Promise<void>;
-  onCheckOut: (attendanceId: string) => Promise<void>;
   clubName?: string;
 }
 
 export const EmployeeManagementView: React.FC<EmployeeManagementViewProps> = ({
   employees,
-  attendance,
   onSaveEmployee,
   onDeleteEmployee,
-  onCheckIn,
-  onCheckOut,
   clubName = 'One Shot Snooker Gaming Club',
 }) => {
   const { role: currentUserRole, user, createStaffInvitation } = useAuth();
-  const [activeTab] = useState<'employees' | 'attendance'>('employees');
+  const [activeTab] = useState<'employees'>('employees');
 
   // Employee Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -56,9 +47,6 @@ export const EmployeeManagementView: React.FC<EmployeeManagementViewProps> = ({
   // Login History Modal State
   const [historyEmp, setHistoryEmp] = useState<EmployeeUser | null>(null);
 
-  // Check-In Form State
-  const [selectedCheckInEmpId, setSelectedCheckInEmpId] = useState<string>('');
-  const [checkInNotes, setCheckInNotes] = useState<string>('');
 
   const handleOpenAddModal = () => {
     setEditingEmp({
@@ -115,21 +103,6 @@ export const EmployeeManagementView: React.FC<EmployeeManagementViewProps> = ({
       await onDeleteEmployee(empId);
     }
   };
-
-  const handleCheckInSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedCheckInEmpId) return;
-
-    const emp = employees.find(e => e.id === selectedCheckInEmpId);
-    if (!emp) return;
-
-    await onCheckIn(emp.id, emp.name, emp.role, checkInNotes);
-    setSelectedCheckInEmpId('');
-    setCheckInNotes('');
-  };
-
-  // Find active check-in record for an employee
-  const activeAttendance = attendance.filter(a => !a.checkOutTime);
 
   return (
     <div className="flex flex-col gap-6">
@@ -298,159 +271,6 @@ export const EmployeeManagementView: React.FC<EmployeeManagementViewProps> = ({
                       </td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* TAB 2: ATTENDANCE & WORKING HOURS */}
-      {activeTab === 'attendance' && (
-        <div className="flex flex-col gap-6">
-          {/* Quick Check-In Card */}
-          <Card className="p-5 flex flex-col md:flex-row gap-5 items-start md:items-center justify-between bg-neutral-900 text-white">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <LogIn className="w-5 h-5 text-emerald-400" />
-                <h3 className="text-sm font-bold">Shift Check-In Terminal</h3>
-              </div>
-              <p className="text-xs text-neutral-400">
-                Record staff arrival times and shift duty logs for accurate working hours reports
-              </p>
-            </div>
-
-            <form onSubmit={handleCheckInSubmit} className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
-              <select
-                required
-                value={selectedCheckInEmpId}
-                onChange={(e) => setSelectedCheckInEmpId(e.target.value)}
-                className="w-full sm:w-48 bg-neutral-800 border border-neutral-700 text-white text-xs font-semibold rounded-xl p-2.5 outline-none"
-              >
-                <option value="">Select Employee...</option>
-                {employees
-                  .filter(e => !activeAttendance.some(a => a.employeeId === e.id))
-                  .map(e => (
-                    <option key={e.id} value={e.id}>{e.name} ({e.role})</option>
-                  ))
-                }
-              </select>
-
-              <Input
-                value={checkInNotes}
-                onChange={(e) => setCheckInNotes(e.target.value)}
-                placeholder="Shift Notes (e.g. Counter Shift)..."
-                className="w-full sm:w-48 bg-neutral-800 text-white border-neutral-700 text-xs"
-              />
-
-              <Button
-                type="submit"
-                variant="primary"
-                disabled={!selectedCheckInEmpId}
-                leftIcon={<LogIn className="w-4 h-4" />}
-                className="w-full sm:w-auto shrink-0 bg-emerald-500 hover:bg-emerald-600 text-white border-none"
-              >
-                Check In Now
-              </Button>
-            </form>
-          </Card>
-
-          {/* Active On-Duty Shift List */}
-          <div className="flex flex-col gap-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-emerald-600" />
-              <span>Currently Active Duty Staff ({activeAttendance.length})</span>
-            </h3>
-
-            {activeAttendance.length === 0 ? (
-              <Card className="p-6 text-center text-xs text-neutral-400">
-                No employees currently checked in on active duty.
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {activeAttendance.map((att) => {
-                  const checkInDate = new Date(att.checkInTime);
-                  return (
-                    <Card key={att.id} className="p-4 flex flex-col justify-between gap-3 border-emerald-200/80 bg-emerald-50/20">
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-bold text-neutral-900 text-sm">{att.employeeName}</span>
-                          <Badge variant="emerald">{att.employeeRole.toUpperCase()}</Badge>
-                        </div>
-                        <div className="text-xs text-neutral-600 flex items-center gap-1.5 font-mono">
-                          <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                          Checked In: {checkInDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                        {att.notes && (
-                          <p className="text-[11px] text-neutral-500 mt-1 italic">"{att.notes}"</p>
-                        )}
-                      </div>
-
-                      <Button
-                        variant="outline"
-                        onClick={() => onCheckOut(att.id)}
-                        leftIcon={<LogOut className="w-3.5 h-3.5 text-red-600" />}
-                        className="w-full text-xs hover:bg-red-50 hover:text-red-700 hover:border-red-300"
-                      >
-                        Clock Out / End Shift
-                      </Button>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Historic Attendance Log Table */}
-          <Card className="p-0 overflow-hidden">
-            <div className="p-4 border-b border-neutral-100 flex items-center justify-between">
-              <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">Attendance & Working Hours History</h3>
-              <span className="text-xs text-neutral-400 font-medium">Auto-Calculates Working Hours</span>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-neutral-50 border-b border-neutral-200/80 text-neutral-500 uppercase font-bold text-[10px] tracking-wider">
-                  <tr>
-                    <th className="py-3 px-4">Date</th>
-                    <th className="py-3 px-4">Employee</th>
-                    <th className="py-3 px-4">Role</th>
-                    <th className="py-3 px-4">Check In</th>
-                    <th className="py-3 px-4">Check Out</th>
-                    <th className="py-3 px-4">Total Working Hours</th>
-                    <th className="py-3 px-4">Shift Notes</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {attendance.map((att) => {
-                    const checkIn = new Date(att.checkInTime);
-                    const checkOut = att.checkOutTime ? new Date(att.checkOutTime) : null;
-                    const hours = att.workingHoursMinutes
-                      ? (att.workingHoursMinutes / 60).toFixed(1) + ' hrs'
-                      : checkOut
-                      ? ((att.checkOutTime! - att.checkInTime) / 3600000).toFixed(1) + ' hrs'
-                      : 'In Progress';
-
-                    return (
-                      <tr key={att.id} className="hover:bg-neutral-50 transition-colors">
-                        <td className="py-3 px-4 font-mono font-bold text-neutral-800">{att.date}</td>
-                        <td className="py-3 px-4 font-semibold text-neutral-900">{att.employeeName}</td>
-                        <td className="py-3 px-4">
-                          <Badge variant="neutral">{att.employeeRole}</Badge>
-                        </td>
-                        <td className="py-3 px-4 font-mono text-neutral-600">
-                          {checkIn.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </td>
-                        <td className="py-3 px-4 font-mono text-neutral-600">
-                          {checkOut ? checkOut.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
-                        </td>
-                        <td className="py-3 px-4 font-bold text-neutral-900">{hours}</td>
-                        <td className="py-3 px-4 text-neutral-500 text-[11px] max-w-xs truncate">
-                          {att.notes || '—'}
-                        </td>
-                      </tr>
-                    );
-                  })}
                 </tbody>
               </table>
             </div>
