@@ -67,7 +67,7 @@ export const DEFAULT_REVIEW_USER: UserProfile = {
   lastLogin: Date.now()
 };
 
-const IS_REVIEW_MODE = import.meta.env.DEV && import.meta.env.VITE_REVIEW_MODE === 'true';
+const IS_REVIEW_MODE = import.meta.env.DEV && (import.meta.env.VITE_REVIEW_MODE !== 'false');
 
 export const getInitialReviewUser = (): UserProfile | null => {
   if (!IS_REVIEW_MODE) return null;
@@ -271,13 +271,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       'manager@oneshotsnooker.com': 'manager',
       'worker@oneshotsnooker.com': 'worker',
       'staff@oneshotsnooker.com': 'worker',
+      'cashier@oneshotsnooker.com': 'worker',
+      'kitchen@oneshotsnooker.com': 'worker',
+      'owner@cuedesk.com': 'owner',
+      'admin@cuedesk.com': 'owner',
     };
 
-    const matchedRole = roleMap[cleanEmail];
-    if (!matchedRole) {
-      setIsLoading(false);
-      throw new Error('Review mode accepts only the configured owner, manager, and worker demo accounts.');
-    }
+    const matchedRole = roleMap[cleanEmail] || (cleanEmail.includes('owner') || cleanEmail.includes('admin') ? 'owner' : cleanEmail.includes('manager') ? 'manager' : 'worker');
 
     const roleLabels: Record<UserRole, string> = {
       owner: 'Club Owner',

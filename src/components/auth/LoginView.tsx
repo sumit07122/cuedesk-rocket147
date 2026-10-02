@@ -218,6 +218,43 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 </div>
               </div>
 
+              {/* Quick Fill Demo Accounts */}
+              <div className="pt-2 border-t border-white/10 flex flex-col gap-1.5">
+                <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Quick Fill Demo Account:</span>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail('owner@oneshotsnooker.com');
+                      setPassword('owner123');
+                    }}
+                    className="py-1.5 px-2 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-bold text-amber-300 border border-white/10 transition-colors text-center cursor-pointer active:scale-95"
+                  >
+                    👑 Owner
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail('manager@oneshotsnooker.com');
+                      setPassword('manager123');
+                    }}
+                    className="py-1.5 px-2 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-bold text-neutral-300 border border-white/10 transition-colors text-center cursor-pointer active:scale-95"
+                  >
+                    💼 Manager
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail('cashier@oneshotsnooker.com');
+                      setPassword('cashier123');
+                    }}
+                    className="py-1.5 px-2 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-bold text-neutral-300 border border-white/10 transition-colors text-center cursor-pointer active:scale-95"
+                  >
+                    💵 Cashier
+                  </button>
+                </div>
+              </div>
+
               <button
                 type="submit"
                 disabled={loading}
