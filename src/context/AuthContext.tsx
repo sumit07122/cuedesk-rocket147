@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { 
   onAuthStateChanged, 
   signOut as fbSignOut, 
@@ -6,18 +6,17 @@ import {
   createUserWithEmailAndPassword, 
   sendPasswordResetEmail,
   updatePassword,
+  sendEmailVerification,
+  updateProfile,
   User as FbUser 
 } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs, limit, query } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { UserRole, UserProfile, UserInvitation } from '../types';
 import { 
   DEFAULT_CLUB_ID, 
   ensureClubInitialized, 
   logAuditEvent,
-  findInvitationByEmail,
-  findInvitationByCode,
-  markInvitationAcceptedDoc,
   createInvitationDoc
 } from '../services/dbService';
 
@@ -26,6 +25,7 @@ export interface AuthContextType {
   fbUser: FbUser | null;
   currentClubId: string;
   role: UserRole;
+  isReviewMode: boolean;
   isLoading: boolean;
   signInWithEmail: (email: string, pass: string) => Promise<void>;
   signUpWithEmail: (
@@ -33,8 +33,10 @@ export interface AuthContextType {
     pass: string, 
     fullName: string, 
     phone?: string, 
-    inviteCode?: string
+    inviteCode?: string,
+    inviteRole?: UserRole
   ) => Promise<void>;
+  signUpCustomerWithEmail: (email: string, pass: string, fullName: string) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
   updateUserPassword: (email: string, newPass: string) => Promise<void>;
   signOutUser: () => Promise<void>;
@@ -65,7 +67,10 @@ export const DEFAULT_REVIEW_USER: UserProfile = {
   lastLogin: Date.now()
 };
 
+const IS_REVIEW_MODE = import.meta.env.DEV && import.meta.env.VITE_REVIEW_MODE === 'true';
+
 export const getInitialReviewUser = (): UserProfile | null => {
+  if (!IS_REVIEW_MODE) return null;
   try {
     const isLoggedOut = localStorage.getItem('cuedesk_logged_out');
     if (isLoggedOut === 'true') {
@@ -77,6 +82,43 @@ export const getInitialReviewUser = (): UserProfile | null => {
     }
   } catch {}
   return DEFAULT_REVIEW_USER;
+};
+
+const loadOrCreateCustomerProfile = async (fbUser: FbUser): Promise<UserProfile> => {
+  if (!fbUser.email || !fbUser.emailVerified) {
+    throw new Error('Verify your email address before signing in.');
+  }
+  const profileRef = doc(db, 'users', fbUser.uid);
+  let profileSnap = await getDoc(profileRef);
+  if (!profileSnap.exists()) {
+    const email = fbUser.email.toLowerCase();
+    const accessSnap = await getDoc(doc(db, 'clubs', DEFAULT_CLUB_ID, 'customerAccess', email));
+    if (!accessSnap.exists() || accessSnap.data().enabled !== true) {
+      throw new Error('This email is not linked to a customer profile at One Shot Snooker Club. Ask the club to add your email first.');
+    }
+    const access = accessSnap.data();
+    const customerProfile: UserProfile = {
+      id: fbUser.uid,
+      uid: fbUser.uid,
+      email,
+      displayName: fbUser.displayName || 'Club Customer',
+      fullName: fbUser.displayName || 'Club Customer',
+      photoURL: fbUser.photoURL || '',
+      role: 'customer',
+      clubId: access.clubId,
+      customerId: access.customerId,
+      status: 'active',
+      createdAt: Date.now(),
+    };
+    await setDoc(profileRef, customerProfile);
+    profileSnap = await getDoc(profileRef);
+  }
+  if (!profileSnap.exists()) throw new Error('Customer profile setup could not be completed. Contact the club.');
+  const profile = profileSnap.data() as UserProfile;
+  if (profile.role !== 'customer' || profile.email !== fbUser.email.toLowerCase() || profile.status !== 'active' || !profile.customerId) {
+    throw new Error('This sign-in does not have an active customer profile. Contact the club.');
+  }
+  return { ...profile, id: fbUser.uid, uid: fbUser.uid };
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -112,19 +154,20 @@ export const formatAuthError = (error: any): string => {
 };
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const registrationInProgress = useRef(false);
   const [fbUser, setFbUser] = useState<FbUser | null>(null);
   const [user, setUser] = useState<UserProfile | null>(getInitialReviewUser);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(!IS_REVIEW_MODE);
   const [currentClubId, setCurrentClubId] = useState<string>(() => {
-    return localStorage.getItem('cuedesk_club_id') || DEFAULT_CLUB_ID;
+    return DEFAULT_CLUB_ID;
   });
 
-  // Keep club initialized
+  // Initialize club records only after a real Firebase staff account is authenticated.
   useEffect(() => {
-    if (currentClubId) {
+    if (currentClubId && fbUser && user?.status === 'active' && user.role !== 'customer') {
       ensureClubInitialized(currentClubId).catch(() => {});
     }
-  }, [currentClubId]);
+  }, [currentClubId, fbUser, user]);
 
   // Firebase Auth State Listener (Bypassed for Client Review)
   useEffect(() => {
@@ -132,35 +175,50 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
         setFbUser(currentUser);
 
-        if (currentUser) {
-          try {
-            // Sync user profile from Firestore if available
-            const userDocRef = doc(db, 'users', currentUser.uid);
-            const snap = await getDoc(userDocRef);
+        if (registrationInProgress.current) return;
 
-            if (snap.exists()) {
-              const data = snap.data() as UserProfile;
-              const updatedProfile: UserProfile = {
-                ...data,
-                id: currentUser.uid,
-                uid: currentUser.uid,
-                lastLoginAt: Date.now(),
-                lastLogin: Date.now()
-              };
-
-              setUser(updatedProfile);
-              
-              if (data.clubId) {
-                setCurrentClubId(data.clubId);
-                localStorage.setItem('cuedesk_club_id', data.clubId);
-              }
-            }
-          } catch (err) {
-            console.warn('Firebase user sync note (review mode active):', err);
-          }
+        if (!currentUser) {
+          setUser(IS_REVIEW_MODE ? getInitialReviewUser() : null);
+          setIsLoading(false);
+          return;
         }
-        // In review mode: never set user to null! Always keep client logged in.
-        setIsLoading(false);
+
+        try {
+          if (!currentUser.emailVerified) throw new Error('Verify your email address before signing in.');
+          let snap = await getDoc(doc(db, 'users', currentUser.uid));
+          if (!snap.exists()) {
+            const customerProfile = await loadOrCreateCustomerProfile(currentUser);
+            setUser(customerProfile);
+            setCurrentClubId(customerProfile.clubId);
+            localStorage.setItem('cuedesk_club_id', customerProfile.clubId);
+            setIsLoading(false);
+            return;
+          }
+          const data = snap.data() as UserProfile;
+          const validRole = ['owner', 'manager', 'worker', 'customer'].includes(data.role);
+          if (data.status !== 'active' || !validRole || (data.role === 'customer' && !data.customerId)) {
+            throw new Error('This account is inactive or has an invalid role. Contact the club owner.');
+          }
+
+          const updatedProfile: UserProfile = {
+            ...data,
+            id: currentUser.uid,
+            uid: currentUser.uid,
+            lastLoginAt: Date.now(),
+            lastLogin: Date.now()
+          };
+          setUser(updatedProfile);
+          if (data.clubId) {
+            setCurrentClubId(data.clubId);
+            localStorage.setItem('cuedesk_club_id', data.clubId);
+          }
+        } catch (err) {
+          console.error('Unable to load the signed-in staff profile:', err);
+          setUser(null);
+          await fbSignOut(auth).catch(() => {});
+        } finally {
+          setIsLoading(false);
+        }
       });
 
       return () => unsubscribe();
@@ -168,30 +226,64 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       console.warn('Firebase auth listener skipped in review mode:', e);
       setIsLoading(false);
     }
-  }, [currentClubId]);
+  }, []);
 
   // Email & Password Login (Instant Review Mode)
   const signInWithEmail = async (emailStr: string, pass: string) => {
     setIsLoading(true);
     const cleanEmail = emailStr.trim().toLowerCase();
 
+    if (!cleanEmail || !pass.trim()) {
+      setIsLoading(false);
+      throw new Error('Enter both your email and password.');
+    }
+
+    if (!IS_REVIEW_MODE) {
+      try {
+        const credential = await signInWithEmailAndPassword(auth, cleanEmail, pass.trim());
+        if (!credential.user.emailVerified) throw new Error('Verify your email address before signing in.');
+        const snap = await getDoc(doc(db, 'users', credential.user.uid));
+        let profile: UserProfile;
+        if (!snap.exists()) {
+          profile = await loadOrCreateCustomerProfile(credential.user);
+        } else {
+          profile = snap.data() as UserProfile;
+          if (profile.status !== 'active' || !['owner', 'manager', 'worker', 'customer'].includes(profile.role) || (profile.role === 'customer' && !profile.customerId)) {
+            throw new Error('This account is inactive or has an invalid role. Contact the club owner.');
+          }
+        }
+        const signedInProfile = { ...profile, id: credential.user.uid, uid: credential.user.uid };
+        setUser(signedInProfile);
+        setCurrentClubId(profile.clubId || DEFAULT_CLUB_ID);
+        localStorage.setItem('cuedesk_club_id', profile.clubId || DEFAULT_CLUB_ID);
+      } catch (err) {
+        await fbSignOut(auth).catch(() => {});
+        setUser(null);
+        setIsLoading(false);
+        throw err;
+      }
+      setIsLoading(false);
+      return;
+    }
+
     const roleMap: Record<string, UserRole> = {
       'owner@oneshotsnooker.com': 'owner',
       'manager@oneshotsnooker.com': 'manager',
-      'cashier@oneshotsnooker.com': 'cashier',
-      'kitchen@oneshotsnooker.com': 'kitchen',
+      'worker@oneshotsnooker.com': 'worker',
+      'staff@oneshotsnooker.com': 'worker',
     };
 
-    let matchedRole: UserRole = roleMap[cleanEmail] || 'owner';
-    if (cleanEmail.includes('manager')) matchedRole = 'manager';
-    else if (cleanEmail.includes('cashier')) matchedRole = 'cashier';
-    else if (cleanEmail.includes('kitchen')) matchedRole = 'kitchen';
+    const matchedRole = roleMap[cleanEmail];
+    if (!matchedRole) {
+      setIsLoading(false);
+      throw new Error('Review mode accepts only the configured owner, manager, and worker demo accounts.');
+    }
 
     const roleLabels: Record<UserRole, string> = {
       owner: 'Club Owner',
-      manager: 'General Manager',
-      cashier: 'Front Desk Cashier',
-      kitchen: 'Kitchen / KDS Operator'
+      manager: 'Club Manager',
+      worker: 'Club Worker',
+      customer: 'Club Customer'
     };
 
     const reviewUser: UserProfile = {
@@ -221,12 +313,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       localStorage.setItem('cuedesk_review_user', JSON.stringify(reviewUser));
     } catch {}
 
-    // Optional background Firebase auth attempt (errors safely ignored for review)
-    try {
-      await signInWithEmailAndPassword(auth, cleanEmail, pass.trim());
-    } catch {}
-
     setIsLoading(false);
+  };
+
+  const signUpCustomerWithEmail = async (emailStr: string, pass: string, fullName: string) => {
+    setIsLoading(true);
+    registrationInProgress.current = true;
+    try {
+      const email = emailStr.trim().toLowerCase();
+      if (!email || pass.length < 6 || !fullName.trim()) throw new Error('Enter your name, a valid email address, and a password with at least 6 characters.');
+      const credential = await createUserWithEmailAndPassword(auth, email, pass);
+      await updateProfile(credential.user, { displayName: fullName.trim() });
+      await sendEmailVerification(credential.user);
+      await fbSignOut(auth);
+      setUser(null);
+      setFbUser(null);
+    } catch (error) {
+      await fbSignOut(auth).catch(() => {});
+      throw error;
+    } finally {
+      registrationInProgress.current = false;
+      setIsLoading(false);
+    }
   };
 
   // Email Registration — First user becomes Owner, subsequent users require invitation
@@ -235,43 +343,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     pass: string, 
     fullName: string, 
     phone?: string, 
-    inviteCode?: string
+    inviteCode?: string,
+    inviteRole?: UserRole
   ) => {
     setIsLoading(true);
+    registrationInProgress.current = true;
     try {
-      // Check if any users exist in Firestore
-      const usersSnap = await getDocs(query(collection(db, 'users'), limit(1)));
-      const isFirstUser = usersSnap.empty;
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanCode = inviteCode?.trim() || '';
+      if (!cleanCode) throw new Error('Staff accounts require a club-owner invitation code.');
+      if (!['manager', 'worker'].includes(inviteRole || 'worker')) throw new Error('Staff invitations can only grant manager or worker access.');
 
-      let targetRole: UserRole = 'owner';
-      let targetClubId = currentClubId || DEFAULT_CLUB_ID;
-
-      if (!isFirstUser) {
-        // Subsequent users MUST have an invitation
-        let foundInv = null;
-        if (inviteCode && inviteCode.trim()) {
-          foundInv = await findInvitationByCode(inviteCode.trim());
-        }
-        if (!foundInv && email) {
-          foundInv = await findInvitationByEmail(email.trim());
-        }
-
-        if (foundInv) {
-          targetRole = foundInv.role;
-          targetClubId = foundInv.clubId;
-          await markInvitationAcceptedDoc(foundInv.id);
-        } else {
-          throw new Error('Public registration is closed. Please ask the Club Owner for an invitation code to register.');
-        }
-      }
-
-      const credential = await createUserWithEmailAndPassword(auth, email.trim(), pass);
+      const targetRole: UserRole = inviteRole === 'manager' ? 'manager' : 'worker';
+      const targetClubId = DEFAULT_CLUB_ID;
+      const credential = await createUserWithEmailAndPassword(auth, cleanEmail, pass);
       const newUid = credential.user.uid;
 
       const profile: UserProfile = {
         id: newUid,
         uid: newUid,
-        email: email.trim(),
+        email: cleanEmail,
         displayName: fullName,
         fullName,
         phone: phone || '',
@@ -284,15 +375,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         lastLogin: Date.now()
       };
 
-      await setDoc(doc(db, 'users', newUid), profile);
-      setUser(profile);
-      setCurrentClubId(targetClubId);
-      localStorage.setItem('cuedesk_club_id', targetClubId);
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'users', newUid), { ...profile, invitationCode: cleanCode });
+      batch.update(doc(db, 'invitations', cleanEmail), {
+        status: 'accepted',
+        acceptedAt: Date.now(),
+        acceptedByUid: newUid,
+      });
+      await batch.commit();
+      await sendEmailVerification(credential.user);
+      await fbSignOut(auth);
+      setUser(null);
+      setFbUser(null);
 
     } catch (err) {
+      await fbSignOut(auth).catch(() => {});
       console.error('Sign-Up Error:', err);
       throw err;
     } finally {
+      registrationInProgress.current = false;
       setIsLoading(false);
     }
   };
@@ -310,20 +411,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Update User Password (for current user or staff accounts)
   const updateUserPassword = async (emailStr: string, newPass: string) => {
     const clean = emailStr.trim().toLowerCase();
-    try {
-      const existing = JSON.parse(localStorage.getItem('cuedesk_user_passwords') || '{}');
-      existing[clean] = newPass.trim();
-      localStorage.setItem('cuedesk_user_passwords', JSON.stringify(existing));
-    } catch {}
+    if (IS_REVIEW_MODE) {
+      try {
+        const existing = JSON.parse(localStorage.getItem('cuedesk_user_passwords') || '{}');
+        existing[clean] = newPass.trim();
+        localStorage.setItem('cuedesk_user_passwords', JSON.stringify(existing));
+      } catch {}
+      return;
+    }
 
     // If Firebase Auth currentUser matches, update Firebase password directly
     if (auth.currentUser && auth.currentUser.email?.toLowerCase() === clean) {
-      try {
-        await updatePassword(auth.currentUser, newPass.trim());
-      } catch (err) {
-        console.warn('Firebase Auth updatePassword notice:', err);
-      }
+      await updatePassword(auth.currentUser, newPass.trim());
+      return;
     }
+    throw new Error('A staff account password can only be changed by that signed-in user.');
   };
 
   // Logout (Brings user to Login View)
@@ -346,6 +448,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // Switch Club Workspace
   const switchClub = (newClubId: string) => {
+    if (!IS_REVIEW_MODE) throw new Error('This One Shot setup uses a single club workspace.');
     localStorage.setItem('cuedesk_club_id', newClubId);
     setCurrentClubId(newClubId);
     if (user) {
@@ -358,11 +461,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // Switch Role helper for client review to preview different permissions
   const switchRole = (newRole: UserRole) => {
+    if (!IS_REVIEW_MODE) return;
     const roleLabels: Record<UserRole, string> = {
       owner: 'Club Owner',
-      manager: 'General Manager',
-      cashier: 'Front Desk Cashier',
-      kitchen: 'Kitchen / KDS Operator'
+      manager: 'Club Manager',
+      worker: 'Club Worker',
+      customer: 'Club Customer'
     };
     const updated: UserProfile = {
       ...(user || DEFAULT_REVIEW_USER),
@@ -384,8 +488,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const roleHierarchy: Record<UserRole, number> = {
       owner: 3,
       manager: 2,
-      cashier: 1,
-      kitchen: 1
+      worker: 1,
+      customer: 0
     };
     return (roleHierarchy[user.role] ?? 0) >= (roleHierarchy[requiredRole] ?? 0);
   };
@@ -401,7 +505,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       throw new Error('Only the Club Owner can create staff invitations.');
     }
 
-    const code = `CUE-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+    if (!['manager', 'worker'].includes(roleToAssign)) throw new Error('Staff invitations can only grant manager or worker access.');
+    const code = `CUE-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
     const invData: Omit<UserInvitation, 'id'> = {
       clubId: user.clubId || currentClubId,
       email: email.toLowerCase().trim(),
@@ -422,7 +527,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       user.clubId || currentClubId,
       'STAFF_INVITATION_CREATED',
       user.email,
-      `Invited ${fullName} (${email}) as ${roleToAssign.toUpperCase()} with code ${code}`
+      `Created an invitation for ${fullName} (${email}) as ${roleToAssign.toUpperCase()}`
     ).catch(() => {});
 
     return created;
@@ -433,10 +538,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       user,
       fbUser,
       currentClubId,
-      role: user?.role || 'owner',
+      role: user?.role || 'worker',
+      isReviewMode: IS_REVIEW_MODE,
       isLoading,
       signInWithEmail,
       signUpWithEmail,
+      signUpCustomerWithEmail,
       sendPasswordReset,
       updateUserPassword,
       signOutUser,

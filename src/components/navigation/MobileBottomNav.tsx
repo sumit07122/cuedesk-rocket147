@@ -11,33 +11,30 @@ import {
   UserCheck,
   TrendingUp,
   Wrench,
-  ChefHat,
   QrCode,
   X,
-  ChevronRight,
-  Trophy
+  ChevronRight
 } from 'lucide-react';
-import { PageView } from '../../types';
+import { PageView, UserRole } from '../../types';
+import { canAccessPage } from '../../utils/permissions';
 
 interface MobileBottomNavProps {
   activePage: PageView;
   setActivePage: (page: PageView) => void;
   occupiedCount: number;
+  role?: UserRole;
 }
 
 const primaryTabs = [
-  { id: 'dashboard' as PageView, label: 'Home', icon: LayoutDashboard },
-  { id: 'tables' as PageView, label: 'Tables', icon: Grid2X2 },
+  { id: 'dashboard' as PageView, label: 'Tables', icon: LayoutDashboard },
   { id: 'billing' as PageView, label: 'Billing', icon: Receipt },
+  { id: 'menu-inventory' as PageView, label: 'Menu', icon: Utensils },
   { id: 'customers' as PageView, label: 'CRM', icon: Users },
   { id: '__more__' as any, label: 'More', icon: MoreHorizontal },
 ];
 
 const moreItems = [
-  { id: 'menu-inventory' as PageView, label: 'Food & Inventory', icon: Utensils },
-  { id: 'kds' as PageView, label: 'Kitchen Display', icon: ChefHat },
-  { id: 'tournaments' as PageView, label: 'Tournaments & Leagues', icon: Trophy },
-  { id: 'employees' as PageView, label: 'Staff & Attendance', icon: UserCheck },
+  { id: 'employees' as PageView, label: 'Staff', icon: UserCheck },
   { id: 'expenses' as PageView, label: 'Expenses & Profit', icon: TrendingUp },
   { id: 'reports' as PageView, label: 'Reports & Analytics', icon: BarChart3 },
   { id: 'maintenance' as PageView, label: 'Table Maintenance', icon: Wrench },
@@ -48,10 +45,15 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   activePage,
   setActivePage,
   occupiedCount,
+  role,
 }) => {
   const [isMoreOpen, setIsMoreOpen] = useState(false);
 
-  const isMoreActive = moreItems.some((item) => item.id === activePage);
+  const visibleMoreItems = moreItems.filter((item) => canAccessPage(role, item.id));
+  const visiblePrimaryTabs = primaryTabs.filter((tab) =>
+    tab.id === '__more__' ? visibleMoreItems.length > 0 : canAccessPage(role, tab.id)
+  );
+  const isMoreActive = visibleMoreItems.some((item) => item.id === activePage);
 
   const handleTabClick = (id: any) => {
     if (id === '__more__') {
@@ -73,11 +75,11 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
            style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="bg-[#0f0f13]/95 backdrop-blur-xl border-t border-amber-500/15 shadow-[0_-8px_32px_rgba(0,0,0,0.4)]">
           <div className="flex items-stretch h-16 px-1">
-            {primaryTabs.map((tab) => {
+            {visiblePrimaryTabs.map((tab) => {
               const Icon = tab.icon;
               const isMore = tab.id === '__more__';
               const isActive = isMore ? isMoreActive : activePage === tab.id;
-              const showBadge = tab.id === 'tables' && occupiedCount > 0;
+              const showBadge = tab.id === 'dashboard' && occupiedCount > 0;
 
               return (
                 <button
@@ -151,7 +153,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
 
             {/* Grid of Items */}
             <div className="grid grid-cols-2 gap-2 p-4">
-              {moreItems.map((item) => {
+            {visibleMoreItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activePage === item.id;
                 return (

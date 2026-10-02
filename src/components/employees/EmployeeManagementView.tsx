@@ -45,7 +45,7 @@ export const EmployeeManagementView: React.FC<EmployeeManagementViewProps> = ({
   clubName = 'One Shot Snooker Gaming Club',
 }) => {
   const { role: currentUserRole, user, createStaffInvitation } = useAuth();
-  const [activeTab, setActiveTab] = useState<'employees' | 'attendance'>('employees');
+  const [activeTab] = useState<'employees' | 'attendance'>('employees');
 
   // Employee Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -65,7 +65,7 @@ export const EmployeeManagementView: React.FC<EmployeeManagementViewProps> = ({
       name: '',
       email: '',
       phone: '',
-      role: 'cashier',
+      role: 'worker',
       status: 'active',
       joiningDate: new Date().toISOString().split('T')[0]
     });
@@ -93,7 +93,7 @@ export const EmployeeManagementView: React.FC<EmployeeManagementViewProps> = ({
             editingEmp.email, 
             editingEmp.name, 
             editingEmp.phone || '', 
-            editingEmp.role || 'cashier'
+            editingEmp.role || 'worker'
           );
           setGeneratedInviteCode({ name: editingEmp.name, code: inv.code, role: inv.role });
         } catch (invErr) {
@@ -138,62 +138,30 @@ export const EmployeeManagementView: React.FC<EmployeeManagementViewProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <Users className="w-6 h-6 text-neutral-900" />
-            <h2 className="text-xl font-extrabold text-neutral-900 tracking-tight">Staff Management & Attendance System</h2>
+            <h2 className="text-xl font-extrabold text-neutral-900 tracking-tight">Staff Accounts & Permissions</h2>
           </div>
           <p className="text-xs text-neutral-500 mt-1">
-            Manage employee access roles, track active duty logins, check-in timestamps, and monthly working hours
+            Invite trusted staff, set their access level, and manage club accounts.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="bg-neutral-100 p-1 rounded-2xl flex items-center">
-            <button
-              onClick={() => setActiveTab('employees')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'employees' ? 'bg-neutral-900 text-white shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
-              }`}
-            >
-              Employees Directory
-            </button>
-            <button
-              onClick={() => setActiveTab('attendance')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'attendance' ? 'bg-neutral-900 text-white shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
-              }`}
-            >
-              Check-In & Working Hours
-            </button>
-          </div>
-
-          {activeTab === 'employees' ? (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={() => exportEmployeesToExcel(employees, clubName)}
-                leftIcon={<Download className="w-4 h-4" />}
-                size="sm"
-              >
-                Export Roster
-              </Button>
-              <Button
-                variant="primary"
-                onClick={handleOpenAddModal}
-                leftIcon={<UserPlus className="w-4 h-4" />}
-                size="sm"
-              >
-                Add Staff Member
-              </Button>
-            </div>
-          ) : (
-            <Button
-              variant="outline"
-              onClick={() => exportAttendanceToExcel(attendance, clubName)}
-              leftIcon={<Download className="w-4 h-4" />}
-              size="sm"
-            >
-              Export Attendance
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            onClick={() => exportEmployeesToExcel(employees, clubName)}
+            leftIcon={<Download className="w-4 h-4" />}
+            size="sm"
+          >
+            Export Roster
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleOpenAddModal}
+            leftIcon={<UserPlus className="w-4 h-4" />}
+            size="sm"
+          >
+            Add Staff Member
+          </Button>
         </div>
       </div>
 
@@ -229,7 +197,7 @@ export const EmployeeManagementView: React.FC<EmployeeManagementViewProps> = ({
               </div>
               <div>
                 <span className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Currently On Duty</span>
-                <div className="text-xl font-black text-neutral-900">{activeAttendance.length}</div>
+                <div className="text-xl font-black text-neutral-900">{employees.filter((e) => e.role === 'manager' || e.role === 'owner').length}</div>
               </div>
             </Card>
           </div>
@@ -542,13 +510,13 @@ export const EmployeeManagementView: React.FC<EmployeeManagementViewProps> = ({
                 <div>
                   <label className="block text-xs font-bold text-neutral-700 mb-1">Access Role *</label>
                   <select
-                    value={editingEmp.role || 'cashier'}
+                    value={editingEmp.role || 'worker'}
                     onChange={(e) => setEditingEmp({ ...editingEmp, role: e.target.value as UserRole })}
                     className="w-full bg-neutral-50 border border-neutral-200 text-xs font-semibold rounded-xl p-2.5 outline-none"
                   >
                     <option value="owner">Owner (Full System Control)</option>
                     <option value="manager">Manager (Reports & Inventory)</option>
-                    <option value="cashier">Cashier / Billing Counter</option>
+                    <option value="worker">Club Worker (Tables, POS & Café)</option>
                   </select>
                 </div>
 

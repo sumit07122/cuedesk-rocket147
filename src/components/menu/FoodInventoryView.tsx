@@ -92,7 +92,7 @@ export const FoodInventoryView: React.FC<FoodInventoryViewProps> = ({
   const { role, user, hasPermission } = useAuth();
   const isManagerOrOwner = hasPermission('manager');
 
-  const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'inventory' | 'reports'>('orders');
+  const [activeTab, setActiveTab] = useState<'menu' | 'inventory' | 'reports'>('menu');
 
   // Menu Search & Filter
   const [menuSearch, setMenuSearch] = useState('');
@@ -118,13 +118,6 @@ export const FoodInventoryView: React.FC<FoodInventoryViewProps> = ({
   const [stockAdjustmentType, setStockAdjustmentType] = useState<InventoryAdjustment['adjustmentType']>('add');
   const [stockValueInput, setStockValueInput] = useState<number>(10);
   const [stockReason, setStockReason] = useState<string>('');
-
-  const [showNewOrderModal, setShowNewOrderModal] = useState(false);
-  const [newOrderTableId, setNewOrderTableId] = useState<string>(tables[0]?.id || '');
-  const [newOrderCart, setNewOrderCart] = useState<Record<string, number>>({});
-
-  // Status Filter for Orders
-  const [orderStatusFilter, setOrderStatusFilter] = useState<string>('all');
 
   // Category Helper Label
   const getCategoryLabel = (cat: string) => {
@@ -237,63 +230,15 @@ export const FoodInventoryView: React.FC<FoodInventoryViewProps> = ({
     });
   };
 
-  // --- MANUAL NEW ORDER BY STAFF ---
-  const handleCreateOrderSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const table = tables.find((t) => t.id === newOrderTableId);
-    if (!table) return;
-
-    const items = Object.entries(newOrderCart)
-      .map(([menuId, qtyVal]) => {
-        const qtyNum = Number(qtyVal);
-        const menuObj = menuItems.find((m) => m.id === menuId);
-        if (!menuObj || qtyNum <= 0) return null;
-        return {
-          id: `ord-item-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-          menuId: menuObj.id,
-          name: menuObj.name,
-          price: menuObj.price,
-          quantity: qtyNum,
-          category: menuObj.category,
-          addedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        };
-      })
-      .filter(Boolean) as any[];
-
-    if (items.length === 0) return;
-
-    const totalAmount = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-
-    await onCreateFoodOrder({
-      clubId: config.clubId || 'club-royal-cue',
-      tableId: table.id,
-      tableName: table.name,
-      customerName: table.currentSession?.customerName || 'Walk-in Customer',
-      items,
-      orderTime: Date.now(),
-      status: 'new',
-      totalAmount,
-    });
-
-    setShowNewOrderModal(false);
-    setNewOrderCart({});
-  };
-
   // Filtered Menu Items
   const filteredMenuItems = menuItems.filter((item) => {
     const matchesSearch = item.name.toLowerCase().includes(menuSearch.toLowerCase()) || 
                           (item.description && item.description.toLowerCase().includes(menuSearch.toLowerCase()));
     const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory;
     const matchesAvail = availabilityFilter === 'all' || 
-                         (availabilityFilter === 'available' && item.available && item.stockQuantity > 0) ||
-                         (availabilityFilter === 'out_of_stock' && (!item.available || item.stockQuantity <= 0));
+                         (availabilityFilter === 'available' && item.available && (item.stockQuantity ?? 0) > 0) ||
+                         (availabilityFilter === 'out_of_stock' && (!item.available || (item.stockQuantity ?? 0) <= 0));
     return matchesSearch && matchesCategory && matchesAvail;
-  });
-
-  // Filtered Live Orders
-  const filteredOrders = foodOrders.filter((o) => {
-    if (orderStatusFilter === 'all') return true;
-    return o.status === orderStatusFilter;
   });
 
   // Inventory Report Totals
@@ -306,13 +251,13 @@ export const FoodInventoryView: React.FC<FoodInventoryViewProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-1">
-            <Utensils className="w-4 h-4 text-emerald-600" /> Phase 6 Module
+            <Utensils className="w-4 h-4 text-emerald-600" /> F&B & Inventory
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-neutral-900 tracking-tight">
             Food, Beverage & Inventory Management
           </h1>
           <p className="text-xs sm:text-sm text-neutral-500 mt-1">
-            Manage menu items, live customer orders, stock levels, purchases, and low-stock alerts in real time.
+            Manage café menu items, vendor purchases, stock adjustments, and inventory analysis in real time.
           </p>
         </div>
 
@@ -326,14 +271,26 @@ export const FoodInventoryView: React.FC<FoodInventoryViewProps> = ({
             Export Catalog
           </Button>
 
-          <Button
-            variant="outline"
-            size="md"
-            leftIcon={<ShoppingBag className="w-4 h-4 text-emerald-600" />}
-            onClick={() => setShowNewOrderModal(true)}
-          >
-            Place New Order
-          </Button>
+          {isManagerOrOwner && (
+            <Button
+              variant="outline"
+              size="md"
+              leftIcon={<Plus className="w-4 h-4 text-emerald-600" />}
+              onClick={() => {
+                setPurchaseForm({
+                  supplierName: '',
+                  menuId: menuItems[0]?.id || '',
+                  quantity: 10,
+                  purchasePrice: 0,
+                  date: new Date().toISOString().split('T')[0],
+                  notes: '',
+                });
+                setShowPurchaseModal(true);
+              }}
+            >
+              Record Purchase
+            </Button>
+          )}
 
           {isManagerOrOwner && (
             <Button
@@ -377,22 +334,6 @@ export const FoodInventoryView: React.FC<FoodInventoryViewProps> = ({
 
       {/* Main Tabs Navigation */}
       <div className="flex items-center gap-1 p-1.5 rounded-2xl bg-white border border-neutral-200/90 mb-6 shadow-xs overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('orders')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
-            activeTab === 'orders'
-              ? 'bg-neutral-900 text-white shadow-xs'
-              : 'text-neutral-600 hover:bg-neutral-100'
-          }`}
-        >
-          <Clock className="w-4 h-4" />
-          <span>Live Customer Orders</span>
-          {foodOrders.filter((o) => o.status !== 'delivered' && o.status !== 'cancelled').length > 0 && (
-            <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-emerald-500 text-white">
-              {foodOrders.filter((o) => o.status !== 'delivered' && o.status !== 'cancelled').length} Active
-            </span>
-          )}
-        </button>
 
         <button
           onClick={() => setActiveTab('menu')}
@@ -436,176 +377,9 @@ export const FoodInventoryView: React.FC<FoodInventoryViewProps> = ({
         </button>
       </div>
 
-      {/* TAB 1: LIVE ORDERS PANEL */}
-      {activeTab === 'orders' && (
-        <div className="flex flex-col gap-6">
-          {/* Order Filters */}
-          <div className="bg-white rounded-2xl border border-neutral-200/90 p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 overflow-x-auto py-1">
-              {['all', 'new', 'preparing', 'ready', 'delivered', 'cancelled'].map((status) => (
-                <button
-                  key={status}
-                  onClick={() => setOrderStatusFilter(status)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer border ${
-                    orderStatusFilter === status
-                      ? 'bg-neutral-900 text-white border-neutral-900 shadow-xs'
-                      : 'bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100'
-                  }`}
-                >
-                  {status}
-                </button>
-              ))}
-            </div>
 
-            <div className="text-xs text-neutral-500 font-medium">
-              Showing {filteredOrders.length} order(s)
-            </div>
-          </div>
 
-          {/* Orders Grid */}
-          {filteredOrders.length === 0 ? (
-            <div className="bg-white rounded-3xl border border-neutral-200/90 p-12 text-center flex flex-col items-center justify-center">
-              <div className="w-16 h-16 rounded-full bg-neutral-100 text-neutral-400 flex items-center justify-center mb-3">
-                <ChefHat className="w-8 h-8" />
-              </div>
-              <h3 className="text-base font-bold text-neutral-800">No Orders Found</h3>
-              <p className="text-xs text-neutral-500 max-w-sm mt-1">
-                There are no active orders matching the selected filter. When customers order via QR code or cashier places an order, it will appear here in real time.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredOrders.map((order) => {
-                const statusColors: Record<FoodOrderStatus, { bg: string; text: string; border: string; icon: any }> = {
-                  new: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', icon: Sparkles },
-                  preparing: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', icon: ChefHat },
-                  ready: { bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-200', icon: CheckCircle2 },
-                  delivered: { bg: 'bg-neutral-100', text: 'text-neutral-700', border: 'border-neutral-200', icon: Truck },
-                  cancelled: { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', icon: XCircle },
-                };
-
-                const style = statusColors[order.status] || statusColors.new;
-                const StatusIcon = style.icon;
-
-                return (
-                  <div
-                    key={order.id}
-                    className="bg-white rounded-3xl border border-neutral-200/90 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow"
-                  >
-                    <div>
-                      {/* Top Order Card Bar */}
-                      <div className="flex items-center justify-between border-b border-neutral-100 pb-3 mb-3">
-                        <div>
-                          <span className="text-[10px] font-extrabold uppercase text-neutral-400 tracking-wider">
-                            Table #{order.tableName}
-                          </span>
-                          <h4 className="text-sm font-extrabold text-neutral-900 truncate">
-                            {order.customerName}
-                          </h4>
-                        </div>
-
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${style.bg} ${style.text} ${style.border}`}>
-                          <StatusIcon className="w-3.5 h-3.5" />
-                          {order.status}
-                        </span>
-                      </div>
-
-                      {/* Items Ordered */}
-                      <div className="space-y-2 mb-4">
-                        {order.items.map((item, idx) => (
-                          <div key={idx} className="flex justify-between items-center text-xs">
-                            <div className="flex items-center gap-2 font-medium text-neutral-800">
-                              <span className="w-5 h-5 rounded-md bg-neutral-100 text-neutral-900 font-mono font-bold flex items-center justify-center text-[10px]">
-                                {item.quantity}x
-                              </span>
-                              <span>{item.name}</span>
-                            </div>
-                            <span className="font-mono text-neutral-600">
-                              {formatCurrency(item.price * item.quantity, config.currencySymbol)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Bottom Order Info & Status Actions */}
-                    <div className="border-t border-neutral-100 pt-3 flex flex-col gap-3">
-                      <div className="flex justify-between items-center text-xs font-bold text-neutral-900">
-                        <span className="text-neutral-500 font-normal">Order Total:</span>
-                        <span className="text-sm font-mono">{formatCurrency(order.totalAmount, config.currencySymbol)}</span>
-                      </div>
-
-                      {/* Realtime Status Update Buttons */}
-                      <div className="grid grid-cols-2 gap-2 pt-1">
-                        {order.status === 'new' && (
-                          <>
-                            <Button
-                              variant="outline"
-                              size="xs"
-                              className="w-full justify-center text-amber-800 border-amber-300 hover:bg-amber-50"
-                              onClick={() => onUpdateOrderStatus(order, 'preparing')}
-                            >
-                              Set Preparing
-                            </Button>
-                            <Button
-                              variant="primary"
-                              size="xs"
-                              className="w-full justify-center bg-emerald-600 hover:bg-emerald-700 border-none text-white"
-                              onClick={() => onUpdateOrderStatus(order, 'delivered')}
-                            >
-                              Mark Delivered
-                            </Button>
-                          </>
-                        )}
-
-                        {order.status === 'preparing' && (
-                          <>
-                            <Button
-                              variant="outline"
-                              size="xs"
-                              className="w-full justify-center text-emerald-800 border-emerald-300 hover:bg-emerald-50"
-                              onClick={() => onUpdateOrderStatus(order, 'ready')}
-                            >
-                              Mark Ready
-                            </Button>
-                            <Button
-                              variant="primary"
-                              size="xs"
-                              className="w-full justify-center bg-emerald-600 hover:bg-emerald-700 border-none text-white"
-                              onClick={() => onUpdateOrderStatus(order, 'delivered')}
-                            >
-                              Deliver to Table
-                            </Button>
-                          </>
-                        )}
-
-                        {order.status === 'ready' && (
-                          <Button
-                            variant="primary"
-                            size="xs"
-                            className="col-span-2 w-full justify-center bg-emerald-600 hover:bg-emerald-700 text-white"
-                            onClick={() => onUpdateOrderStatus(order, 'delivered')}
-                          >
-                            Complete & Deliver to Bill
-                          </Button>
-                        )}
-
-                        {(order.status === 'delivered' || order.status === 'cancelled') && (
-                          <div className="col-span-2 text-center text-[11px] font-semibold text-neutral-400 py-1">
-                            {order.status === 'delivered' ? 'Added to Table Bill & Stock Reduced' : 'Order Cancelled'}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 2: MENU MANAGEMENT CATALOG */}
+      {/* TAB 1: MENU MANAGEMENT CATALOG */}
       {activeTab === 'menu' && (
         <div className="flex flex-col gap-6">
           {/* Menu Search & Category Filter Controls */}
@@ -1219,80 +993,6 @@ export const FoodInventoryView: React.FC<FoodInventoryViewProps> = ({
         </div>
       )}
 
-      {/* MODAL 4: PLACE NEW ORDER BY CASHIER */}
-      {showNewOrderModal && (
-        <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-neutral-200 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-base font-extrabold text-neutral-900 mb-1">
-              Place Table Order (Staff Console)
-            </h3>
-            <p className="text-xs text-neutral-500 mb-4">
-              Select an occupied table and pick food/beverage items to send directly to kitchen & bill.
-            </p>
-
-            <form onSubmit={handleCreateOrderSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1">Target Table</label>
-                <select
-                  value={newOrderTableId}
-                  onChange={(e) => setNewOrderTableId(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-xs font-bold text-neutral-800 outline-none"
-                >
-                  {tables.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      Table #{t.number} ({t.currentSession ? t.currentSession.customerName : 'Available'})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-neutral-700">Select Items & Quantities</label>
-                <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-                  {menuItems.filter((m) => m.available && m.stockQuantity > 0).map((m) => {
-                    const qty = newOrderCart[m.id] || 0;
-                    return (
-                      <div key={m.id} className="p-3 rounded-2xl bg-neutral-50 border border-neutral-200/80 flex items-center justify-between text-xs">
-                        <div>
-                          <strong className="text-neutral-900 block">{m.name}</strong>
-                          <span className="text-neutral-500 font-mono">{formatCurrency(m.price, config.currencySymbol)}</span>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setNewOrderCart({ ...newOrderCart, [m.id]: Math.max(0, qty - 1) })}
-                            className="w-7 h-7 rounded-lg bg-white border border-neutral-200 font-bold hover:bg-neutral-100"
-                          >
-                            -
-                          </button>
-                          <span className="w-6 text-center font-bold font-mono text-sm">{qty}</span>
-                          <button
-                            type="button"
-                            onClick={() => setNewOrderCart({ ...newOrderCart, [m.id]: qty + 1 })}
-                            className="w-7 h-7 rounded-lg bg-neutral-900 text-white font-bold hover:bg-neutral-800"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-neutral-100">
-                <Button type="button" variant="outline" size="md" onClick={() => setShowNewOrderModal(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary" size="md">
-                  Send Order
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -24,23 +24,26 @@ interface NavbarProps {
   onQuickStartSession: () => void;
   notifications?: NotificationItem[];
   onMarkNotificationRead?: (id: string) => Promise<void>;
+  onResolveNotification?: (id: string) => Promise<void>;
+  onDeleteNotification?: (id: string) => Promise<void>;
   onClearAllNotifications?: () => Promise<void>;
 }
 
 const pageTitles: Record<PageView, { title: string; subtitle: string }> = {
-  dashboard: { title: 'Dashboard', subtitle: 'Live table status & club overview' },
-  tables: { title: 'Table Manager', subtitle: 'Monitor, pause & transfer sessions' },
+  dashboard: { title: 'Live Tables & Dashboard', subtitle: 'Live table status, timers & club operations' },
+  tables: { title: 'Live Tables & Dashboard', subtitle: 'Live table status, timers & club operations' },
   'table-details': { title: 'Table Details', subtitle: 'Live timer, orders & session info' },
   billing: { title: 'Billing & Checkout', subtitle: 'Calculate bills, apply discounts & receipts' },
   'menu-inventory': { title: 'Food & Inventory', subtitle: 'Menu, kitchen orders, stock & purchases' },
-  customers: { title: 'CRM & Credit Ledger', subtitle: 'Player profiles, dues & gaming history' },
-  employees: { title: 'Staff & Shift Duty', subtitle: 'Attendance check-ins & working hours' },
+  customers: { title: 'Customer Profiles', subtitle: 'Visit activity, receipts, payments and balances' },
+  employees: { title: 'Staff', subtitle: 'Staff accounts and access roles' },
   expenses: { title: 'Expenses & Profit', subtitle: 'Record costs, net profit & margins' },
   maintenance: { title: 'Table Maintenance', subtitle: 'Repair flags, issue logs & costs' },
   reports: { title: 'Reports & Analytics', subtitle: 'Revenue, peak hours & top members' },
   settings: { title: 'Club Settings', subtitle: 'Pricing, tables, roles & backup' },
-  kds: { title: 'Kitchen Display', subtitle: 'Live snack & drink order queue' },
-  tournaments: { title: 'Tournaments & Leagues', subtitle: 'Knockout brackets, live scoring & prize pools' },
+  lockers: { title: 'Cue Lockers', subtitle: 'Member locker allocations & cue sticks' },
+  arena: { title: 'Gaming Arena', subtitle: 'Arcade, VR & station tracking' },
+  'super-admin': { title: 'Platform Super Admin', subtitle: 'Multi-club workspace management & plans' },
   login: { title: 'Sign In', subtitle: 'CueDesk Manager Portal' },
 };
 
@@ -50,6 +53,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onQuickStartSession,
   notifications = [],
   onMarkNotificationRead = async () => {},
+  onResolveNotification,
+  onDeleteNotification,
   onClearAllNotifications = async () => {},
 }) => {
   const { user } = useAuth();
@@ -185,6 +190,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             <NotificationCenter
               notifications={notifications}
               onMarkRead={onMarkNotificationRead}
+              onResolve={onResolveNotification}
+              onDelete={onDeleteNotification}
               onClearAll={onClearAllNotifications}
             />
           </div>

@@ -11,7 +11,6 @@ export type Capability =
   | 'manage_payments'
   | 'manage_inventory'
   | 'manage_customers'
-  | 'manage_memberships'
   | 'apply_discounts'
   | 'issue_refunds'
   | 'edit_completed_bills'
@@ -30,7 +29,6 @@ const ROLE_CAPABILITIES: Record<UserRole, Capability[]> = {
     'manage_payments',
     'manage_inventory',
     'manage_customers',
-    'manage_memberships',
     'apply_discounts',
     'issue_refunds',
     'edit_completed_bills',
@@ -45,18 +43,16 @@ const ROLE_CAPABILITIES: Record<UserRole, Capability[]> = {
     'manage_payments',
     'manage_inventory',
     'manage_customers',
-    'manage_memberships',
     'apply_discounts'
   ],
-  cashier: [
+  worker: [
+    'manage_tables',
     'start_sessions',
     'end_sessions',
     'manage_payments',
     'manage_customers'
   ],
-  kitchen: [
-    'manage_inventory'
-  ]
+  customer: []
 };
 
 // Pages allowed per role
@@ -73,8 +69,6 @@ const ROLE_ALLOWED_PAGES: Record<UserRole, PageView[]> = {
     'maintenance', 
     'reports', 
     'settings', 
-    'kds',
-    'tournaments',
     'login'
   ],
   manager: [
@@ -87,26 +81,17 @@ const ROLE_ALLOWED_PAGES: Record<UserRole, PageView[]> = {
     'expenses', 
     'maintenance', 
     'reports', 
-    'kds',
-    'tournaments',
     'login'
   ],
-  cashier: [
+  worker: [
     'dashboard', 
     'tables', 
     'table-details', 
     'billing', 
-    'menu-inventory', 
     'customers', 
-    'kds',
-    'tournaments',
     'login'
   ],
-  kitchen: [
-    'kds',
-    'menu-inventory',
-    'login'
-  ]
+  customer: ['login']
 };
 
 /**

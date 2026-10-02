@@ -34,13 +34,15 @@ import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
-import { formatCurrency, formatTimerString, getSessionDate } from '../../utils/formatters';
+import { formatCurrency, formatTimerString, getBusinessDateKey, getBusinessHour, shiftBusinessDateKey } from '../../utils/formatters';
+import { getCustomerNumber } from '../../utils/customerIdentity';
 
 interface ReportsViewProps {
   history: SessionHistoryItem[];
   topCustomers: TopCustomer[];
   tables: TableItem[];
   currencySymbol: string;
+  timeZone?: string;
 }
 
 export const ReportsView: React.FC<ReportsViewProps> = ({
@@ -48,33 +50,44 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   topCustomers,
   tables,
   currencySymbol,
+  timeZone = 'Asia/Kolkata',
 }) => {
   const [searchHistory, setSearchHistory] = useState('');
   const [revenueTimeframe, setRevenueTimeframe] = useState<'daily' | 'weekly'>('weekly');
 
-  const totalRevenue = history.reduce((sum, item) => sum + (Number(item.grandTotal) || 0), 0);
-  const totalSessionsCount = history.length;
-  const avgSessionVal = history.length > 0 ? totalRevenue / history.length : 0;
+  const recognizedHistory = history.filter((item) => item.paymentStatus !== 'refunded');
+  const totalRevenue = recognizedHistory.reduce((sum, item) => sum + (Number(item.grandTotal) || 0), 0);
+  const totalSessionsCount = recognizedHistory.length;
+  const avgSessionVal = recognizedHistory.length > 0 ? totalRevenue / recognizedHistory.length : 0;
 
-  // Dynamic today's revenue using bulletproof date comparison
-  const today = new Date();
-  const isSameDate = (d1: Date, d2: Date) =>
-    d1.getFullYear() === d2.getFullYear() &&
-    d1.getMonth() === d2.getMonth() &&
-    d1.getDate() === d2.getDate();
+  // The business day follows the configured club time zone. Records stay in history; only the report window changes.
+  const todayKey = getBusinessDateKey(Date.now(), timeZone);
+  const weekKeys = new Set(Array.from({ length: 7 }, (_, index) => shiftBusinessDateKey(todayKey, index - 6)));
+  const historyToday = recognizedHistory.filter((item) =>
+    getBusinessDateKey(item.endTime || item.startTime, timeZone) === todayKey
+  );
+  const todayBilled = historyToday.reduce((sum, item) => sum + (Number(item.grandTotal) || 0), 0);
+  const todayDue = historyToday.reduce((sum, item) => sum + (Number(item.balanceDue) || 0), 0);
+  const customerCollectionsToday = topCustomers.reduce((sum, customer) =>
+    sum + (customer.udhaarLedger || []).reduce((ledgerSum, transaction) => {
+      const postedToday = getBusinessDateKey(transaction.timestamp, timeZone) === todayKey;
+      const dueSettlement = transaction.type === 'payment_received' && transaction.source === 'balance_settlement';
+      const deposit = transaction.type === 'deposit_added' && transaction.source === 'deposit';
+      return ledgerSum + (postedToday && (dueSettlement || deposit) ? Number(transaction.amount) || 0 : 0);
+    }, 0), 0
+  );
+  const refundedToday = history.reduce((sum, item) =>
+    sum + (item.paymentStatus === 'refunded' && getBusinessDateKey(item.refundedAt, timeZone) === todayKey
+      ? Number(item.refundedAmount ?? item.amountPaid) || 0
+      : 0), 0
+  );
+  const todayCollected = historyToday.reduce((sum, item) => sum + (Number(item.amountPaid) || 0), 0)
+    + customerCollectionsToday - refundedToday;
 
-  const historyToday = history.filter((item) => {
-    const d = getSessionDate(item);
-    return isSameDate(d, today);
-  });
-  const todayRevenue = historyToday.reduce((sum, item) => sum + (Number(item.grandTotal) || 0), 0);
-
-  // Dynamic weekly revenue (past 7 days including today)
-  const sevenDaysAgoStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6, 0, 0, 0, 0).getTime();
-  const historyWeek = history.filter((item) => {
-    const t = getSessionDate(item).getTime();
-    return t >= sevenDaysAgoStart;
-  });
+  // Seven complete business dates, including today.
+  const historyWeek = recognizedHistory.filter((item) =>
+    weekKeys.has(getBusinessDateKey(item.endTime || item.startTime, timeZone))
+  );
   const weeklyRevenue = historyWeek.reduce((sum, item) => sum + (Number(item.grandTotal) || 0), 0);
 
   // Table utilization
@@ -86,7 +99,10 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   const dynamicWeeklyData = dayNames.map((dayName, idx) => {
     const jsDay = (idx + 1) % 7; // 1=Mon ... 0=Sun
     const rev = historyWeek
-      .filter((h) => getSessionDate(h).getDay() === jsDay)
+      .filter((h) => {
+        const key = getBusinessDateKey(h.endTime || h.startTime, timeZone);
+        return new Date(`${key}T00:00:00.000Z`).getUTCDay() === jsDay;
+      })
       .reduce((sum, h) => sum + (Number(h.grandTotal) || 0), 0);
     return { day: dayName, revenue: Math.round(rev) };
   });
@@ -102,7 +118,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     { time: '10 PM', revenue: 0 },
   ];
   historyToday.forEach((item) => {
-    const h = getSessionDate(item).getHours();
+    const h = getBusinessHour(item.endTime || item.startTime, timeZone);
     const val = Number(item.grandTotal) || 0;
     if (h < 11) dynamicHourlyData[0].revenue += val;
     else if (h < 13) dynamicHourlyData[1].revenue += val;
@@ -114,10 +130,10 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   });
 
   // Dynamic payment methods breakdown
-  const upiCount = history.filter((h) => h.paymentMethod === 'upi' || (h.paymentMethod === 'split' && (h.splitBreakdown?.upi || 0) > 0)).length;
-  const cashCount = history.filter((h) => h.paymentMethod === 'cash' || (h.paymentMethod === 'split' && (h.splitBreakdown?.cash || 0) > 0)).length;
-  const cardCount = history.filter((h) => h.paymentMethod === 'card' || (h.paymentMethod === 'split' && (h.splitBreakdown?.card || 0) > 0)).length;
-  const dueCount = history.filter((h) => h.paymentMethod === 'due_ledger' || h.paymentStatus === 'due_ledger').length;
+  const upiCount = recognizedHistory.filter((h) => h.paymentMethod === 'upi' || (h.paymentMethod === 'split' && (h.splitBreakdown?.upi || 0) > 0)).length;
+  const cashCount = recognizedHistory.filter((h) => h.paymentMethod === 'cash' || (h.paymentMethod === 'split' && (h.splitBreakdown?.cash || 0) > 0)).length;
+  const cardCount = recognizedHistory.filter((h) => h.paymentMethod === 'card' || (h.paymentMethod === 'split' && (h.splitBreakdown?.card || 0) > 0)).length;
+  const dueCount = recognizedHistory.filter((h) => h.paymentMethod === 'due_ledger' || h.paymentStatus === 'due_ledger').length;
   const totalPayCount = upiCount + cashCount + cardCount + dueCount;
 
   const dynamicPaymentMethods = totalPayCount > 0 ? [
@@ -133,7 +149,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   const digitalPercent = totalPayCount > 0 ? Math.round(((upiCount + cardCount) / totalPayCount) * 100) : 0;
 
   // Category split (Table Fee vs Food)
-  const foodRev = history.reduce((sum, h) => {
+  const foodRev = recognizedHistory.reduce((sum, h) => {
     if (typeof h.foodFee === 'number' && !isNaN(h.foodFee) && h.foodFee > 0) {
       return sum + h.foodFee;
     }
@@ -142,11 +158,12 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     }
     return sum;
   }, 0);
-  const tableRev = history.reduce((sum, h) => {
+  const tableRev = recognizedHistory.reduce((sum, h) => {
     if (typeof h.tableFee === 'number' && !isNaN(h.tableFee) && h.tableFee > 0) {
       return sum + h.tableFee;
     }
-    return sum + Math.max(0, (Number(h.grandTotal) || 0) - foodRev);
+    const sessionFood = Number(h.foodFee) || (h.foodOrders || []).reduce((foodSum, item) => foodSum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
+    return sum + Math.max(0, (Number(h.grandTotal) || 0) - sessionFood);
   }, 0);
   const dynamicCategorySales = [
     { name: 'Table Playtime', value: Math.round(tableRev), color: '#171717' },
@@ -160,16 +177,17 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     }
 
     const customerMap = new Map<string, TopCustomer>();
-    history.forEach((h) => {
-      const rawName = (h.customerName || '').trim();
-      if (!rawName || rawName.toLowerCase() === 'walk-in guest' || rawName.toLowerCase() === 'guest') {
+    recognizedHistory.forEach((h) => {
+      if (!h.customerId) {
         return;
       }
-      const key = (h.customerPhone && h.customerPhone !== 'N/A') ? h.customerPhone : rawName.toLowerCase();
+      const key = h.customerId;
+      const rawName = (h.customerName || '').trim();
       const existing = customerMap.get(key);
-      const spent = Number(h.grandTotal) || 0;
+      const spent = Number(h.amountPaid) || 0;
       const hours = Math.round(((Number(h.durationSeconds) || 0) / 3600) * 10) / 10;
-      const dateStr = getSessionDate(h).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      const dateStr = new Intl.DateTimeFormat('en-IN', { timeZone, day: 'numeric', month: 'short' })
+        .format(new Date(h.endTime || h.startTime));
 
       if (existing) {
         existing.sessionsCount += 1;
@@ -178,28 +196,21 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         existing.lastVisit = dateStr;
       } else {
         customerMap.set(key, {
-          id: `cust-dyn-${key}`,
-          name: rawName,
+          id: key,
+          name: rawName || 'Customer',
           phone: h.customerPhone || 'N/A',
           sessionsCount: 1,
           totalSpent: spent,
           totalHoursPlayed: hours,
           lastVisit: dateStr,
-          membershipStatus: 'Regular',
-          tier: 'silver',
         });
       }
     });
 
-    const list = Array.from(customerMap.values()).map((c) => {
-      let tier: 'silver' | 'gold' | 'platinum' = 'silver';
-      if (c.totalSpent >= 5000 || c.sessionsCount >= 10) tier = 'platinum';
-      else if (c.totalSpent >= 2000 || c.sessionsCount >= 5) tier = 'gold';
-      return { ...c, tier };
-    });
+    const list = Array.from(customerMap.values());
 
     return list.sort((a, b) => b.totalSpent - a.totalSpent).slice(0, 10);
-  }, [topCustomers, history]);
+  }, [topCustomers, recognizedHistory]);
 
   const filteredHistory = history.filter((item) => {
     const q = searchHistory.toLowerCase().trim();
@@ -241,19 +252,31 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       </div>
 
       {/* Metrics Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-4">
         <StatCard
-          title="Daily Revenue Today"
-          value={formatCurrency(todayRevenue, currencySymbol)}
-          subtitle="All payments settled today"
+          title="Billed Today"
+          value={formatCurrency(todayBilled, currencySymbol)}
+          subtitle="Completed bills, including credit"
           icon={TrendingUp}
           trend={{ value: historyToday.length > 0 ? `${historyToday.length} sessions today` : '0 sessions', positive: historyToday.length > 0 }}
           variant="dark"
         />
         <StatCard
-          title="Weekly Revenue"
+          title="Collected Today"
+          value={formatCurrency(todayCollected, currencySymbol)}
+          subtitle="Payments in, less refunds"
+          icon={CreditCard}
+        />
+        <StatCard
+          title="Credit Added Today"
+          value={formatCurrency(todayDue, currencySymbol)}
+          subtitle="Unpaid balance on today's bills"
+          icon={Receipt}
+        />
+        <StatCard
+          title="Weekly Billed Sales"
           value={formatCurrency(weeklyRevenue, currencySymbol)}
-          subtitle="Past 7 days earnings"
+          subtitle="Completed bills over 7 club days"
           icon={Calendar}
           trend={{ value: `${historyWeek.length} sessions past 7d`, positive: historyWeek.length > 0 }}
         />
@@ -277,7 +300,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-neutral-100 gap-3">
           <div>
             <h3 className="text-base font-bold text-neutral-900">
-              {revenueTimeframe === 'weekly' ? 'Weekly Revenue Breakdown (Mon - Sun)' : 'Daily Revenue Flow (Hourly)'}
+              {revenueTimeframe === 'weekly' ? 'Weekly Billed Sales (Mon - Sun)' : 'Daily Billed Sales (Hourly)'}
             </h3>
             <p className="text-xs text-neutral-500">Comparative financial growth and peak earnings</p>
           </div>
@@ -313,7 +336,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               <p className="text-xs font-bold text-neutral-600">No session revenue recorded yet this week</p>
               <p className="text-[11px] text-neutral-400">Fresh slate — weekly bars will generate automatically as sessions are completed</p>
             </div>
-          ) : revenueTimeframe === 'daily' && todayRevenue === 0 ? (
+          ) : revenueTimeframe === 'daily' && todayBilled === 0 ? (
             <div className="h-full w-full flex flex-col items-center justify-center text-center p-6 bg-neutral-50/50 rounded-2xl border border-dashed border-neutral-200">
               <TrendingUp className="w-8 h-8 text-neutral-300 mb-2" />
               <p className="text-xs font-bold text-neutral-600">No session revenue recorded today</p>
@@ -483,7 +506,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               <div className="p-6 text-center text-xs text-neutral-400">No tables configured</div>
             ) : (
               tables.slice(0, 8).map((t) => {
-                const tableSessions = history.filter((h) => h.tableId === t.id || h.tableName === t.name);
+                const tableSessions = recognizedHistory.filter((h) => h.tableId === t.id || h.tableName === t.name);
                 const tableRev = tableSessions.reduce((sum, h) => sum + (Number(h.grandTotal) || 0), 0);
                 const totalMins = tableSessions.reduce((sum, h) => sum + (Number(h.durationSeconds) || 0), 0) / 60;
                 const totalHours = Math.round((totalMins / 60) * 10) / 10;
@@ -565,14 +588,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                       </span>
                       <span className="text-[10px] text-neutral-400">{cust.sessionsCount} sessions</span>
                     </div>
-                    <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${
-                      cust.tier === 'platinum'
-                        ? 'bg-purple-900 text-purple-100'
-                        : cust.tier === 'gold'
-                        ? 'bg-amber-500 text-white'
-                        : 'bg-neutral-900 text-white'
-                    }`}>
-                      {cust.tier || 'Silver'}
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-neutral-100 text-neutral-700 border border-neutral-200">
+                      {getCustomerNumber(cust)}
                     </span>
                   </div>
                 </div>
@@ -669,7 +686,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             </div>
             <button
               onClick={() => {
-                const headers = ['Name', 'Phone', 'Membership', 'Outstanding Due', 'Credit Limit', 'Risk Status', 'Last Visit'];
+                const headers = ['Customer ID', 'Name', 'Phone', 'Outstanding Due', 'Credit Limit', 'Risk Status', 'Last Visit'];
                 const rows = topCustomers
                   .filter((c) => (c.outstandingDue || 0) > 0)
                   .sort((a, b) => (b.outstandingDue || 0) - (a.outstandingDue || 0))
@@ -678,9 +695,9 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                     const limit = c.creditLimit || 2000;
                     const risk = due >= limit ? 'OVER LIMIT' : due > limit * 0.5 ? 'MODERATE' : 'GOOD';
                     return [
+                      `"${getCustomerNumber(c)}"`,
                       `"${c.name}"`,
                       `"${c.phone}"`,
-                      c.membershipStatus || 'Regular',
                       due.toFixed(2),
                       limit.toFixed(2),
                       risk,
@@ -733,7 +750,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                 <tr>
                   <th className="p-3">Customer</th>
                   <th className="p-3">Phone</th>
-                  <th className="p-3">Membership</th>
+                  <th className="p-3">Customer ID</th>
                   <th className="p-3">Outstanding Due</th>
                   <th className="p-3">Credit Limit</th>
                   <th className="p-3">Risk Status</th>
@@ -761,10 +778,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                           </div>
                         </td>
                         <td className="p-3 font-mono text-neutral-600">{cust.phone}</td>
-                        <td className="p-3">
-                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-neutral-100 border border-neutral-200">
-                            {cust.membershipStatus || 'Regular'}
-                          </span>
+                        <td className="p-3 font-mono text-[10px]">
+                          {getCustomerNumber(cust)}
                         </td>
                         <td className="p-3 font-black font-mono text-rose-700 text-sm">
                           {formatCurrency(due, currencySymbol)}

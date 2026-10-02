@@ -7,7 +7,8 @@ import {
   BusinessConfig, 
   PageView, 
   OrderItem,
-  SessionData 
+  SessionData,
+  UserRole
 } from './types';
 import { Sidebar } from './components/navigation/Sidebar';
 import { Navbar } from './components/navigation/Navbar';
@@ -15,20 +16,17 @@ import { MobileBottomNav } from './components/navigation/MobileBottomNav';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { BillingView } from './components/billing/BillingView';
 import { TableDetailsModal } from './components/tables/TableDetailsModal';
-import { StartSessionModal } from './components/tables/StartSessionModal';
 import { TransferTableModal } from './components/tables/TransferTableModal';
 import { AddSnackModal } from './components/tables/AddSnackModal';
 import { ReceiptModal } from './components/billing/ReceiptModal';
-import { TablesManagerView } from './components/tables/TablesManagerView';
 import { FoodInventoryView } from './components/menu/FoodInventoryView';
 import { CustomerCRMView } from './components/crm/CustomerCRMView';
+import { CustomerPortalView } from './components/crm/CustomerPortalView';
 import { EmployeeManagementView } from './components/employees/EmployeeManagementView';
 import { ExpenseProfitView } from './components/expenses/ExpenseProfitView';
 import { TableMaintenanceView } from './components/maintenance/TableMaintenanceView';
 import { ReportsView } from './components/reports/ReportsView';
 import { SettingsView } from './components/settings/SettingsView';
-import { KitchenDisplayView } from './components/kds/KitchenDisplayView';
-import { TournamentView } from './components/tournaments/TournamentView';
 import { LoginView } from './components/auth/LoginView';
 import { ToastContainer, ToastMessage } from './components/ui/Toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -37,12 +35,12 @@ import { performDailyAutoSnapshot } from './utils/autoSnapshot';
 import { OfflineBanner } from './components/common/OfflineBanner';
 import { createNotification } from './services/dbService';
 import { RoleGuard } from './components/common/RoleGuard';
-import { CheckCircle2, Sparkles, CircleDot, ChefHat } from 'lucide-react';
+import { CheckCircle2, Sparkles, CircleDot } from 'lucide-react';
 import { soundEffects } from './utils/soundEffects';
-import { getSessionDate } from './utils/formatters';
+import { getBusinessDateKey } from './utils/formatters';
 
-function CueDeskApp() {
-  const { user, currentClubId, role, signOutUser, switchClub, isLoading: isAuthLoading, hasPermission } = useAuth();
+function StaffClubApp() {
+  const { user, currentClubId, role, signOutUser, hasPermission } = useAuth();
   
   // Realtime Firestore Hook for current Club
   const {
@@ -61,12 +59,12 @@ function CueDeskApp() {
     expenses,
     maintenanceRecords,
     notifications,
-    saasClubs,
     isLoading: isDataLoading,
     updateConfig,
     saveTable,
     deleteTable,
     startSession,
+    transferSession,
     togglePause,
     addOrders,
     requestCheckout,
@@ -82,8 +80,8 @@ function CueDeskApp() {
     updateOrderStatus,
     recordStockAdjustment,
     recordPurchase,
-    resetClubData,
     saveCustomer,
+    recordCustomerAccountTransaction,
     deleteCustomer,
     saveEmployee,
     deleteEmployee,
@@ -94,18 +92,13 @@ function CueDeskApp() {
     recordMaintenance,
     resolveMaintenance,
     markNotificationRead,
+    resolveNotification,
+    deleteNotification,
     clearAllNotifications,
-    createSaaSClubWorkspace,
-    updateSaaSClubPlan,
-    extendSaaSClubTrial,
-    updateSaaSClubFeatureFlags,
-    suspendSaaSClubWorkspace,
-    deleteSaaSClubWorkspace,
   } = useRealtimeClubData(currentClubId);
 
   // View state
   const [activePage, setActivePage] = useState<PageView>('dashboard');
-  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
 
   // Daily Background Auto-Snapshot Trigger
   React.useEffect(() => {
@@ -137,7 +130,6 @@ function CueDeskApp() {
     
     // Page Permission map
     const pagePermissions: Record<string, UserRole> = {
-      'super-admin': 'owner',
       'settings': 'owner',
       'employees': 'owner',
       'reports': 'manager',
@@ -168,9 +160,6 @@ function CueDeskApp() {
   }, [notifications]);
 
   const [selectedTableDetails, setSelectedTableDetails] = useState<TableItem | null>(null);
-  const [startSessionTable, setStartSessionTable] = useState<TableItem | null>(null);
-  const [isStartSessionOpen, setIsStartSessionOpen] = useState(false);
-
   const [transferSourceTable, setTransferSourceTable] = useState<TableItem | null>(null);
   const [isTransferOpen, setIsTransferOpen] = useState(false);
 
@@ -184,17 +173,30 @@ function CueDeskApp() {
   const occupiedCount = tables.filter((t) => t.status === 'occupied' || t.status === 'payment_pending').length;
   const availableTables = tables.filter((t) => t.status === 'available');
 
-  const todayDate = new Date();
-  const isSameCalendarDay = (d1: Date, d2: Date) =>
-    d1.getFullYear() === d2.getFullYear() &&
-    d1.getMonth() === d2.getMonth() &&
-    d1.getDate() === d2.getDate();
-
-  const revenueToday = history
-    .filter((h) => isSameCalendarDay(getSessionDate(h), todayDate))
-    .reduce((sum, h) => sum + (Number(h.grandTotal) || 0), 0);
+  const businessTimeZone = config.timeZone || 'Asia/Kolkata';
+  const todayKey = getBusinessDateKey(Date.now(), businessTimeZone);
+  const historyToday = history.filter((h) =>
+    getBusinessDateKey(h.endTime || h.startTime, businessTimeZone) === todayKey
+  );
+  const sessionCollectionsToday = historyToday.reduce((sum, h) =>
+    sum + (Number(h.amountPaid) || 0), 0
+  );
+  const accountCollectionsToday = topCustomers.reduce((sum, customer) =>
+    sum + (customer.udhaarLedger || []).reduce((customerSum, transaction) => {
+      const postedToday = getBusinessDateKey(transaction.timestamp, businessTimeZone) === todayKey;
+      const isSeparateCollection = transaction.type === 'payment_received' && transaction.source === 'balance_settlement';
+      const isDeposit = transaction.type === 'deposit_added' && transaction.source === 'deposit';
+      return customerSum + (postedToday && (isSeparateCollection || isDeposit) ? Number(transaction.amount) || 0 : 0);
+    }, 0), 0
+  );
+  const refundsToday = history.reduce((sum, h) =>
+    sum + (h.paymentStatus === 'refunded' && getBusinessDateKey(h.refundedAt, businessTimeZone) === todayKey
+      ? Number(h.refundedAmount ?? h.amountPaid) || 0
+      : 0), 0
+  );
+  const revenueToday = sessionCollectionsToday + accountCollectionsToday - refundsToday;
   const expensesToday = expenses
-    .filter((e) => isSameCalendarDay(new Date(e.date || e.timestamp), todayDate))
+    .filter((e) => getBusinessDateKey(e.date || e.timestamp, businessTimeZone) === todayKey)
     .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
   const netProfitToday = revenueToday - expensesToday;
   const pendingPaymentsTotal = tables
@@ -212,35 +214,27 @@ function CueDeskApp() {
   // HANDLERS
   // -------------------------------------------------------------
 
-  // 1. Start Session
-  const handleConfirmStartSession = async (
-    tableId: string,
-    customerName: string,
-    customerPhone: string,
-    isMember: boolean,
-    hourlyRate: number
-  ) => {
-    const targetTable = tables.find((t) => t.id === tableId);
-    if (!targetTable) return;
-
+  // 1. Instant Start Table (No upfront prompt - customer details recorded on checkout)
+  const handleInstantStartTable = async (table: TableItem) => {
+    if (!table || table.status === 'occupied') return;
+    const hourlyRate = table.hourlyRate || config.pricingPlans?.[0]?.hourlyRate || 300;
     const newSession: SessionData = {
       id: `sess-${Date.now()}`,
-      tableId,
-      customerName,
-      customerPhone,
-      isMember,
-      memberDiscountPercent: isMember ? 10 : 0,
+      tableId: table.id,
+      customerName: `Table #${table.number}`,
+      customerPhone: '',
       startTime: Date.now(),
       hourlyRate,
       isPaused: false,
       totalPausedSeconds: 0,
       foodOrders: [],
-      rateType: isMember ? 'discounted' : 'standard',
+      foodTotal: 0,
+      rateType: 'standard',
     };
 
-    await startSession(tableId, newSession, user?.email);
+    await startSession(table.id, newSession, user?.email);
     soundEffects.playStartChime();
-    addToast('success', `Session Started`, `Table #${targetTable.number} registered for ${customerName}`);
+    addToast('success', `Table #${table.number} Started!`, `Session is running. Name & payment will be recorded when closing.`);
   };
 
   // 2. Pause / Resume Session
@@ -271,19 +265,15 @@ function CueDeskApp() {
 
   // 4. Transfer Table
   const handleConfirmTransfer = async (sourceTableId: string, targetTableId: string) => {
+    if (role === 'worker') {
+      addToast('warning', 'Manager approval required', 'Ask the club owner or manager to transfer this active session.');
+      return;
+    }
     const source = tables.find((t) => t.id === sourceTableId);
     const target = tables.find((t) => t.id === targetTableId);
 
     if (!source || !target || !source.currentSession) return;
-
-    const transferredSession: SessionData = {
-      ...source.currentSession,
-      tableId: targetTableId,
-    };
-
-    // Save transferred session on target and clear source
-    await startSession(targetTableId, transferredSession, user?.email);
-    await startSession(sourceTableId, null as any, user?.email);
+    await transferSession(sourceTableId, targetTableId, user?.email);
 
     addToast(
       'success',
@@ -300,20 +290,7 @@ function CueDeskApp() {
     await addOrders(tableId, targetTable.currentSession, itemsToAdd, user?.email);
     soundEffects.playSnackAddSound();
 
-    // Send ticket to Kitchen Display System (KDS)
-    const orderTotal = itemsToAdd.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    await createFoodOrder({
-      clubId: currentClubId,
-      tableId,
-      tableName: targetTable.name,
-      customerName: targetTable.currentSession.customerName || 'Guest',
-      items: itemsToAdd,
-      status: 'new',
-      totalAmount: orderTotal,
-      orderTime: Date.now(),
-    }).catch(() => {});
-
-    addToast('success', `Items Added & Sent to Kitchen`, `${itemsToAdd.length} item(s) added to Table #${targetTable.number} and sent to KDS.`);
+    addToast('success', `Items Added`, `${itemsToAdd.length} item(s) added to Table #${targetTable.number}.`);
   };
 
   // 6. Remove Order Item
@@ -328,102 +305,20 @@ function CueDeskApp() {
     addToast('info', `Item Removed`, `Order item removed from bill.`);
   };
 
-  // 7. Mark Paid & Clear Table in Firestore
+  // 7. Finalize bill, customer activity, balances and audit record atomically.
   const handleMarkPaid = async (historyItem: SessionHistoryItem) => {
-    await finalizeBill(historyItem, user?.email);
+    const receipt = {
+      ...historyItem,
+      processedBy: user?.email || 'Staff',
+    };
+    await finalizeBill(receipt, user?.email);
     soundEffects.playPaymentSuccessChime();
-
-    // Automated Credit Ledger Sync when payment method is "Pay on Credit / Due Ledger"
-    if (historyItem.paymentMethod === 'due_ledger' || historyItem.paymentStatus === 'due_ledger') {
-      const existingCustomer = topCustomers.find(
-        (c) => c.name.toLowerCase() === historyItem.customerName.toLowerCase() || 
-               (historyItem.customerPhone && c.phone === historyItem.customerPhone)
-      );
-
-      const newTx = {
-        id: `tx_${Date.now()}`,
-        timestamp: Date.now(),
-        type: 'due_added' as const,
-        amount: historyItem.grandTotal,
-        description: `Table Session — Receipt #${historyItem.receiptNo || historyItem.id.slice(-6).toUpperCase()}`,
-        receiptNo: historyItem.receiptNo || historyItem.id.slice(-6).toUpperCase(),
-        recordedBy: user?.displayName || user?.email || 'Staff'
-      };
-
-      if (existingCustomer) {
-        const newDue = (existingCustomer.outstandingDue || 0) + historyItem.grandTotal;
-        const creditLimit = existingCustomer.creditLimit || config.maxCreditLimit || 2000;
-        const isOverLimit = newDue >= creditLimit;
-
-        await saveCustomer({
-          ...existingCustomer,
-          outstandingDue: newDue,
-          sessionsCount: (existingCustomer.sessionsCount || 0) + 1,
-          totalHoursPlayed: (existingCustomer.totalHoursPlayed || 0) + Math.round((historyItem.durationSeconds / 3600) * 10) / 10,
-          lastVisit: 'Today',
-          udhaarLedger: [newTx, ...(existingCustomer.udhaarLedger || [])]
-        });
-
-        if (isOverLimit) {
-          addToast('error', `⚠️ CREDIT LIMIT EXCEEDED`, `${historyItem.customerName} now owes ₹${newDue.toFixed(0)} — over their ₹${creditLimit} limit!`);
-        } else {
-          addToast('warning', 'Credit Due Invoiced', `₹${historyItem.grandTotal.toFixed(0)} added to ${historyItem.customerName}'s Credit Ledger. Total dues: ₹${newDue.toFixed(0)}`);
-        }
-      } else {
-        // Auto-create new customer CRM record for first-time credit user
-        await saveCustomer({
-          id: `cust-${Date.now()}`,
-          name: historyItem.customerName,
-          phone: historyItem.customerPhone || 'N/A',
-          sessionsCount: 1,
-          totalSpent: 0,
-          totalHoursPlayed: Math.round((historyItem.durationSeconds / 3600) * 10) / 10,
-          dateJoined: new Date().toISOString().split('T')[0],
-          membershipStatus: 'Regular',
-          creditLimit: config.maxCreditLimit || 2000,
-          lastVisit: 'Today',
-          outstandingDue: historyItem.grandTotal,
-          udhaarLedger: [newTx]
-        });
-        addToast('warning', 'New Credit Customer Created', `${historyItem.customerName} added to CRM. Dues: ₹${historyItem.grandTotal.toFixed(0)}`);
-      }
-    } else {
-      // Standard paid — update customer's totalSpent in CRM if record exists, or auto-enroll into CRM
-      const matchedCustomer = topCustomers.find(
-        (c) => c.name.toLowerCase() === historyItem.customerName.toLowerCase() || 
-               (historyItem.customerPhone && c.phone === historyItem.customerPhone)
-      );
-      if (matchedCustomer) {
-        await saveCustomer({
-          ...matchedCustomer,
-          totalSpent: (Number(matchedCustomer.totalSpent) || 0) + (Number(historyItem.grandTotal) || 0),
-          sessionsCount: (matchedCustomer.sessionsCount || 0) + 1,
-          totalHoursPlayed: (matchedCustomer.totalHoursPlayed || 0) + Math.round(((historyItem.durationSeconds || 0) / 3600) * 10) / 10,
-          lastVisit: 'Today',
-        }).catch(() => {}); // non-blocking
-      } else if (historyItem.customerName && historyItem.customerName.trim().toLowerCase() !== 'walk-in guest') {
-        // Auto-create customer profile in CRM for paying customer
-        await saveCustomer({
-          id: `cust-${Date.now()}`,
-          name: historyItem.customerName.trim(),
-          phone: historyItem.customerPhone?.trim() || 'N/A',
-          sessionsCount: 1,
-          totalSpent: Number(historyItem.grandTotal) || 0,
-          totalHoursPlayed: Math.round(((historyItem.durationSeconds || 0) / 3600) * 10) / 10,
-          dateJoined: new Date().toISOString().split('T')[0],
-          membershipStatus: 'Regular',
-          tier: 'silver',
-          creditLimit: config.maxCreditLimit || 2000,
-          lastVisit: 'Today',
-          outstandingDue: 0,
-          udhaarLedger: []
-        }).catch(() => {});
-      }
-      addToast('success', `Payment Settled!`, `Receipt #${historyItem.receiptNo} • ${config.currencySymbol}${(historyItem.grandTotal || 0).toFixed(2)}`);
-    }
+    addToast(
+      'success',
+      'Payment Recorded',
+      `Receipt #${receipt.receiptNo} • ${config.currencySymbol}${(receipt.grandTotal || 0).toFixed(2)}`
+    );
   };
-
-
 
   // 8. Settings Handlers
   const handleAddTable = async (newTableData: Omit<TableItem, 'id' | 'status'>) => {
@@ -465,12 +360,12 @@ function CueDeskApp() {
       tableId,
       customerName: custName,
       customerPhone: custPhone || '',
-      isMember: false,
       startTime: Date.now(),
       hourlyRate: rate,
       isPaused: false,
       totalPausedSeconds: 0,
       foodOrders: [],
+      foodTotal: 0,
       rateType: 'standard',
     };
 
@@ -482,16 +377,6 @@ function CueDeskApp() {
     await rejectSessionRequest(reqId);
     addToast('warning', 'Session Request Rejected', 'Customer request was declined.');
   };
-
-  // Auth Protection: If user is not signed in, show professional LoginView
-  if (!user && !isAuthLoading) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0c] selection:bg-amber-500 selection:text-black">
-        <ToastContainer toasts={toasts} onDismiss={removeToast} />
-        <LoginView onLoginSuccess={() => addToast('success', 'Welcome Back', 'Signed in to One Shot Snooker Club.')} />
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-neutral-900 flex flex-col lg:flex-row antialiased font-sans">
@@ -507,10 +392,7 @@ function CueDeskApp() {
         setActivePage={setActivePage}
         occupiedCount={occupiedCount}
         totalTables={tables.length}
-        clubs={saasClubs}
         clubName={config.clubName}
-        onOpenOnboarding={() => setIsOnboardingOpen(true)}
-        onOpenSuperAdmin={() => setActivePage('super-admin')}
         onLogout={() => {
           signOutUser();
           addToast('info', 'Signed Out', 'You have been signed out to the login screen.');
@@ -525,61 +407,42 @@ function CueDeskApp() {
           setActivePage={setActivePage}
           notifications={notifications}
           onMarkNotificationRead={async (id) => markNotificationRead(id)}
+          onResolveNotification={async (id) => resolveNotification(id)}
+          onDeleteNotification={async (id) => deleteNotification(id)}
           onClearAllNotifications={async () => clearAllNotifications()}
           onQuickStartSession={() => {
-            setStartSessionTable(availableTables[0] || null);
-            setIsStartSessionOpen(true);
+            const avail = availableTables[0];
+            if (avail) {
+              handleInstantStartTable(avail);
+            } else {
+              addToast('warning', 'No Tables Available', 'All tables are currently occupied.');
+            }
           }}
         />
 
-        {/* Pending Kitchen Food Orders Notification Banner */}
-        {foodOrders.filter(o => o.status === 'new').length > 0 && (
-          <div className="mx-4 sm:mx-6 mt-3 p-3.5 bg-emerald-50 border border-emerald-200/90 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                <ChefHat className="w-4 h-4" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-emerald-950 flex items-center gap-2">
-                  <span>{foodOrders.filter(o => o.status === 'new').length} New Kitchen Order(s) Received</span>
-                  <span className="animate-pulse w-2 h-2 rounded-full bg-emerald-500" />
-                </h4>
-                <p className="text-[11px] text-emerald-800">
-                  New food or beverage orders queued for kitchen preparation.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setActivePage('kds')}
-                className="px-3 py-1.5 bg-emerald-900 hover:bg-black text-white text-xs font-bold rounded-xl transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
-              >
-                <ChefHat className="w-3.5 h-3.5" />
-                Open Kitchen Display (KDS)
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Dynamic Page Views */}
         <main className="flex-1">
-          {activePage === 'dashboard' ? (
-          <DashboardView
+          {activePage === 'dashboard' || activePage === 'tables' ? (
+            <DashboardView
               tables={tables}
               revenueToday={revenueToday}
               netProfitToday={netProfitToday}
               pendingPaymentsTotal={pendingPaymentsTotal}
               currencySymbol={config.currencySymbol}
+              taxRatePercent={config.taxRatePercent}
+              enableTax={config.enableTax}
+              minimumChargeMinutes={config.minimumChargeMinutes || 0}
+              roundingRule={config.roundingRule || 'nearest_1'}
+              lowStockCount={menuItems.filter(m => (m.stock ?? 0) <= 5).length}
               sessionRequests={sessionRequests}
               notifications={notifications}
               onMarkNotificationRead={markNotificationRead}
+              onResolveNotification={resolveNotification}
               onApproveRequest={(req) => handleApproveRequest(req.id, req.tableId, req.customerName, req.customerPhone)}
               onRejectRequest={(reqId) => handleRejectRequest(reqId)}
               onSelectTable={(table) => setSelectedTableDetails(table)}
               onStartSession={(table) => {
-                setStartSessionTable(table);
-                setIsStartSessionOpen(true);
+                handleInstantStartTable(table);
               }}
               onEndSession={handleEndSession}
               onPauseResumeSession={handlePauseResumeSession}
@@ -588,28 +451,12 @@ function CueDeskApp() {
                 setIsAddSnackOpen(true);
               }}
               onQuickStartAnySession={() => {
-                setStartSessionTable(availableTables[0] || null);
-                setIsStartSessionOpen(true);
-              }}
-            />
-          ) : activePage === 'tables' ? (
-            <TablesManagerView
-              tables={tables}
-              currencySymbol={config.currencySymbol}
-              onSelectTable={(table) => setSelectedTableDetails(table)}
-              onStartSession={(table) => {
-                setStartSessionTable(table);
-                setIsStartSessionOpen(true);
-              }}
-              onEndSession={handleEndSession}
-              onPauseResumeSession={handlePauseResumeSession}
-              onAddSnack={(table) => {
-                setAddSnackTargetTable(table);
-                setIsAddSnackOpen(true);
-              }}
-              onQuickStartAnySession={() => {
-                setStartSessionTable(availableTables[0] || null);
-                setIsStartSessionOpen(true);
+                const avail = availableTables[0];
+                if (avail) {
+                  handleInstantStartTable(avail);
+                } else {
+                  addToast('warning', 'No Tables Available', 'All tables are currently occupied.');
+                }
               }}
             />
           ) : activePage === 'billing' ? (
@@ -624,6 +471,7 @@ function CueDeskApp() {
               history={history}
               userRole={role || 'owner'}
               auditLogs={auditLogs}
+              topCustomers={topCustomers}
               onMarkPaid={handleMarkPaid}
               onShowReceipt={(hist) => {
                 setActiveReceiptItem(hist);
@@ -676,28 +524,16 @@ function CueDeskApp() {
                 addToast('success', 'Purchase Recorded', `Added ${purchase.quantity}x ${purchase.menuName} to stock.`);
               }}
             />
-          ) : activePage === 'kds' ? (
-            <KitchenDisplayView
-              foodOrders={foodOrders}
-              onUpdateOrderStatus={async (orderId, status) => {
-                await updateOrderStatus(orderId, status, user?.email || 'staff');
-                addToast('success', 'Order Updated', `Order status changed to ${status.toUpperCase()}`);
-              }}
-            />
-          ) : activePage === 'tournaments' ? (
-            <RoleGuard requiredPage="tournaments" onNavigateHome={() => setActivePage('dashboard')}>
-              <TournamentView
-                currencySymbol={config.currencySymbol}
-              />
-            </RoleGuard>
           ) : activePage === 'customers' ? (
             <CustomerCRMView
               customers={topCustomers}
+              history={history}
               config={config}
               onSaveCustomer={async (cust) => {
                 await saveCustomer(cust);
                 addToast('success', 'Customer Profile Saved', `${cust.name} updated in CRM.`);
               }}
+              onRecordAccountTransaction={recordCustomerAccountTransaction}
               onDeleteCustomer={async (id) => {
                 await deleteCustomer(id);
                 addToast('info', 'Customer Deleted', 'Record removed from CRM.');
@@ -767,6 +603,7 @@ function CueDeskApp() {
                 topCustomers={topCustomers}
                 tables={tables}
                 currencySymbol={config.currencySymbol}
+                timeZone={businessTimeZone}
               />
             </RoleGuard>
           ) : activePage === 'settings' ? (
@@ -778,8 +615,8 @@ function CueDeskApp() {
                 employees={employees}
                 history={history}
                 customers={topCustomers}
-                onUpdateConfig={(newConf) => {
-                  updateConfig(newConf, user?.email);
+                onUpdateConfig={async (newConf) => {
+                  await updateConfig(newConf, user?.email);
                   addToast('success', 'Settings Saved', 'Business configuration updated in Firestore.');
                 }}
                 onAddTable={handleAddTable}
@@ -790,32 +627,6 @@ function CueDeskApp() {
                 onDeleteMenuItem={handleDeleteMenuItem}
                 onSaveEmployee={saveEmployee}
                 onDeleteEmployee={deleteEmployee}
-                onResetClub={async (type) => {
-                  await resetClubData(type);
-                  addToast(
-                    'success',
-                    'Club Reset Completed',
-                    type === 'history'
-                      ? 'Sales and revenue history wiped clean.'
-                      : type === 'crm'
-                      ? 'CRM customer database wiped clean.'
-                      : 'Full club data reset completed.'
-                  );
-                }}
-              />
-            </RoleGuard>
-          ) : activePage === 'super-admin' ? (
-            <RoleGuard requiredPage="super-admin" onNavigateHome={() => setActivePage('dashboard')}>
-              <SuperAdminView
-                clubs={saasClubs}
-                currentClubId={currentClubId || ''}
-                onSwitchWorkspace={(clubId) => switchClub(clubId)}
-                onOpenOnboarding={() => setIsOnboardingOpen(true)}
-                onUpdateClubPlan={updateSaaSClubPlan}
-                onExtendTrial={extendSaaSClubTrial}
-                onUpdateFeatureFlags={updateSaaSClubFeatureFlags}
-                onSuspendClub={suspendSaaSClubWorkspace}
-                onDeleteClub={deleteSaaSClubWorkspace}
               />
             </RoleGuard>
           ) : (
@@ -825,13 +636,20 @@ function CueDeskApp() {
               netProfitToday={netProfitToday}
               pendingPaymentsTotal={pendingPaymentsTotal}
               currencySymbol={config.currencySymbol}
+              taxRatePercent={config.taxRatePercent}
+              enableTax={config.enableTax}
+              minimumChargeMinutes={config.minimumChargeMinutes || 0}
+              roundingRule={config.roundingRule || 'nearest_1'}
+              lowStockCount={menuItems.filter(m => (m.stock ?? 0) <= 5).length}
               sessionRequests={sessionRequests}
+              notifications={notifications}
+              onMarkNotificationRead={markNotificationRead}
+              onResolveNotification={resolveNotification}
               onApproveRequest={(req) => handleApproveRequest(req.id, req.tableId, req.customerName, req.customerPhone)}
               onRejectRequest={(reqId) => handleRejectRequest(reqId)}
               onSelectTable={(table) => setSelectedTableDetails(table)}
               onStartSession={(table) => {
-                setStartSessionTable(table);
-                setIsStartSessionOpen(true);
+                handleInstantStartTable(table);
               }}
               onEndSession={handleEndSession}
               onPauseResumeSession={handlePauseResumeSession}
@@ -840,8 +658,12 @@ function CueDeskApp() {
                 setIsAddSnackOpen(true);
               }}
               onQuickStartAnySession={() => {
-                setStartSessionTable(availableTables[0] || null);
-                setIsStartSessionOpen(true);
+                const avail = availableTables[0];
+                if (avail) {
+                  handleInstantStartTable(avail);
+                } else {
+                  addToast('warning', 'No Tables Available', 'All tables are currently occupied.');
+                }
               }}
             />
           )}
@@ -852,6 +674,7 @@ function CueDeskApp() {
           activePage={activePage}
           setActivePage={setActivePage}
           occupiedCount={occupiedCount}
+          role={role}
         />
       </div>
 
@@ -867,10 +690,12 @@ function CueDeskApp() {
         currencySymbol={config.currencySymbol}
         taxRatePercent={config.taxRatePercent}
         enableTax={config.enableTax}
+        minimumChargeMinutes={config.minimumChargeMinutes || 0}
+        roundingRule={config.roundingRule || 'nearest_1'}
+        canTransfer={role === 'owner' || role === 'manager'}
         onStartSession={(t) => {
           setSelectedTableDetails(null);
-          setStartSessionTable(t);
-          setIsStartSessionOpen(true);
+          handleInstantStartTable(t);
         }}
         onPauseResumeSession={handlePauseResumeSession}
         onEndSession={handleEndSession}
@@ -884,17 +709,7 @@ function CueDeskApp() {
           setTransferSourceTable(t);
           setIsTransferOpen(true);
         }}
-        onRemoveOrderItem={handleRemoveOrderItem}
-      />
-
-      {/* Start Session Modal */}
-      <StartSessionModal
-        isOpen={isStartSessionOpen}
-        onClose={() => setIsStartSessionOpen(false)}
-        table={startSessionTable}
-        availableTables={availableTables}
-        currencySymbol={config.currencySymbol}
-        onConfirmStart={handleConfirmStartSession}
+        onRemoveOrderItem={role === 'worker' ? undefined : handleRemoveOrderItem}
       />
 
       {/* Transfer Table Modal */}
@@ -928,10 +743,22 @@ function CueDeskApp() {
   );
 }
 
+function AppRouter() {
+  const { user, isLoading } = useAuth();
+  if (isLoading) {
+    return <div className="flex min-h-screen items-center justify-center bg-[#0a0a0c] text-sm font-semibold text-amber-300">Loading One Shot Club…</div>;
+  }
+  if (!user) {
+    return <div className="min-h-screen bg-[#0a0a0c] selection:bg-amber-500 selection:text-black"><LoginView /></div>;
+  }
+  if (user.role === 'customer') return <CustomerPortalView user={user} />;
+  return <StaffClubApp />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
-      <CueDeskApp />
+      <AppRouter />
     </AuthProvider>
   );
 }

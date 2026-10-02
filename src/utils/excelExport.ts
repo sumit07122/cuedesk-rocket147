@@ -40,8 +40,8 @@ export function exportSalesToExcel(history: SessionHistoryItem[], clubName: stri
     'Date & Time',
     'Table Name',
     'Customer Name',
+    'Customer ID',
     'Customer Phone',
-    'Member VIP',
     'Duration (Mins)',
     'Table Fee (INR)',
     'Food Fee (INR)',
@@ -58,8 +58,8 @@ export function exportSalesToExcel(history: SessionHistoryItem[], clubName: stri
     getSessionDate(item).toLocaleString(),
     item.tableName,
     item.customerName || 'Walk-in Guest',
+    item.customerId || '',
     item.customerPhone || 'N/A',
-    (item as any).isMember ? 'Yes' : 'No',
     Math.round(item.durationSeconds / 60),
     item.tableFee.toFixed(2),
     item.foodFee.toFixed(2),
@@ -83,8 +83,8 @@ export function exportSalesToExcel(history: SessionHistoryItem[], clubName: stri
 export function exportCreditLedgerToExcel(customers: TopCustomer[], clubName: string = 'One Shot Snooker Gaming Club'): void {
   const headers = [
     'Customer Name',
+    'Customer ID',
     'Phone Number',
-    'Membership Tier',
     'Outstanding Credit Dues (INR)',
     'Prepaid Deposit Balance (INR)',
     'Total Lifetime Spend (INR)',
@@ -94,8 +94,8 @@ export function exportCreditLedgerToExcel(customers: TopCustomer[], clubName: st
 
   const rows = customers.map(c => [
     c.name,
+    c.customerNumber || c.id,
     c.phone || 'N/A',
-    (c.membershipStatus || c.tier || 'Silver').toUpperCase(),
     (c.outstandingDue || 0).toFixed(2),
     ((c as any).depositBalance || 0).toFixed(2),
     c.totalSpent.toFixed(2),
@@ -260,5 +260,4 @@ export const exportExpensesCSV = exportExpensesToExcel;
 export const exportEmployeesCSV = exportEmployeesToExcel;
 export const exportAttendanceCSV = exportAttendanceToExcel;
 export const exportTournamentsCSV = exportTournamentsToExcel;
-
 

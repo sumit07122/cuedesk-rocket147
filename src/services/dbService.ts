@@ -15,9 +15,11 @@ import {
   limit,
   serverTimestamp,
   writeBatch,
-  runTransaction
+  runTransaction,
+  increment,
+  arrayUnion
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
 import { 
   TableItem, 
   MenuItem, 
@@ -44,7 +46,11 @@ import {
   SubscriptionPlanId,
   FeatureFlags,
   PlatformAnnouncement,
-  SuperAdminAuditLog
+  SuperAdminAuditLog,
+  UdhaarTransaction
+  , CustomerPortalActivity
+  , CustomerPortalProfile
+  , CustomerPortalReceipt
 } from '../types';
 import { 
   initialBusinessConfig, 
@@ -195,6 +201,10 @@ export const subscribeTables = (
 
   return onSnapshot(q, async (snapshot) => {
     if (snapshot.empty) {
+      if (initialTables.length === 0) {
+        callback([]);
+        return;
+      }
       const batch = writeBatch(db);
       initialTables.forEach((tbl) => {
         const tblRef = doc(db, 'clubs', clubId, 'tables', tbl.id);
@@ -282,6 +292,36 @@ export const startTableSession = async (
   }
 };
 
+export const transferTableSession = async (
+  clubId: string,
+  sourceTableId: string,
+  targetTableId: string
+): Promise<void> => {
+  if (sourceTableId === targetTableId) throw new Error('Choose a different destination table.');
+  const sourceRef = doc(db, 'clubs', clubId, 'tables', sourceTableId);
+  const targetRef = doc(db, 'clubs', clubId, 'tables', targetTableId);
+
+  await runTransaction(db, async (transaction) => {
+    const sourceSnap = await transaction.get(sourceRef);
+    const targetSnap = await transaction.get(targetRef);
+    if (!sourceSnap.exists() || !targetSnap.exists()) throw new Error('A table could not be found. Refresh and try again.');
+    const source = sourceSnap.data() as TableItem;
+    const target = targetSnap.data() as TableItem;
+    if (!source.currentSession || !['occupied', 'payment_pending'].includes(source.status)) {
+      throw new Error('The source table no longer has an active session.');
+    }
+    if (target.status !== 'available' || target.currentSession || target.isMaintenance) {
+      throw new Error('The destination table is no longer available. Refresh and choose another table.');
+    }
+
+    transaction.update(targetRef, {
+      status: 'occupied',
+      currentSession: sanitizeDataForFirestore({ ...source.currentSession, tableId: targetTableId }),
+    });
+    transaction.update(sourceRef, { status: 'available', currentSession: null });
+  });
+};
+
 export const togglePauseTableSession = async (
   clubId: string, 
   tableId: string, 
@@ -318,9 +358,29 @@ export const addOrdersToSession = async (
   newOrders: OrderItem[]
 ): Promise<void> => {
   const tableRef = doc(db, 'clubs', clubId, 'tables', tableId);
-  const updatedOrders = [...(currentSession.foodOrders || []), ...newOrders];
-  const updatedSession = { ...currentSession, foodOrders: updatedOrders };
-  await updateDoc(tableRef, { currentSession: sanitizeDataForFirestore(updatedSession) });
+  if (newOrders.length === 0) return;
+
+  for (const order of newOrders) {
+    await runTransaction(db, async (transaction) => {
+      const tableSnap = await transaction.get(tableRef);
+      if (!tableSnap.exists()) throw new Error('The table record no longer exists. Refresh and try again.');
+      const tableData = tableSnap.data() as TableItem;
+      const liveSession = tableData.currentSession;
+      if (tableData.status !== 'occupied' || !liveSession || liveSession.id !== currentSession.id) {
+        throw new Error('This table session changed. Refresh the table before adding more items.');
+      }
+      const orders = liveSession.foodOrders || [];
+      const knownFoodTotal = liveSession.foodTotal ?? (orders.length === 0
+        ? 0
+        : orders.reduce((sum, item) => sum + item.price * item.quantity, 0));
+      const updatedSession: SessionData = {
+        ...liveSession,
+        foodOrders: [...orders, order],
+        foodTotal: knownFoodTotal + order.price * order.quantity,
+      };
+      transaction.update(tableRef, { currentSession: sanitizeDataForFirestore(updatedSession) });
+    });
+  }
 };
 
 export const requestTableCheckout = async (clubId: string, tableId: string): Promise<void> => {
@@ -339,6 +399,41 @@ export const finalizeSessionPayment = async (
 
   const histRef = doc(db, 'clubs', clubId, 'history', historyRecord.id);
   const tableRef = doc(db, 'clubs', clubId, 'tables', historyRecord.tableId);
+  const auditRef = doc(collection(db, 'clubs', clubId, 'auditLogs'));
+
+  const customerChanges = new Map<string, { total: number; paid: number; due: number; isPrimary: boolean; paymentMethod: string }>();
+  const addCustomerChange = (customerId: string | undefined, total: number, paid: number, due: number, isPrimary = false, paymentMethod: string = historyRecord.paymentMethod) => {
+    if (!customerId) return;
+    const current = customerChanges.get(customerId) || { total: 0, paid: 0, due: 0, isPrimary: false, paymentMethod };
+    current.total += Math.max(0, total || 0);
+    current.paid += Math.max(0, paid || 0);
+    current.due += Math.max(0, due || 0);
+    current.isPrimary ||= isPrimary;
+    if (current.paymentMethod !== paymentMethod) current.paymentMethod = 'split';
+    customerChanges.set(customerId, current);
+  };
+
+  const splitPlayers = historyRecord.splitBreakdown?.splitType === 'players'
+    ? historyRecord.splitBreakdown.players || []
+    : [];
+  if (splitPlayers.length > 0) {
+    splitPlayers.forEach((player) => addCustomerChange(
+      player.customerId,
+      player.amount,
+      player.method === 'credit' ? 0 : player.amount,
+      player.method === 'credit' ? player.amount : 0,
+      player.customerId === historyRecord.customerId,
+      player.method
+    ));
+  } else {
+    addCustomerChange(historyRecord.customerId, historyRecord.grandTotal, historyRecord.amountPaid, historyRecord.balanceDue, true, historyRecord.paymentMethod);
+  }
+  const customerRefs = new Map<string, ReturnType<typeof doc>>();
+  const portalRefs = new Map<string, ReturnType<typeof doc>>();
+  for (const customerId of customerChanges.keys()) {
+    customerRefs.set(customerId, doc(db, 'clubs', clubId, 'customers', customerId));
+    portalRefs.set(customerId, doc(db, 'clubs', clubId, 'customerPortal', customerId));
+  }
 
   try {
     await runTransaction(db, async (transaction) => {
@@ -348,23 +443,149 @@ export const finalizeSessionPayment = async (
         throw new Error(`Payment receipt #${historyRecord.receiptNo} has already been processed.`);
       }
 
+      const tableSnap = await transaction.get(tableRef);
+      if (!tableSnap.exists()) throw new Error('The table record no longer exists. Refresh and try again.');
+
+      const customerSnaps = new Map<string, any>();
+      for (const [customerId, customerRef] of customerRefs) {
+        customerSnaps.set(customerId, await transaction.get(customerRef));
+      }
+      const portalSnaps = new Map<string, any>();
+      for (const [customerId, portalRef] of portalRefs) {
+        portalSnaps.set(customerId, await transaction.get(portalRef));
+      }
+      for (const [customerId, customerSnap] of customerSnaps) {
+        if (!customerSnap.exists()) {
+          throw new Error(`Customer ${customerId} was removed while this bill was open. Recheck the customer selection.`);
+        }
+      }
+
       // 2. Set history record
-      const payload = sanitizeDataForFirestore({ ...historyRecord, clubId, timestamp: new Date().toISOString() });
+      const payload = sanitizeDataForFirestore({
+        ...historyRecord,
+        clubId,
+        customerIds: Array.from(customerChanges.keys()),
+        processedBy: auth.currentUser?.email || historyRecord.processedBy,
+        timestamp: new Date().toISOString(),
+      });
       transaction.set(histRef, payload);
 
       // 3. Reset table status
       transaction.update(tableRef, {
         status: 'available',
-        currentSession: null
+        currentSession: null,
+        lastReceiptId: historyRecord.id,
+      });
+
+      // Keep customer balances, totals, activity and the receipt in one atomic commit.
+      for (const [customerId, change] of customerChanges) {
+        const customerRef = customerRefs.get(customerId)!;
+        const portalRef = portalRefs.get(customerId)!;
+        const customerData = customerSnaps.get(customerId).data() as TopCustomer;
+        const hoursPlayed = change.isPrimary ? Math.max(0, historyRecord.durationSeconds || 0) / 3600 : 0;
+        const ledgerEvents: UdhaarTransaction[] = [];
+        if (change.paid > 0) {
+          ledgerEvents.push({
+            id: `${historyRecord.id}-payment-${customerId}`,
+            timestamp: historyRecord.endTime || Date.now(),
+            type: 'payment_received',
+            amount: change.paid,
+            description: `Payment received for receipt #${historyRecord.receiptNo}`,
+            receiptNo: historyRecord.receiptNo,
+            receiptId: historyRecord.id,
+            paymentMethod: historyRecord.paymentMethod,
+            source: 'bill',
+            customerId,
+            recordedByEmail: auth.currentUser?.email || '',
+            recordedBy: auth.currentUser?.email || 'Staff'
+          });
+        }
+        if (change.due > 0) {
+          ledgerEvents.push({
+            id: `${historyRecord.id}-due-${customerId}`,
+            timestamp: historyRecord.endTime || Date.now(),
+            type: 'due_added',
+            amount: change.due,
+            description: `Amount due for receipt #${historyRecord.receiptNo}`,
+            receiptNo: historyRecord.receiptNo,
+            receiptId: historyRecord.id,
+            source: 'bill',
+            customerId,
+            recordedByEmail: auth.currentUser?.email || '',
+            recordedBy: auth.currentUser?.email || 'Staff'
+          });
+        }
+
+        transaction.update(customerRef, {
+          totalSpent: increment(change.paid),
+          sessionsCount: increment(change.isPrimary ? 1 : 0),
+          totalHoursPlayed: increment(hoursPlayed),
+          outstandingDue: increment(change.due),
+          lastVisit: new Date(historyRecord.endTime || Date.now()).toISOString().slice(0, 10),
+          lastReceiptId: historyRecord.id,
+          ...(ledgerEvents.length ? { udhaarLedger: arrayUnion(...ledgerEvents) } : {})
+        });
+
+        const portalSnap = portalSnaps.get(customerId);
+        const portalEmail = customerData.email?.trim().toLowerCase() || '';
+        const portalEnabled = portalSnap.exists() && portalSnap.data().enabled === true;
+        if (portalEnabled) {
+          transaction.set(portalRef, {
+            sessionsCount: increment(change.isPrimary ? 1 : 0),
+            totalSpent: increment(change.paid),
+            totalHoursPlayed: increment(hoursPlayed),
+            outstandingDue: increment(change.due),
+            lastVisit: new Date(historyRecord.endTime || Date.now()).toISOString().slice(0, 10),
+            lastReceiptId: historyRecord.id,
+          }, { merge: true });
+          const shareRatio = historyRecord.grandTotal > 0 ? change.total / historyRecord.grandTotal : 0;
+          const receipt: CustomerPortalReceipt = {
+            id: historyRecord.id,
+            receiptNo: historyRecord.receiptNo,
+            clubId,
+            customerId,
+            tableName: historyRecord.tableName,
+            startTime: historyRecord.startTime,
+            endTime: historyRecord.endTime,
+            durationSeconds: historyRecord.durationSeconds,
+            tableFee: Math.round(historyRecord.tableFee * shareRatio * 100) / 100,
+            foodFee: Math.round(historyRecord.foodFee * shareRatio * 100) / 100,
+            extraFee: Math.round((historyRecord.extraFee || 0) * shareRatio * 100) / 100,
+            total: change.total,
+            paid: change.paid,
+            due: change.due,
+            paymentMethod: change.paymentMethod,
+            paymentStatus: historyRecord.paymentStatus,
+            foodOrders: historyRecord.foodOrders,
+          };
+          transaction.set(doc(db, 'clubs', clubId, 'customerPortal', customerId, 'receipts', historyRecord.id), sanitizeDataForFirestore(receipt));
+          for (const entry of ledgerEvents) {
+            const activity: CustomerPortalActivity = {
+              id: entry.id,
+              clubId,
+              timestamp: entry.timestamp,
+              type: entry.type,
+              amount: entry.amount,
+              description: entry.description,
+              receiptNo: entry.receiptNo,
+              receiptId: entry.receiptId,
+              paymentMethod: entry.paymentMethod,
+              recordedByEmail: entry.recordedByEmail,
+            };
+            transaction.set(doc(db, 'clubs', clubId, 'customerPortal', customerId, 'activity', entry.id), sanitizeDataForFirestore(activity));
+          }
+        }
+      }
+
+      transaction.set(auditRef, {
+        id: auditRef.id,
+        clubId,
+        action: 'PAYMENT_FINALIZED',
+        performedBy: historyRecord.processedBy || 'Staff',
+        timestamp: Date.now(),
+        details: `Receipt #${historyRecord.receiptNo}: total ${historyRecord.grandTotal}, paid ${historyRecord.amountPaid}, due ${historyRecord.balanceDue} (${historyRecord.paymentMethod})`
       });
     });
-
-    await logAuditEvent(
-      clubId,
-      'PAYMENT_FINALIZED',
-      historyRecord.processedBy || 'Cashier',
-      `Payment of ${historyRecord.grandTotal} finalized for receipt #${historyRecord.receiptNo} (Table: ${historyRecord.tableName})`
-    );
   } catch (error) {
     trackMonitoringEvent('failed_payment', `Payment finalization failed for receipt ${historyRecord.receiptNo}`, { error });
     handleFirestoreError(error, OperationType.WRITE, `clubs/${clubId}/history/${historyRecord.id}`);
@@ -419,77 +640,6 @@ export const subscribeHistory = (
   }, (err) => console.warn('subscribeHistory error:', err));
 };
 
-export const clearHistoryAndAnalytics = async (
-  clubId: string = DEFAULT_CLUB_ID,
-  resetType: 'all' | 'history' | 'crm' = 'all'
-): Promise<void> => {
-  try {
-    let collectionsToWipe: string[] = [];
-    if (resetType === 'history') {
-      collectionsToWipe = ['history', 'foodOrders', 'requests', 'auditLogs'];
-    } else if (resetType === 'crm') {
-      collectionsToWipe = ['customers'];
-    } else {
-      // 'all' Full Club Reset
-      collectionsToWipe = [
-        'history', 
-        'foodOrders', 
-        'requests', 
-        'notifications', 
-        'expenses', 
-        'attendance', 
-        'auditLogs', 
-        'inventoryAdjustments',
-        'purchases',
-        'maintenance',
-        'customers'
-      ];
-    }
-
-    for (const colName of collectionsToWipe) {
-      try {
-        const colRef = collection(db, 'clubs', clubId, colName);
-        const snap = await getDocs(colRef);
-        if (!snap.empty) {
-          const docs = snap.docs;
-          for (let i = 0; i < docs.length; i += 400) {
-            const batch = writeBatch(db);
-            const chunk = docs.slice(i, i + 400);
-            chunk.forEach((d) => batch.delete(d.ref));
-            await batch.commit();
-          }
-        }
-      } catch (colErr) {
-        console.warn(`Could not wipe collection ${colName} (safe to ignore if offline):`, colErr);
-      }
-    }
-
-    // Reset all tables to available and clear active sessions (for 'history' and 'all')
-    if (resetType === 'history' || resetType === 'all') {
-      try {
-        const tablesRef = collection(db, 'clubs', clubId, 'tables');
-        const tablesSnap = await getDocs(tablesRef);
-        if (!tablesSnap.empty) {
-          const tableBatch = writeBatch(db);
-          tablesSnap.forEach((d) => {
-            tableBatch.update(d.ref, {
-              status: 'available',
-              currentSession: null,
-              isMaintenance: false
-            });
-          });
-          await tableBatch.commit();
-        }
-      } catch (tblErr) {
-        console.warn('Could not reset tables in Firestore (safe to ignore if offline):', tblErr);
-      }
-    }
-  } catch (err) {
-    console.error('Error in club data reset:', err);
-    throw err;
-  }
-};
-
 // --- CUSTOMERS ---
 
 export const subscribeTopCustomers = (
@@ -500,21 +650,278 @@ export const subscribeTopCustomers = (
   return onSnapshot(custRef, (snapshot) => {
     const list: TopCustomer[] = [];
     snapshot.forEach((docSnap) => {
-      list.push({ id: docSnap.id, ...docSnap.data() } as TopCustomer);
+      const customer = { id: docSnap.id, ...docSnap.data() } as TopCustomer;
+      if (!customer.archived) list.push(customer);
     });
     callback(list);
+    const emailCounts = new Map<string, number>();
+    list.forEach((customer) => {
+      const email = customer.email?.trim().toLowerCase();
+      if (email) emailCounts.set(email, (emailCounts.get(email) || 0) + 1);
+    });
+    list.forEach((customer) => {
+      const email = customer.email?.trim().toLowerCase();
+      if (!email || customer.archived || emailCounts.get(email) !== 1) return;
+      const migrationKey = `${clubId}:${customer.id}:${email}`;
+      if (portalLinkMigrations.has(migrationKey)) return;
+      portalLinkMigrations.add(migrationKey);
+      getDoc(doc(db, 'clubs', clubId, 'customerAccess', email)).then(async (access) => {
+        if (!access.exists() || access.data().customerId !== customer.id || access.data().enabled !== true) {
+          await saveCustomerCRM(clubId, customer);
+        }
+      }).catch((error) => console.warn('Customer portal profile sync failed:', error));
+    });
   }, (err) => console.warn('subscribeTopCustomers error:', err));
+};
+
+const portalLinkMigrations = new Set<string>();
+
+const portalReceiptForCustomer = (
+  clubId: string,
+  history: SessionHistoryItem,
+  customerId: string
+): CustomerPortalReceipt | null => {
+  const splitPlayers = history.splitBreakdown?.splitType === 'players'
+    ? (history.splitBreakdown.players || []).filter((player) => player.customerId === customerId)
+    : [];
+  const splitTotal = splitPlayers.reduce((sum, player) => sum + (Number(player.amount) || 0), 0);
+  if (splitPlayers.length === 0 && history.customerId !== customerId) return null;
+  const paid = splitPlayers.length
+    ? splitPlayers.reduce((sum, player) => sum + (player.method === 'credit' ? 0 : player.amount), 0)
+    : history.amountPaid;
+  const due = splitPlayers.length
+    ? splitPlayers.reduce((sum, player) => sum + (player.method === 'credit' ? player.amount : 0), 0)
+    : history.balanceDue;
+  const total = splitPlayers.length ? splitTotal : history.grandTotal;
+  const share = history.grandTotal > 0 ? total / history.grandTotal : 0;
+  const paymentMethods = [...new Set(splitPlayers.map((player) => player.method))];
+  return {
+    id: history.id,
+    receiptNo: history.receiptNo,
+    clubId,
+    customerId,
+    tableName: history.tableName,
+    startTime: history.startTime,
+    endTime: history.endTime,
+    durationSeconds: history.durationSeconds,
+    tableFee: Math.round(history.tableFee * share * 100) / 100,
+    foodFee: Math.round(history.foodFee * share * 100) / 100,
+    extraFee: Math.round((history.extraFee || 0) * share * 100) / 100,
+    total,
+    paid,
+    due,
+    paymentMethod: splitPlayers.length ? paymentMethods.join(' + ') : history.paymentMethod,
+    paymentStatus: history.paymentStatus,
+    foodOrders: history.foodOrders,
+    refundedAmount: history.refundedAmount,
+    refundReason: history.refundReason,
+  };
 };
 
 export const saveCustomerCRM = async (clubId: string, customer: TopCustomer): Promise<void> => {
   const custId = customer.id || doc(collection(db, 'clubs', clubId, 'customers')).id;
   const docRef = doc(db, 'clubs', clubId, 'customers', custId);
-  await setDoc(docRef, { ...customer, id: custId, updatedAt: Date.now() }, { merge: true });
+  const previousSnap = await getDoc(docRef);
+  const previous = previousSnap.exists() ? previousSnap.data() as TopCustomer : undefined;
+  const actorProfileSnap = auth.currentUser ? await getDoc(doc(db, 'users', auth.currentUser.uid)) : null;
+  const canManagePortal = Boolean(actorProfileSnap?.exists() && ['owner', 'manager'].includes(actorProfileSnap.data().role));
+  const customerNumber = customer.customerNumber || `OS-${custId.replace(/^cust-/i, '').toUpperCase()}`;
+  const normalizedEmail = customer.email?.trim().toLowerCase() || '';
+  if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    throw new Error('Enter a valid email address before enabling the customer portal.');
+  }
+  const previousEmail = previous?.email?.trim().toLowerCase() || '';
+  if (normalizedEmail !== previousEmail && !canManagePortal) {
+    throw new Error('Only the club owner or manager can link or change a customer portal email.');
+  }
+  const settingsSnap = await getDoc(doc(db, 'clubs', clubId, 'config', 'settings'));
+  const settings = settingsSnap.exists() ? settingsSnap.data() : {};
+  const portalRef = doc(db, 'clubs', clubId, 'customerPortal', custId);
+  const previousPortalSnap = await getDoc(portalRef);
+  const batch = writeBatch(db);
+  const editableCustomer: Partial<TopCustomer> = {
+    id: custId,
+    customerNumber,
+    name: customer.name.trim(),
+    phone: customer.phone.trim(),
+    email: normalizedEmail,
+    preferredGame: customer.preferredGame || 'Snooker',
+    notes: customer.notes || '',
+    dateJoined: customer.dateJoined || new Date().toISOString().slice(0, 10),
+    updatedAt: Date.now(),
+    ...(customer.archived ? { archived: true } : {}),
+  };
+  if (!previousSnap.exists()) {
+    Object.assign(editableCustomer, {
+      sessionsCount: 0,
+      totalSpent: 0,
+      totalHoursPlayed: 0,
+      outstandingDue: 0,
+      walletBalance: 0,
+      udhaarLedger: [],
+      creditLimit: customer.creditLimit,
+      lastVisit: '',
+    });
+  }
+  const effectiveCustomer = { ...previous, ...editableCustomer } as TopCustomer;
+  const updatedCustomer = sanitizeDataForFirestore(editableCustomer);
+  batch.set(docRef, updatedCustomer, { merge: true });
+  const portalProfile: CustomerPortalProfile = {
+    id: custId,
+    clubId,
+    customerNumber,
+    name: effectiveCustomer.name,
+    email: normalizedEmail,
+    clubName: settings.clubName || 'One Shot Snooker Gaming Club',
+    currencySymbol: settings.currencySymbol || '₹',
+    sessionsCount: Number(effectiveCustomer.sessionsCount) || 0,
+    totalSpent: Number(effectiveCustomer.totalSpent) || 0,
+    totalHoursPlayed: Number(effectiveCustomer.totalHoursPlayed) || 0,
+    outstandingDue: Number(effectiveCustomer.outstandingDue) || 0,
+    walletBalance: Number(effectiveCustomer.walletBalance) || 0,
+    lastVisit: effectiveCustomer.lastVisit || '',
+    enabled: Boolean(normalizedEmail) && !effectiveCustomer.archived,
+  };
+  const shouldSyncPortal = canManagePortal;
+  if (shouldSyncPortal) batch.set(portalRef, portalProfile, { merge: true });
+  else if (previousPortalSnap.exists()) batch.set(portalRef, { name: customer.name.trim() }, { merge: true });
+
+  if (canManagePortal && previousEmail && previousEmail !== normalizedEmail) {
+    batch.delete(doc(db, 'clubs', clubId, 'customerAccess', previousEmail));
+  }
+  if (canManagePortal && normalizedEmail && !customer.archived) {
+    const accessRef = doc(db, 'clubs', clubId, 'customerAccess', normalizedEmail);
+    const accessSnap = await getDoc(accessRef);
+    if (accessSnap.exists() && accessSnap.data().customerId !== custId) {
+      throw new Error('That email is already linked to a different customer profile.');
+    }
+    batch.set(accessRef, { clubId, customerId: custId, email: normalizedEmail, enabled: true });
+  }
+
+  await batch.commit();
+
+  // When a verified email is first linked, make existing receipts available in the private portal too.
+  if (canManagePortal && normalizedEmail && normalizedEmail !== previousEmail && !customer.archived) {
+    const historySnapshot = await getDocs(collection(db, 'clubs', clubId, 'history'));
+    const receipts = historySnapshot.docs
+      .map((item) => portalReceiptForCustomer(clubId, { id: item.id, ...item.data() } as SessionHistoryItem, custId))
+      .filter((item): item is CustomerPortalReceipt => Boolean(item));
+    for (let index = 0; index < receipts.length; index += 400) {
+      const migrationBatch = writeBatch(db);
+      receipts.slice(index, index + 400).forEach((receipt) => {
+        migrationBatch.set(doc(db, 'clubs', clubId, 'customerPortal', custId, 'receipts', receipt.id), sanitizeDataForFirestore(receipt), { merge: true });
+      });
+      await migrationBatch.commit();
+    }
+  }
 };
 
 export const deleteCustomerCRM = async (clubId: string, customerId: string): Promise<void> => {
-  const docRef = doc(db, 'clubs', clubId, 'customers', customerId);
-  await deleteDoc(docRef);
+  const customerRef = doc(db, 'clubs', clubId, 'customers', customerId);
+  const customerSnap = await getDoc(customerRef);
+  if (!customerSnap.exists()) return;
+  const customer = customerSnap.data() as TopCustomer;
+  const batch = writeBatch(db);
+  batch.update(customerRef, { archived: true, updatedAt: Date.now() });
+  batch.set(doc(db, 'clubs', clubId, 'customerPortal', customerId), { enabled: false }, { merge: true });
+  const email = customer.email?.trim().toLowerCase();
+  if (email) {
+    const accessRef = doc(db, 'clubs', clubId, 'customerAccess', email);
+    const accessSnap = await getDoc(accessRef);
+    if (accessSnap.exists()) batch.update(accessRef, { enabled: false });
+  }
+  await batch.commit();
+};
+
+export const recordCustomerAccountTransaction = async (
+  clubId: string,
+  customerId: string,
+  entry: UdhaarTransaction
+): Promise<void> => {
+  if (!Number.isFinite(entry.amount) || entry.amount <= 0) throw new Error('Enter an amount greater than zero.');
+  if (!['payment_received', 'due_added', 'deposit_added', 'deposit_used'].includes(entry.type)) {
+    throw new Error('This account transaction type is not supported.');
+  }
+  const customerRef = doc(db, 'clubs', clubId, 'customers', customerId);
+  const portalRef = doc(db, 'clubs', clubId, 'customerPortal', customerId);
+  const ledgerRef = doc(db, 'clubs', clubId, 'customers', customerId, 'transactions', entry.id);
+  const auditRef = doc(collection(db, 'clubs', clubId, 'auditLogs'));
+  const activityRef = doc(db, 'clubs', clubId, 'customerPortal', customerId, 'activity', entry.id);
+
+  await runTransaction(db, async (transaction) => {
+    const customerSnap = await transaction.get(customerRef);
+    const portalSnap = await transaction.get(portalRef);
+    const ledgerSnap = await transaction.get(ledgerRef);
+    if (!customerSnap.exists()) throw new Error('Customer profile not found. Refresh and try again.');
+    if (ledgerSnap.exists()) return;
+
+    const customer = customerSnap.data() as TopCustomer;
+    const currentDue = Math.max(0, Number(customer.outstandingDue) || 0);
+    const currentWallet = Math.max(0, Number(customer.walletBalance) || 0);
+    let dueDelta = 0;
+    let walletDelta = 0;
+    let paidDelta = 0;
+
+    if (entry.type === 'payment_received') {
+      if (entry.source !== 'balance_settlement') throw new Error('Choose a recorded bill to accept a customer payment.');
+      if (entry.amount > currentDue) throw new Error('Settlement cannot exceed the current outstanding balance.');
+      dueDelta = -entry.amount;
+      paidDelta = entry.amount;
+    } else if (entry.type === 'due_added') {
+      if (entry.source !== 'manual_due') throw new Error('Manual credit must be recorded with a reason.');
+      dueDelta = entry.amount;
+    } else if (entry.type === 'deposit_added') {
+      walletDelta = entry.amount;
+    } else if (entry.type === 'deposit_used') {
+      if (entry.amount > currentWallet) throw new Error('Deposit use cannot exceed the customer’s available balance.');
+      walletDelta = -entry.amount;
+    }
+
+    const savedEntry = {
+      ...entry,
+      clubId,
+      customerId,
+      recordedByEmail: auth.currentUser?.email || '',
+      timestamp: entry.timestamp || Date.now(),
+    };
+    transaction.update(customerRef, {
+      ...(dueDelta ? { outstandingDue: increment(dueDelta) } : {}),
+      ...(walletDelta ? { walletBalance: increment(walletDelta) } : {}),
+      ...(paidDelta ? { totalSpent: increment(paidDelta) } : {}),
+      udhaarLedger: arrayUnion(savedEntry),
+      lastAccountTransactionId: entry.id,
+      updatedAt: Date.now(),
+    });
+    transaction.set(ledgerRef, savedEntry);
+    const portal = portalSnap.exists() ? portalSnap.data() as CustomerPortalProfile : undefined;
+    if (portal?.enabled) {
+      transaction.set(portalRef, {
+        ...(dueDelta ? { outstandingDue: increment(dueDelta) } : {}),
+        ...(walletDelta ? { walletBalance: increment(walletDelta) } : {}),
+        ...(paidDelta ? { totalSpent: increment(paidDelta) } : {}),
+      }, { merge: true });
+      const activity: CustomerPortalActivity = {
+        id: entry.id,
+        clubId,
+        timestamp: savedEntry.timestamp,
+        type: entry.type,
+        amount: entry.amount,
+        description: entry.description,
+        receiptNo: entry.receiptNo,
+        paymentMethod: entry.paymentMethod,
+        recordedByEmail: auth.currentUser?.email || '',
+      };
+      transaction.set(activityRef, activity);
+    }
+    transaction.set(auditRef, {
+      id: auditRef.id,
+      clubId,
+      action: 'CUSTOMER_ACCOUNT_TRANSACTION',
+      performedBy: auth.currentUser?.email || entry.recordedBy,
+      timestamp: savedEntry.timestamp,
+      details: `${entry.type}: ${entry.amount} for customer ${customerId}${entry.receiptNo ? `, receipt ${entry.receiptNo}` : ''}`,
+    });
+  });
 };
 
 // --- PHASE 7: EMPLOYEES MANAGEMENT ---
@@ -742,6 +1149,22 @@ export const markNotificationAsRead = async (
   await updateDoc(docRef, { read: true });
 };
 
+export const markNotificationAsResolved = async (
+  clubId: string,
+  notificationId: string
+): Promise<void> => {
+  const docRef = doc(db, 'clubs', clubId, 'notifications', notificationId);
+  await updateDoc(docRef, { read: true, resolved: true, resolvedAt: Date.now() });
+};
+
+export const deleteNotification = async (
+  clubId: string,
+  notificationId: string
+): Promise<void> => {
+  const docRef = doc(db, 'clubs', clubId, 'notifications', notificationId);
+  await deleteDoc(docRef).catch(() => {});
+};
+
 export const clearAllNotifications = async (
   clubId: string,
   notificationIds: string[]
@@ -802,7 +1225,7 @@ export const createCustomerSessionRequest = async (
   }
 
   const tableData = tableSnap.data() as TableItem;
-  if (tableData.status === 'occupied' && tableData.currentSession) {
+      if (tableData.currentSession) {
     throw new Error(`Table ${tableData.name} is currently occupied.`);
   }
   if (tableData.status === 'maintenance' || tableData.isMaintenance) {
@@ -895,19 +1318,116 @@ export const refundSessionPayment = async (
   performedBy: string
 ): Promise<void> => {
   const histRef = doc(db, 'clubs', clubId, 'history', historyId);
-  await updateDoc(histRef, {
-    paymentStatus: 'refunded',
-    refundReason: reason,
-    refundedBy: performedBy,
-    refundedAt: Date.now()
-  });
+  const auditRef = doc(collection(db, 'clubs', clubId, 'auditLogs'));
+  await runTransaction(db, async (transaction) => {
+    const historySnap = await transaction.get(histRef);
+    if (!historySnap.exists()) throw new Error('The bill could not be found. Refresh and try again.');
+    const historyRecord = historySnap.data() as SessionHistoryItem;
+    if (historyRecord.paymentStatus === 'refunded') throw new Error('This bill has already been refunded.');
 
-  await logAuditEvent(
-    clubId,
-    'REFUND_ISSUED',
-    performedBy,
-    `Refund issued for history record ID ${historyId}. Reason: ${reason}`
-  );
+    const customerChanges = new Map<string, { paid: number; due: number }>();
+    const addRefundChange = (customerId: string | undefined, paid: number, due: number) => {
+      if (!customerId) return;
+      const previous = customerChanges.get(customerId) || { paid: 0, due: 0 };
+      previous.paid += Math.max(0, paid || 0);
+      previous.due += Math.max(0, due || 0);
+      customerChanges.set(customerId, previous);
+    };
+    const splitPlayers = historyRecord.splitBreakdown?.splitType === 'players'
+      ? historyRecord.splitBreakdown.players || []
+      : [];
+    if (splitPlayers.length > 0) {
+      splitPlayers.forEach((player) => addRefundChange(
+        player.customerId,
+        player.method === 'credit' ? 0 : player.amount,
+        player.method === 'credit' ? player.amount : 0
+      ));
+    } else {
+      addRefundChange(historyRecord.customerId, historyRecord.amountPaid, historyRecord.balanceDue);
+    }
+
+    const customerRefs = new Map<string, ReturnType<typeof doc>>();
+    for (const customerId of customerChanges.keys()) {
+      customerRefs.set(customerId, doc(db, 'clubs', clubId, 'customers', customerId));
+    }
+    const customerSnapshots = new Map<string, any>();
+    for (const [customerId, customerRef] of customerRefs) {
+      customerSnapshots.set(customerId, await transaction.get(customerRef));
+    }
+    for (const [customerId, customerSnap] of customerSnapshots) {
+      if (!customerSnap.exists()) throw new Error(`Customer ${customerId} is missing, so this refund was not recorded.`);
+    }
+
+    const refundedAt = Date.now();
+    const portalSnapshots = new Map<string, any>();
+    for (const customerId of customerChanges.keys()) {
+      portalSnapshots.set(customerId, await transaction.get(doc(db, 'clubs', clubId, 'customerPortal', customerId)));
+    }
+    transaction.update(histRef, {
+      paymentStatus: 'refunded',
+      refundReason: reason,
+      refundedBy: performedBy,
+      refundedAt,
+      refundedAmount: Math.max(0, Number(historyRecord.amountPaid) || 0),
+    });
+    for (const [customerId, change] of customerChanges) {
+      const customer = customerSnapshots.get(customerId).data() as TopCustomer;
+      const portal = portalSnapshots.get(customerId);
+      const refundableDue = Math.min(Math.max(0, Number(customer.outstandingDue) || 0), change.due);
+      const creditFromPreviouslySettledDue = Math.max(0, change.due - refundableDue);
+      const reversal: UdhaarTransaction = {
+        id: `${historyId}-refund-due-${customerId}`,
+        timestamp: refundedAt,
+        type: 'due_reversed',
+        amount: change.due,
+        description: `Credit reversed for refunded receipt #${historyRecord.receiptNo}`,
+        receiptNo: historyRecord.receiptNo,
+        receiptId: historyId,
+        customerId,
+        recordedByEmail: auth.currentUser?.email || '',
+        recordedBy: performedBy,
+      };
+      transaction.update(customerRefs.get(customerId)!, {
+        outstandingDue: increment(-refundableDue),
+        walletBalance: increment(creditFromPreviouslySettledDue),
+        totalSpent: increment(-change.paid),
+        ...(change.due > 0 ? { udhaarLedger: arrayUnion(reversal) } : {}),
+      });
+      if (portal.exists() && portal.data().enabled === true) {
+        transaction.set(doc(db, 'clubs', clubId, 'customerPortal', customerId), {
+          outstandingDue: increment(-refundableDue),
+          walletBalance: increment(creditFromPreviouslySettledDue),
+          totalSpent: increment(-change.paid),
+        }, { merge: true });
+        transaction.set(doc(db, 'clubs', clubId, 'customerPortal', customerId, 'receipts', historyId), {
+          paymentStatus: 'refunded',
+          refundedAmount: change.paid,
+          refundReason: reason,
+        }, { merge: true });
+        const activity: CustomerPortalActivity = {
+          id: `${historyId}-refund-${customerId}`,
+          clubId,
+          timestamp: refundedAt,
+          type: 'refund_issued',
+          amount: change.paid + change.due,
+          description: `Refund recorded for receipt #${historyRecord.receiptNo}`,
+          receiptNo: historyRecord.receiptNo,
+          receiptId: historyId,
+          recordedByEmail: auth.currentUser?.email || '',
+        };
+        transaction.set(doc(db, 'clubs', clubId, 'customerPortal', customerId, 'activity', activity.id), activity);
+      }
+    }
+
+    transaction.set(auditRef, {
+      id: auditRef.id,
+      clubId,
+      action: 'REFUND_ISSUED',
+      performedBy,
+      timestamp: refundedAt,
+      details: `Refunded receipt #${historyRecord.receiptNo}; paid amount ${historyRecord.amountPaid}; reversed due ${historyRecord.balanceDue}. Reason: ${reason}`,
+    });
+  });
 };
 
 export const updateHistoryRecordDoc = async (
@@ -1480,13 +2000,16 @@ export const updateUserProfileDoc = async (uid: string, updates: Partial<UserPro
 
 export const createInvitationDoc = async (invitation: Omit<UserInvitation, 'id'>): Promise<string> => {
   try {
-    const invRef = collection(db, 'invitations');
-    const newDoc = await addDoc(invRef, {
+    const email = invitation.email.toLowerCase().trim();
+    const invitationId = email;
+    const invRef = doc(db, 'invitations', invitationId);
+    await setDoc(invRef, {
       ...invitation,
+      email,
       createdAt: Date.now(),
       status: 'pending'
     });
-    return newDoc.id;
+    return invitationId;
   } catch (err) {
     console.error('Error creating user invitation:', err);
     throw err;
@@ -1541,4 +2064,3 @@ export const markInvitationAcceptedDoc = async (invitationId: string): Promise<v
     console.warn('Error marking invitation accepted:', err);
   }
 };
-

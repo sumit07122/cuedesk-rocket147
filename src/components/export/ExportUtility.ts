@@ -62,11 +62,11 @@ export const exportInventoryReportCSV = (menuItems: MenuItem[]) => {
 };
 
 export const exportCustomersReportCSV = (customers: TopCustomer[]) => {
-  const headers = ['Customer Name', 'Phone', 'Membership Status', 'Date Joined', 'Visits Count', 'Hours Played', 'Total Spend', 'Last Visit'];
+  const headers = ['Customer Name', 'Customer ID', 'Phone', 'Date Joined', 'Visits Count', 'Hours Played', 'Total Spend', 'Last Visit'];
   const rows = customers.map(c => [
     c.name,
+    c.customerNumber || c.id,
     c.phone,
-    c.membershipStatus || c.tier || 'Regular',
     c.dateJoined || 'N/A',
     c.sessionsCount || 0,
     c.totalHoursPlayed || 0,

@@ -19,11 +19,15 @@ interface LoginViewProps {
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
-  const { signInWithEmail, sendPasswordReset } = useAuth();
+  const { signInWithEmail, signUpWithEmail, signUpCustomerWithEmail, sendPasswordReset } = useAuth();
 
-  const [mode, setMode] = useState<'signin' | 'forgot'>('signin');
+  const [mode, setMode] = useState<'signin' | 'forgot' | 'customer-signup' | 'staff-signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
+  const [staffRole, setStaffRole] = useState<'manager' | 'worker'>('worker');
   const [showPassword, setShowPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -73,6 +77,39 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
+  const handleCustomerSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearMessages();
+    setLoading(true);
+    try {
+      await signUpCustomerWithEmail(email, password, fullName);
+      setSuccessMsg('Check your email and verify your address. You can sign in here after verification. Your email must already be linked to a customer record at the club.');
+      setMode('signin');
+      setPassword('');
+    } catch (err: any) {
+      setErrorMsg(formatAuthError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStaffSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearMessages();
+    setLoading(true);
+    try {
+      await signUpWithEmail(email, password, fullName, phone, inviteCode, staffRole);
+      setSuccessMsg('Check your email and verify your address. Your staff account will be ready after verification.');
+      setMode('signin');
+      setPassword('');
+      setInviteCode('');
+    } catch (err: any) {
+      setErrorMsg(formatAuthError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0a0a0c] text-white flex flex-col items-center justify-center p-4 sm:p-6 selection:bg-amber-500 selection:text-black relative overflow-hidden">
       {/* Background Decorative Gold Radial Gradients */}
@@ -95,7 +132,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           <h1 className="text-2xl font-black tracking-tight text-white flex items-center justify-center gap-2">
             CueDesk
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-widest">
-              OFFICIAL OS
+              ONE SHOT
             </span>
           </h1>
           <p className="text-[11px] font-medium text-amber-200/70 mt-0.5 tracking-wide uppercase">
@@ -198,6 +235,46 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   </>
                 )}
               </button>
+              <button type="button" onClick={() => { setMode('customer-signup'); clearMessages(); }} className="text-xs font-semibold text-neutral-400 hover:text-amber-300">
+                Create a customer account to view your club activity
+              </button>
+              <button type="button" onClick={() => { setMode('staff-signup'); clearMessages(); }} className="text-xs font-semibold text-neutral-500 hover:text-amber-300">
+                Activate an invited staff account
+              </button>
+            </form>
+          )}
+
+          {mode === 'customer-signup' && (
+            <form onSubmit={handleCustomerSignup} className="flex flex-col gap-3.5">
+              <div className="text-center"><h3 className="text-sm font-extrabold">Create your customer account</h3><p className="mt-1 text-xs text-neutral-400">The club must already have this email on your customer profile.</p></div>
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">Your name</label>
+                <input required value={fullName} onChange={(e) => setFullName(e.target.value)} autoComplete="name" className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-400" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">Email address</label>
+                <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-400" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">Password</label>
+                <input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-400" />
+              </div>
+              <button type="submit" disabled={loading} className="w-full rounded-xl bg-amber-400 px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-black disabled:opacity-50">{loading ? 'Sending verification…' : 'Send verification email'}</button>
+              <button type="button" onClick={() => { setMode('signin'); clearMessages(); }} className="text-xs font-bold text-neutral-400 hover:text-amber-300">← Back to Sign In</button>
+            </form>
+          )}
+
+          {mode === 'staff-signup' && (
+            <form onSubmit={handleStaffSignup} className="flex flex-col gap-3.5">
+              <div className="text-center"><h3 className="text-sm font-extrabold">Activate staff account</h3><p className="mt-1 text-xs text-neutral-400">Use the club invitation code and the email address the owner invited.</p></div>
+              <div><label className="text-xs font-bold text-neutral-300 block mb-1">Full name</label><input required value={fullName} onChange={(e) => setFullName(e.target.value)} autoComplete="name" className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-400" /></div>
+              <div><label className="text-xs font-bold text-neutral-300 block mb-1">Invited email</label><input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-400" /></div>
+              <div><label className="text-xs font-bold text-neutral-300 block mb-1">Phone (optional)</label><input value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-400" /></div>
+              <div><label className="text-xs font-bold text-neutral-300 block mb-1">Invited role</label><select value={staffRole} onChange={(e) => setStaffRole(e.target.value as 'manager' | 'worker')} className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-400"><option value="worker">Club worker</option><option value="manager">Club manager</option></select></div>
+              <div><label className="text-xs font-bold text-neutral-300 block mb-1">Invitation code</label><input required value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} autoComplete="one-time-code" className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-400" /></div>
+              <div><label className="text-xs font-bold text-neutral-300 block mb-1">Create password</label><input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-400" /></div>
+              <button type="submit" disabled={loading} className="w-full rounded-xl bg-amber-400 px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-black disabled:opacity-50">{loading ? 'Creating account…' : 'Create staff account'}</button>
+              <button type="button" onClick={() => { setMode('signin'); clearMessages(); }} className="text-xs font-bold text-neutral-400 hover:text-amber-300">← Back to Sign In</button>
             </form>
           )}
 

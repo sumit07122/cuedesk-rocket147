@@ -19,7 +19,7 @@ import { ExpenseRecord, ExpenseCategory, SessionHistoryItem, BusinessConfig } fr
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
-import { formatCurrency, getSessionDate } from '../../utils/formatters';
+import { formatCurrency, getBusinessDateKey, shiftBusinessDateKey } from '../../utils/formatters';
 import { exportExpensesToExcel } from '../../utils/excelExport';
 
 interface ExpenseProfitViewProps {
@@ -43,42 +43,40 @@ export const ExpenseProfitView: React.FC<ExpenseProfitViewProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [category, setCategory] = useState<ExpenseCategory>('Rent');
   const [amount, setAmount] = useState<number>(0);
-  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState<string>(() => getBusinessDateKey(Date.now(), config.timeZone || 'Asia/Kolkata'));
   const [notes, setNotes] = useState<string>('');
   const [recordedBy, setRecordedBy] = useState<string>('Manager');
   const [isSaving, setIsSaving] = useState(false);
 
-  // Timeframe calculation helper
-  const now = new Date();
-  const getFilterStartDate = () => {
-    const d = new Date();
-    if (timeframe === 'today') {
-      d.setHours(0, 0, 0, 0);
-    } else if (timeframe === 'week') {
-      d.setDate(d.getDate() - 7);
-    } else if (timeframe === 'month') {
-      d.setMonth(d.getMonth() - 1);
-    } else if (timeframe === 'year') {
-      d.setFullYear(d.getFullYear() - 1);
-    }
-    return d.getTime();
+  const timeZone = config.timeZone || 'Asia/Kolkata';
+  const todayKey = getBusinessDateKey(Date.now(), timeZone);
+  const startDateKey = (() => {
+    if (timeframe === 'today') return todayKey;
+    if (timeframe === 'week') return shiftBusinessDateKey(todayKey, -6);
+    const dateAtUtcMidnight = new Date(`${todayKey}T00:00:00.000Z`);
+    if (timeframe === 'month') dateAtUtcMidnight.setUTCMonth(dateAtUtcMidnight.getUTCMonth() - 1);
+    else dateAtUtcMidnight.setUTCFullYear(dateAtUtcMidnight.getUTCFullYear() - 1);
+    return dateAtUtcMidnight.toISOString().slice(0, 10);
+  })();
+  const isInPeriod = (value: Date | number | string | null | undefined) => {
+    const key = getBusinessDateKey(value, timeZone);
+    return Boolean(key) && key >= startDateKey && key <= todayKey;
   };
 
-  const startTime = getFilterStartDate();
-
-  // Filtered History & Expenses
-  const filteredHistory = history.filter((h) => {
-    const t = getSessionDate(h).getTime();
-    return t >= startTime;
-  });
-
-  const filteredExpenses = expenses.filter((e) => {
-    const t = new Date(e.date).getTime();
-    return t >= startTime || e.timestamp >= startTime;
-  });
+  // Completed sessions and recorded expenses are filtered by the club's business date.
+  const filteredHistory = history.filter((h) => h.paymentStatus !== 'refunded' && isInPeriod(h.endTime || h.startTime));
+  const priorSaleRefunds = history.reduce((sum, item) => {
+    const saleDate = getBusinessDateKey(item.endTime || item.startTime, timeZone);
+    return sum + (item.paymentStatus === 'refunded'
+      && isInPeriod(item.refundedAt)
+      && saleDate < startDateKey
+      ? Number(item.grandTotal) || 0
+      : 0);
+  }, 0);
+  const filteredExpenses = expenses.filter((e) => isInPeriod(e.date || e.timestamp));
 
   // Profit Calculation: Net Profit = Revenue - Expenses
-  const totalRevenue = filteredHistory.reduce((acc, h) => acc + (h.grandTotal || 0), 0);
+  const totalRevenue = filteredHistory.reduce((acc, h) => acc + (Number(h.grandTotal) || 0), 0) - priorSaleRefunds;
   const totalExpenses = filteredExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
   const netProfit = totalRevenue - totalExpenses;
   const profitMarginPercent = totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : '0.0';
@@ -92,7 +90,7 @@ export const ExpenseProfitView: React.FC<ExpenseProfitViewProps> = ({
   const handleOpenModal = () => {
     setCategory('Rent');
     setAmount(0);
-    setDate(new Date().toISOString().split('T')[0]);
+    setDate(getBusinessDateKey(Date.now(), config.timeZone || 'Asia/Kolkata'));
     setNotes('');
     setRecordedBy('Manager');
     setIsModalOpen(true);
@@ -125,7 +123,7 @@ export const ExpenseProfitView: React.FC<ExpenseProfitViewProps> = ({
   };
 
   const handleDelete = async (id: string, cat: string, amt: number) => {
-    if (confirm(`Delete expense record for ${cat} (${formatCurrency(amt, config)})?`)) {
+    if (confirm(`Delete expense record for ${cat} (${formatCurrency(amt, config?.currencySymbol || '₹')})?`)) {
       await onDeleteExpense(id);
     }
   };

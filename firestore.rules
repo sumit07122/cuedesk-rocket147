@@ -1,161 +1,599 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Helper functions
-    function isSignedIn() {
+    function signedIn() {
       return request.auth != null;
     }
 
-    function isOwner() {
-      return isSignedIn() && (
-        request.auth.token.email == 'owner@oneshotsnooker.com' ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner'
-      );
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
     }
 
-    function isManagerOrOwner() {
-      return isSignedIn() && (
-        isOwner() ||
-        request.auth.token.email == 'manager@oneshotsnooker.com' ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'manager'
-      );
+    function hasUserProfile() {
+      return signedIn() && exists(userPath(request.auth.uid));
     }
 
-    function isClubStaff() {
-      return isSignedIn();
+    function userProfile() {
+      return get(userPath(request.auth.uid)).data;
     }
 
-    // --- USER PROFILES ---
+    function activeStaff(clubId) {
+      return hasUserProfile()
+        && userProfile().clubId == clubId
+        && userProfile().status == 'active'
+        && userProfile().role in ['owner', 'manager', 'worker'];
+    }
+
+    function owner(clubId) {
+      return activeStaff(clubId) && userProfile().role == 'owner';
+    }
+
+    function managerOrOwner(clubId) {
+      return activeStaff(clubId) && userProfile().role in ['owner', 'manager'];
+    }
+
+    function customerOwns(clubId, customerId) {
+      return hasUserProfile()
+        && request.auth.token.email_verified == true
+        && userProfile().clubId == clubId
+        && userProfile().role == 'customer'
+        && userProfile().status == 'active'
+        && userProfile().customerId == customerId
+        && exists(/databases/$(database)/documents/clubs/$(clubId)/customerPortal/$(customerId))
+        && get(/databases/$(database)/documents/clubs/$(clubId)/customerPortal/$(customerId)).data.enabled == true;
+    }
+
+    function validStaffInvite(uid) {
+      let profile = request.resource.data;
+      let invitePath = /databases/$(database)/documents/invitations/$(profile.email);
+      let inviteBefore = get(invitePath);
+      let inviteAfter = getAfter(invitePath);
+      return profile.email == request.auth.token.email
+        && profile.status == 'active'
+        && profile.role in ['manager', 'worker']
+        && exists(invitePath)
+        && inviteBefore.data.email == profile.email
+        && inviteBefore.data.status == 'pending'
+        && inviteBefore.data.code == profile.invitationCode
+        && inviteBefore.data.role == profile.role
+        && inviteBefore.data.clubId == profile.clubId
+        && inviteAfter.data.status == 'accepted'
+        && inviteAfter.data.acceptedByUid == uid;
+    }
+
+    function validCustomerAccount(uid) {
+      let profile = request.resource.data;
+      let accessPath = /databases/$(database)/documents/clubs/$(profile.clubId)/customerAccess/$(profile.email);
+      return uid == request.auth.uid
+        && request.auth.token.email_verified == true
+        && profile.email == request.auth.token.email
+        && profile.role == 'customer'
+        && profile.status == 'active'
+        && exists(accessPath)
+        && get(accessPath).data.enabled == true
+        && get(accessPath).data.customerId == profile.customerId
+        && get(accessPath).data.clubId == profile.clubId;
+    }
+
+    function validCheckout(clubId) {
+      let tableId = request.resource.data.tableId;
+      let tablePath = /databases/$(database)/documents/clubs/$(clubId)/tables/$(tableId);
+      let beforeTable = get(tablePath).data;
+      let afterTable = getAfter(tablePath).data;
+      let session = beforeTable.currentSession;
+      let sessionFoodTotal = session.get('foodTotal', null);
+      let sessionFoodOrders = session.get('foodOrders', []);
+      let config = get(/databases/$(database)/documents/clubs/$(clubId)/config/settings).data;
+      let splitData = request.resource.data.get('splitBreakdown', {});
+      let splitType = splitData is map ? splitData.get('splitType', 'method') : 'method';
+      let sessionEnd = session.isPaused == true && session.pausedAt is number ? session.pausedAt : request.resource.data.endTime;
+      let pausedSeconds = session.totalPausedSeconds is number ? session.totalPausedSeconds : 0;
+      let minimumMinutes = config.minimumChargeMinutes is number ? config.minimumChargeMinutes : 0;
+      let discountPercent = config.maxCashierDiscountPercent is number ? config.maxCashierDiscountPercent : 0;
+      let roundingRule = config.roundingRule is string ? config.roundingRule : 'nearest_1';
+      let elapsed = math.max(0, math.floor((sessionEnd - session.startTime) / 1000) - pausedSeconds);
+      let billableMinutes = elapsed > 0 ? math.max(math.ceil(elapsed / 60), minimumMinutes) : 0;
+      let expectedTableFee = billableMinutes * session.hourlyRate / 60;
+      let subtotal = request.resource.data.tableFee + request.resource.data.foodFee + request.resource.data.extraFee;
+      let discount = request.resource.data.discountAmount;
+      let rawTotal = math.max(0, subtotal - discount);
+      let expectedTotal = roundingRule == 'nearest_1' ? math.round(rawTotal)
+        : roundingRule == 'nearest_5' ? math.round(rawTotal / 5) * 5
+        : roundingRule == 'round_up' ? math.ceil(rawTotal)
+        : math.round(rawTotal * 100) / 100;
+      let discountLimit = subtotal * discountPercent / 100;
+      return activeStaff(clubId)
+        && request.resource.data.processedBy == request.auth.token.email
+        && exists(tablePath)
+        && beforeTable.status in ['occupied', 'payment_pending']
+        && session != null
+        && afterTable.status == 'available'
+        && afterTable.currentSession == null
+        && request.resource.data.tableName == beforeTable.name
+        && afterTable.lastReceiptId == request.resource.data.id
+        && request.resource.data.startTime == session.startTime
+        && request.resource.data.hourlyRate == session.hourlyRate
+        && request.resource.data.durationSeconds == elapsed
+        && request.resource.data.endTime <= request.time.toMillis() + 60000
+        && request.resource.data.endTime >= request.time.toMillis() - 120000
+        && request.resource.data.tableFee == expectedTableFee
+        && request.resource.data.foodFee is number
+        && request.resource.data.foodFee >= 0
+        && (userProfile().role != 'worker'
+          || (sessionFoodTotal is number && request.resource.data.foodFee == sessionFoodTotal)
+          || (sessionFoodTotal == null
+            && sessionFoodOrders is list
+            && sessionFoodOrders.size() == 0
+            && request.resource.data.foodFee == 0))
+        && request.resource.data.taxAmount == 0
+        && request.resource.data.extraFee >= 0
+        && discount >= 0 && discount <= subtotal
+        && (userProfile().role != 'worker' || discount <= discountLimit)
+        && request.resource.data.grandTotal == expectedTotal
+        && request.resource.data.amountPaid >= 0
+        && request.resource.data.balanceDue >= 0
+        && request.resource.data.amountPaid + request.resource.data.balanceDue == request.resource.data.grandTotal
+        && request.resource.data.customerIds is list
+        && (userProfile().role != 'worker'
+          || (request.resource.data.customerIds.size() <= 1
+            && (request.resource.data.customerIds.size() == 0
+              || request.resource.data.customerIds[0] == request.resource.data.customerId)
+            && splitType != 'players'
+            && request.resource.data.extraFee == 0
+            && request.resource.data.discountAmount == 0
+            && request.resource.data.foodOrders == session.get('foodOrders', [])))
+        && request.resource.data.processedBy is string;
+    }
+
+    function validWorkerFoodOrder(clubId, previousSession, nextSession) {
+      let oldOrders = previousSession.get('foodOrders', []);
+      let nextOrders = nextSession.get('foodOrders', []);
+      let newOrder = nextOrders is list && nextOrders.size() > 0
+        ? nextOrders[nextOrders.size() - 1]
+        : {};
+      let menuId = newOrder is map ? newOrder.get('menuId', '_invalid') : '_invalid';
+      let menuPath = /databases/$(database)/documents/clubs/$(clubId)/menuItems/$(menuId);
+      let menu = get(menuPath).data;
+      return oldOrders is list
+        && nextOrders is list
+        && nextOrders.size() == oldOrders.size() + 1
+        && nextOrders.hasAll(oldOrders)
+        && newOrder is map
+        && newOrder.id is string
+        && menuId is string
+        && menuId.size() > 0
+        && exists(menuPath)
+        && menu.available == true
+        && menu.price is number
+        && menu.price >= 0
+        && newOrder.name == menu.name
+        && newOrder.price == menu.price
+        && newOrder.category == menu.category
+        && newOrder.quantity is int
+        && newOrder.quantity > 0
+        && newOrder.quantity <= 100
+        && newOrder.addedAt is string
+        && nextSession.foodTotal is number
+        && nextSession.foodTotal == previousSession.get('foodTotal', 0) + menu.price * newOrder.quantity;
+    }
+
+    function workerTableUpdate(clubId, tableId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let previousSession = resource.data.currentSession;
+      let nextSession = request.resource.data.currentSession;
+      let receiptId = request.resource.data.lastReceiptId;
+      let receiptPath = /databases/$(database)/documents/clubs/$(clubId)/history/$(receiptId);
+      return activeStaff(clubId)
+        && userProfile().role == 'worker'
+        && changed.hasOnly(['status', 'currentSession', 'lastReceiptId'])
+        && (
+          resource.data.status == 'available'
+            && request.resource.data.status == 'occupied'
+            && nextSession is map
+            && nextSession.hourlyRate == resource.data.hourlyRate
+            && nextSession.startTime >= request.time.toMillis() - 120000
+            && nextSession.startTime <= request.time.toMillis() + 60000
+            && nextSession.totalPausedSeconds == 0
+            && nextSession.isPaused == false
+            && nextSession.foodOrders is list
+            && nextSession.foodOrders.size() == 0
+            && nextSession.get('foodTotal', 0) == 0
+          || resource.data.status == 'occupied'
+            && request.resource.data.status == 'occupied'
+            && previousSession is map
+            && nextSession is map
+            && nextSession.hourlyRate == previousSession.hourlyRate
+            && nextSession.startTime == previousSession.startTime
+            && nextSession.totalPausedSeconds == previousSession.totalPausedSeconds
+            && nextSession.diff(previousSession).affectedKeys().hasOnly(['foodOrders', 'foodTotal'])
+            && validWorkerFoodOrder(clubId, previousSession, nextSession)
+          || resource.data.status == 'occupied'
+            && request.resource.data.status == 'occupied'
+            && previousSession is map
+            && nextSession is map
+            && nextSession.hourlyRate == previousSession.hourlyRate
+            && nextSession.startTime == previousSession.startTime
+            && previousSession.isPaused == false
+            && nextSession.isPaused == true
+            && nextSession.pausedAt is number
+            && nextSession.pausedAt >= request.time.toMillis() - 60000
+            && nextSession.pausedAt <= request.time.toMillis() + 60000
+            && nextSession.totalPausedSeconds == previousSession.totalPausedSeconds
+            && nextSession.diff(previousSession).affectedKeys().hasOnly(['isPaused', 'pausedAt'])
+          || resource.data.status == 'occupied'
+            && request.resource.data.status == 'occupied'
+            && previousSession is map
+            && nextSession is map
+            && nextSession.hourlyRate == previousSession.hourlyRate
+            && nextSession.startTime == previousSession.startTime
+            && previousSession.isPaused == true
+            && nextSession.isPaused == false
+            && previousSession.pausedAt is number
+            && nextSession.get('pausedAt', null) == null
+            && math.abs(nextSession.totalPausedSeconds - previousSession.totalPausedSeconds
+              - math.floor((request.time.toMillis() - previousSession.pausedAt) / 1000)) <= 60
+            && nextSession.diff(previousSession).affectedKeys().hasOnly(['isPaused', 'pausedAt', 'totalPausedSeconds'])
+          || resource.data.status == 'occupied'
+            && request.resource.data.status == 'payment_pending'
+            && nextSession == previousSession
+            && changed.hasOnly(['status'])
+          || resource.data.status in ['occupied', 'payment_pending']
+            && request.resource.data.status == 'available'
+            && nextSession == null
+            && receiptId is string
+            && existsAfter(receiptPath)
+            && getAfter(receiptPath).data.tableId == tableId
+            && getAfter(receiptPath).data.processedBy == request.auth.token.email
+            && changed.hasOnly(['status', 'currentSession', 'lastReceiptId'])
+        );
+    }
+
+    function workerBillCustomerUpdate(clubId, customerId) {
+      let receiptId = request.resource.data.lastReceiptId;
+      let receiptPath = /databases/$(database)/documents/clubs/$(clubId)/history/$(receiptId);
+      let receipt = getAfter(receiptPath).data;
+      let splitData = receipt.get('splitBreakdown', {});
+      let splitType = splitData is map ? splitData.get('splitType', 'method') : 'method';
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let oldLedger = resource.data.get('udhaarLedger', []);
+      let nextLedger = request.resource.data.get('udhaarLedger', oldLedger);
+      let paidEntry = {
+        'id': receiptId + '-payment-' + customerId,
+        'timestamp': receipt.endTime,
+        'type': 'payment_received',
+        'amount': receipt.amountPaid,
+        'description': 'Payment received for receipt #' + receipt.receiptNo,
+        'receiptNo': receipt.receiptNo,
+        'receiptId': receiptId,
+        'paymentMethod': receipt.paymentMethod,
+        'source': 'bill',
+        'customerId': customerId,
+        'recordedByEmail': request.auth.token.email,
+        'recordedBy': request.auth.token.email
+      };
+      let dueEntry = {
+        'id': receiptId + '-due-' + customerId,
+        'timestamp': receipt.endTime,
+        'type': 'due_added',
+        'amount': receipt.balanceDue,
+        'description': 'Amount due for receipt #' + receipt.receiptNo,
+        'receiptNo': receipt.receiptNo,
+        'receiptId': receiptId,
+        'source': 'bill',
+        'customerId': customerId,
+        'recordedByEmail': request.auth.token.email,
+        'recordedBy': request.auth.token.email
+      };
+      let expectedLedgerEntries = (receipt.amountPaid > 0 ? 1 : 0) + (receipt.balanceDue > 0 ? 1 : 0);
+      return activeStaff(clubId)
+        && userProfile().role == 'worker'
+        && receiptId is string
+        && existsAfter(receiptPath)
+        && receipt.id == receiptId
+        && receipt.customerId == customerId
+        && receipt.customerIds is list
+        && receipt.customerIds.size() == 1
+        && receipt.customerIds[0] == customerId
+        && splitType != 'players'
+        && receipt.processedBy == request.auth.token.email
+        && receipt.amountPaid is number && receipt.amountPaid >= 0
+        && receipt.balanceDue is number && receipt.balanceDue >= 0
+        && receipt.durationSeconds is number && receipt.durationSeconds >= 0
+        && changed.hasOnly(['totalSpent', 'sessionsCount', 'totalHoursPlayed', 'outstandingDue', 'lastVisit', 'lastReceiptId', 'udhaarLedger'])
+        && request.resource.data.get('totalSpent', 0) == resource.data.get('totalSpent', 0) + receipt.amountPaid
+        && request.resource.data.get('sessionsCount', 0) == resource.data.get('sessionsCount', 0) + 1
+        && request.resource.data.get('totalHoursPlayed', 0) == resource.data.get('totalHoursPlayed', 0) + receipt.durationSeconds / 3600
+        && request.resource.data.get('outstandingDue', 0) == resource.data.get('outstandingDue', 0) + receipt.balanceDue
+        && request.resource.data.lastReceiptId == receiptId
+        && request.resource.data.lastVisit is string
+        && oldLedger is list && nextLedger is list
+        && nextLedger.hasAll(oldLedger)
+        && nextLedger.size() == oldLedger.size() + expectedLedgerEntries
+        && (receipt.amountPaid == 0 || nextLedger.hasAny([paidEntry]))
+        && (receipt.balanceDue == 0 || nextLedger.hasAny([dueEntry]));
+    }
+
+    function workerAccountCustomerUpdate(clubId, customerId) {
+      let transactionId = request.resource.data.lastAccountTransactionId;
+      let transactionPath = /databases/$(database)/documents/clubs/$(clubId)/customers/$(customerId)/transactions/$(transactionId);
+      let entry = getAfter(transactionPath).data;
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return activeStaff(clubId)
+        && userProfile().role == 'worker'
+        && transactionId is string
+        && existsAfter(transactionPath)
+        && entry.customerId == customerId
+        && entry.recordedByEmail == request.auth.token.email
+        && entry.amount is number && entry.amount > 0
+        && changed.hasOnly(['outstandingDue', 'totalSpent', 'walletBalance', 'udhaarLedger', 'lastAccountTransactionId', 'updatedAt'])
+        && (entry.type == 'payment_received'
+          && entry.source == 'balance_settlement'
+          && resource.data.outstandingDue >= entry.amount
+          && request.resource.data.outstandingDue == resource.data.outstandingDue - entry.amount
+          && request.resource.data.totalSpent == resource.data.totalSpent + entry.amount
+          && request.resource.data.walletBalance == resource.data.walletBalance
+          || entry.type == 'deposit_added'
+          && request.resource.data.walletBalance == resource.data.walletBalance + entry.amount
+          && request.resource.data.outstandingDue == resource.data.outstandingDue
+          && request.resource.data.totalSpent == resource.data.totalSpent);
+    }
+
+    function workerPortalBillUpdate(clubId, customerId) {
+      let customerPath = /databases/$(database)/documents/clubs/$(clubId)/customers/$(customerId);
+      let customerAfter = getAfter(customerPath).data;
+      let receiptPath = /databases/$(database)/documents/clubs/$(clubId)/history/$(customerAfter.lastReceiptId);
+      return activeStaff(clubId)
+        && userProfile().role == 'worker'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sessionsCount', 'totalSpent', 'totalHoursPlayed', 'outstandingDue', 'lastVisit', 'lastReceiptId'])
+        && existsAfter(receiptPath)
+        && getAfter(receiptPath).data.customerIds.hasAny([customerId])
+        && request.resource.data.lastReceiptId == customerAfter.lastReceiptId
+        && request.resource.data.sessionsCount == customerAfter.sessionsCount
+        && request.resource.data.totalSpent == customerAfter.totalSpent
+        && request.resource.data.totalHoursPlayed == customerAfter.totalHoursPlayed
+        && request.resource.data.outstandingDue == customerAfter.outstandingDue
+        && request.resource.data.lastVisit == customerAfter.lastVisit;
+    }
+
+    function workerPortalAccountUpdate(clubId, customerId) {
+      let customerPath = /databases/$(database)/documents/clubs/$(clubId)/customers/$(customerId);
+      let customerAfter = getAfter(customerPath).data;
+      let transactionPath = /databases/$(database)/documents/clubs/$(clubId)/customers/$(customerId)/transactions/$(customerAfter.lastAccountTransactionId);
+      return activeStaff(clubId)
+        && userProfile().role == 'worker'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['outstandingDue', 'totalSpent', 'walletBalance'])
+        && existsAfter(transactionPath)
+        && request.resource.data.outstandingDue == customerAfter.outstandingDue
+        && request.resource.data.totalSpent == customerAfter.totalSpent
+        && request.resource.data.walletBalance == customerAfter.walletBalance;
+    }
+
     match /users/{userId} {
-      allow read: if isSignedIn();
-      // Users can update their own profile, but cannot arbitrarily promote themselves to owner
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && (
-        request.auth.uid == userId && (
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']) || isOwner()
-        )
+      allow get: if signedIn() && (
+        request.auth.uid == userId ||
+        (hasUserProfile() && userProfile().role in ['owner', 'manager'] && userProfile().status == 'active')
       );
-      allow delete: if isOwner();
+      allow list: if hasUserProfile() && userProfile().role in ['owner', 'manager'] && userProfile().status == 'active';
+      // The first owner is provisioned manually. Staff can only accept a manager/worker invitation.
+      allow create: if signedIn() && userId == request.auth.uid && validStaffInvite(userId)
+        || signedIn() && validCustomerAccount(userId);
+      allow update: if signedIn() && userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLogin', 'lastLoginAt', 'updatedAt'])
+        || hasUserProfile() && userProfile().role == 'owner'
+        && userProfile().clubId == resource.data.clubId
+        && request.resource.data.clubId == resource.data.clubId
+        && request.resource.data.role in ['manager', 'worker', 'customer'];
+      allow delete: if owner(resource.data.clubId);
     }
 
-    // --- STAFF INVITATIONS ---
     match /invitations/{invitationId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isManagerOrOwner();
+      allow get: if signedIn() && (
+        (request.auth.token.email == resource.data.email && resource.data.status == 'pending') ||
+        managerOrOwner(resource.data.clubId)
+      );
+      allow list: if hasUserProfile() && userProfile().role in ['owner', 'manager'] && userProfile().status == 'active';
+      allow create: if managerOrOwner(request.resource.data.clubId)
+        && request.resource.data.email is string
+        && request.resource.data.email == invitationId
+        && request.resource.data.role in ['manager', 'worker']
+        && request.resource.data.status == 'pending';
+      allow update: if managerOrOwner(resource.data.clubId)
+        || signedIn()
+          && request.auth.token.email == resource.data.email
+          && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedAt', 'acceptedByUid'])
+          && request.resource.data.status == 'accepted'
+          && request.resource.data.acceptedByUid == request.auth.uid
+          && getAfter(userPath(request.auth.uid)).data.role == resource.data.role
+          && getAfter(userPath(request.auth.uid)).data.invitationCode == resource.data.code;
+      allow delete: if managerOrOwner(resource.data.clubId);
     }
 
-    // --- CLUB WORKSPACES & SUBCOLLECTIONS ---
     match /clubs/{clubId} {
-      allow read: if isClubStaff();
-      allow write: if isOwner();
+      allow read: if activeStaff(clubId);
+      allow write: if owner(clubId);
 
-      // Club Settings & Configuration (Owner Only)
       match /config/{docId} {
-        allow read: if isClubStaff();
-        allow write: if isOwner();
+        allow read: if activeStaff(clubId);
+        allow write: if owner(clubId);
       }
 
-      // Gaming Tables & Active Sessions (Staff Accessible)
       match /tables/{tableId} {
-        allow read: if isClubStaff();
-        allow write: if isClubStaff();
+        allow read: if activeStaff(clubId);
+        allow create, delete: if managerOrOwner(clubId);
+        allow update: if managerOrOwner(clubId) || workerTableUpdate(clubId, tableId);
       }
 
-      // Menu Catalog (Manager & Owner)
       match /menuItems/{itemId} {
-        allow read: if isClubStaff();
-        allow write: if isManagerOrOwner();
+        allow read: if activeStaff(clubId);
+        allow write: if managerOrOwner(clubId);
       }
 
-      // Kitchen Display / Food Orders (All Staff)
       match /foodOrders/{orderId} {
-        allow read: if isClubStaff();
-        allow write: if isClubStaff();
+        allow read, write: if activeStaff(clubId);
       }
 
-      // Online Customer Session Requests & Waitlist Queue
       match /requests/{requestId} {
-        allow read, write: if isClubStaff();
+        allow read, write: if activeStaff(clubId);
       }
 
-      // Inventory Procurement & Supplier Purchases
-      match /purchases/{purchaseId} {
-        allow read: if isClubStaff();
-        allow write: if isManagerOrOwner();
+      match /purchaseRecords/{purchaseId} {
+        allow read, write: if managerOrOwner(clubId);
       }
 
-      // Stock Waste, Breakage & Inventory Audits
-      match /inventoryAdjustments/{adjId} {
-        allow read: if isClubStaff();
-        allow write: if isManagerOrOwner();
+      match /inventoryAdjustments/{adjustmentId} {
+        allow read, write: if managerOrOwner(clubId);
       }
 
-      // Customer Profiles & Credit Ledgers (Cashier, Manager, Owner)
       match /customers/{customerId} {
-        allow read: if isClubStaff();
-        allow write: if isClubStaff();
+        allow read: if activeStaff(clubId);
+        allow create: if managerOrOwner(clubId)
+          || activeStaff(clubId)
+            && userProfile().role == 'worker'
+            && request.resource.data.email == ''
+            && request.resource.data.outstandingDue == 0
+            && request.resource.data.walletBalance == 0
+            && request.resource.data.totalSpent == 0
+            && request.resource.data.sessionsCount == 0;
+        allow update: if managerOrOwner(clubId)
+          || activeStaff(clubId)
+            && userProfile().role == 'worker'
+            && request.resource.data.email == resource.data.email
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'phone', 'preferredGame', 'notes', 'updatedAt', 'customerNumber', 'id', 'dateJoined'])
+          || workerBillCustomerUpdate(clubId, customerId)
+          || workerAccountCustomerUpdate(clubId, customerId);
+        allow delete: if false;
+
+        match /transactions/{transactionId} {
+          allow read: if activeStaff(clubId);
+          allow create: if managerOrOwner(clubId)
+            && request.resource.data.customerId == customerId
+            && request.resource.data.clubId == clubId
+            && request.resource.data.amount is number
+            && request.resource.data.amount > 0
+            || activeStaff(clubId)
+              && userProfile().role == 'worker'
+              && request.resource.data.customerId == customerId
+              && request.resource.data.clubId == clubId
+              && request.resource.data.recordedByEmail == request.auth.token.email
+              && request.resource.data.amount is number
+              && request.resource.data.amount > 0
+              && request.resource.data.type in ['payment_received', 'deposit_added'];
+          allow update, delete: if false;
+        }
       }
 
-      // Cue Lockers & Member Storage
+      match /customerAccess/{email} {
+        allow get: if activeStaff(clubId)
+          || signedIn() && request.auth.token.email_verified == true && request.auth.token.email == email;
+        allow list: if managerOrOwner(clubId);
+        allow create, update: if managerOrOwner(clubId)
+          && request.resource.data.clubId == clubId
+          && request.resource.data.email == email
+          && request.resource.data.customerId is string
+          && request.resource.data.enabled is bool;
+        allow delete: if managerOrOwner(clubId);
+      }
+
+      match /customerPortal/{customerId} {
+        allow get: if activeStaff(clubId) || customerOwns(clubId, customerId);
+        allow list: if managerOrOwner(clubId);
+        allow create: if managerOrOwner(clubId);
+        allow update: if managerOrOwner(clubId)
+          || activeStaff(clubId)
+            && userProfile().role == 'worker'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+            && request.resource.data.name == getAfter(/databases/$(database)/documents/clubs/$(clubId)/customers/$(customerId)).data.name
+          || workerPortalBillUpdate(clubId, customerId)
+          || workerPortalAccountUpdate(clubId, customerId);
+        allow delete: if managerOrOwner(clubId);
+
+        match /receipts/{receiptId} {
+          allow read: if activeStaff(clubId) || customerOwns(clubId, customerId);
+          allow create: if activeStaff(clubId)
+            && existsAfter(/databases/$(database)/documents/clubs/$(clubId)/history/$(receiptId))
+            && getAfter(/databases/$(database)/documents/clubs/$(clubId)/history/$(receiptId)).data.customerIds.hasAny([customerId]);
+          allow update: if owner(clubId)
+            || managerOrOwner(clubId)
+              && resource.data.customerId == customerId
+              && request.resource.data.paymentStatus == 'refunded'
+              && existsAfter(/databases/$(database)/documents/clubs/$(clubId)/history/$(receiptId))
+              && getAfter(/databases/$(database)/documents/clubs/$(clubId)/history/$(receiptId)).data.paymentStatus == 'refunded'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'refundedAmount', 'refundReason']);
+          allow delete: if managerOrOwner(clubId);
+        }
+
+        match /activity/{activityId} {
+          allow read: if activeStaff(clubId) || customerOwns(clubId, customerId);
+          allow create: if managerOrOwner(clubId)
+            || activeStaff(clubId)
+              && request.resource.data.recordedByEmail == request.auth.token.email
+              && (existsAfter(/databases/$(database)/documents/clubs/$(clubId)/customers/$(customerId)/transactions/$(activityId))
+                && getAfter(/databases/$(database)/documents/clubs/$(clubId)/customers/$(customerId)/transactions/$(activityId)).data.recordedByEmail == request.auth.token.email
+                || request.resource.data.receiptId is string
+                  && existsAfter(/databases/$(database)/documents/clubs/$(clubId)/history/$(request.resource.data.receiptId))
+                  && getAfter(/databases/$(database)/documents/clubs/$(clubId)/history/$(request.resource.data.receiptId)).data.customerIds.hasAny([customerId])
+                  && getAfter(/databases/$(database)/documents/clubs/$(clubId)/history/$(request.resource.data.receiptId)).data.processedBy == request.auth.token.email);
+          allow update, delete: if false;
+        }
+      }
+
       match /lockers/{lockerId} {
-        allow read, write: if isClubStaff();
+        allow read, write: if activeStaff(clubId);
       }
 
-      // Tournaments & Brackets
       match /tournaments/{tournamentId} {
-        allow read, write: if isClubStaff();
+        allow read, write: if activeStaff(clubId);
       }
 
-      // Billing History & Completed Receipts
       match /history/{historyId} {
-        allow read: if isClubStaff();
-        allow create: if isClubStaff();
-        // Modification or deletion of receipts restricted to Owner
-        allow update, delete: if isOwner();
+        allow read: if activeStaff(clubId);
+        allow create: if validCheckout(clubId);
+        allow update: if owner(clubId)
+          || managerOrOwner(clubId)
+            && resource.data.paymentStatus != 'refunded'
+            && request.resource.data.paymentStatus == 'refunded'
+            && request.resource.data.refundReason is string
+            && request.resource.data.refundReason.size() > 0
+            && request.resource.data.refundedBy == request.auth.token.email
+            && request.resource.data.refundedAmount == resource.data.amountPaid
+            && request.resource.data.refundedAt is number
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'refundReason', 'refundedBy', 'refundedAt', 'refundedAmount']);
+        allow delete: if owner(clubId);
       }
 
-      // Staff Roster & Employee Management (Owner Only)
       match /employees/{employeeId} {
-        allow read: if isClubStaff();
-        allow write: if isOwner();
+        allow read: if activeStaff(clubId);
+        allow write: if owner(clubId);
       }
 
-      // Staff Attendance
-      match /attendance/{attId} {
-        allow read: if isClubStaff();
-        allow write: if isClubStaff();
+      match /attendance/{attendanceId} {
+        allow read, write: if activeStaff(clubId);
       }
 
-      // Club Expenses & Financial Costs (Manager & Owner Only)
       match /expenses/{expenseId} {
-        allow read, write: if isManagerOrOwner();
+        allow read, write: if managerOrOwner(clubId);
       }
 
-      // Table Maintenance Records
-      match /maintenance/{maintId} {
-        allow read, write: if isClubStaff();
+      match /maintenance/{maintenanceId} {
+        allow read, write: if activeStaff(clubId);
       }
 
-      // System Notifications
-      match /notifications/{notifId} {
-        allow read, write: if isClubStaff();
+      match /notifications/{notificationId} {
+        allow read, write: if activeStaff(clubId);
       }
 
-      // Audit Logs — Append-only, never modifiable or deletable
       match /auditLogs/{logId} {
-        allow read: if isManagerOrOwner();
-        allow create: if isClubStaff();
+        allow read: if managerOrOwner(clubId);
+        allow create: if activeStaff(clubId)
+          && request.resource.data.clubId == clubId
+          && request.resource.data.performedBy == request.auth.token.email;
         allow update, delete: if false;
       }
     }
 
-    // Platform Health Ping Endpoint
-    match /test/connection {
-      allow read, write: if isSignedIn();
-    }
-
-    // Default Deny
+    // Vercel is the deployment target; platform/SaaS collections are intentionally closed
+    // for this single local-club installation.
     match /{document=**} {
       allow read, write: if false;
     }

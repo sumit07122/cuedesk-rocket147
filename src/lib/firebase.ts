@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore, collection, getDocs, limit, query } from 'firebase/firestore';
+import { getFirestore, doc, getDoc } from 'firebase/firestore';
 import bundledFirebaseConfig from '../../firebase-applet-config.json';
 
 export interface FirebaseAppConfig {
@@ -15,20 +15,7 @@ export interface FirebaseAppConfig {
 }
 
 export const getActiveFirebaseConfig = (): { config: FirebaseAppConfig; source: 'env' | 'custom' | 'bundled'; isCustom: boolean } => {
-  // 1. In-App Custom / Client Database Override (configured directly from Club Settings -> Cloud Connection)
-  try {
-    const saved = localStorage.getItem('cuedesk_custom_firebase_config');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed.projectId && parsed.apiKey) {
-        return { config: parsed, source: 'custom', isCustom: true };
-      }
-    }
-  } catch (e) {
-    console.warn('Error reading custom firebase config from localStorage:', e);
-  }
-
-  // 2. Vite / Vercel Environment Variables
+  // Use the deployment's configured Firebase project; browser storage cannot override the live database.
   const envApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
   const envProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
 
@@ -48,7 +35,7 @@ export const getActiveFirebaseConfig = (): { config: FirebaseAppConfig; source: 
     };
   }
 
-  // 3. Bundled Application Fallback
+  // Local development fallback for the project preview.
   return { config: bundledFirebaseConfig as FirebaseAppConfig, source: 'bundled', isCustom: false };
 };
 
@@ -81,14 +68,13 @@ googleProvider.setCustomParameters({
 /**
  * Health check helper for Cloud Firestore
  */
-export const testFirestoreHealth = async (): Promise<{ connected: boolean; latencyMs?: number; message?: string }> => {
+export const testFirestoreHealth = async (clubId: string): Promise<{ connected: boolean; latencyMs?: number; message?: string }> => {
   const start = performance.now();
   try {
-    const q = query(collection(db, 'clubs'), limit(1));
     const timeoutPromise = new Promise((_, reject) => 
       setTimeout(() => reject(new Error('Connection timeout (4000ms)')), 4000)
     );
-    await Promise.race([getDocs(q), timeoutPromise]);
+    await Promise.race([getDoc(doc(db, 'clubs', clubId, 'config', 'settings')), timeoutPromise]);
     const latency = Math.round(performance.now() - start);
     return { connected: true, latencyMs: latency, message: 'Connected & Operational' };
   } catch (err: any) {

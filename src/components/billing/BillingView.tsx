@@ -23,7 +23,10 @@ import {
   Split,
   History as HistoryIcon,
   ShieldAlert,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Sparkles,
+  Check,
+  Users
 } from 'lucide-react';
 import { 
   TableItem, 
@@ -32,18 +35,20 @@ import {
   BusinessConfig, 
   ExtraChargeItem, 
   SplitPaymentBreakdown,
+  SplitPaymentPlayer,
   AuditLogItem,
-  UserRole
+  UserRole,
+  TopCustomer
 } from '../../types';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Card } from '../ui/Card';
-import { ShiftClosureModal } from './ShiftClosureModal';
 import { Badge } from '../ui/Badge';
 import { Modal } from '../ui/Modal';
 import { formatCurrency, calculateSessionSeconds, formatTimerString, calculateBillTotals } from '../../utils/formatters';
 import { exportSalesToExcel } from '../../utils/excelExport';
 import { useAuth } from '../../context/AuthContext';
+import { getCustomerNumber } from '../../utils/customerIdentity';
 
 interface BillingViewProps {
   tables: TableItem[];
@@ -56,6 +61,7 @@ interface BillingViewProps {
   history?: SessionHistoryItem[];
   userRole?: UserRole;
   auditLogs?: AuditLogItem[];
+  topCustomers?: TopCustomer[];
   onMarkPaid: (historyItem: SessionHistoryItem) => void;
   onShowReceipt: (historyItem: SessionHistoryItem) => void;
   onRefund?: (historyId: string, reason: string) => Promise<void> | void;
@@ -73,6 +79,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
   history = [],
   userRole = 'owner',
   auditLogs = [],
+  topCustomers = [],
   onMarkPaid,
   onShowReceipt,
   onRefund,
@@ -87,8 +94,14 @@ export const BillingView: React.FC<BillingViewProps> = ({
     occupiedTables.length > 0 ? occupiedTables[0].id : ''
   );
 
+  // Customer Identification State (captured on checkout)
+  const [customerNameInput, setCustomerNameInput] = useState('');
+  const [customerPhoneInput, setCustomerPhoneInput] = useState('');
+  const [selectedCrmCustomerId, setSelectedCrmCustomerId] = useState<string | null>(null);
+  const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
+
   // Billing State
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card' | 'split'>('upi');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'split' | 'due_ledger'>('upi');
   const [discountInput, setDiscountInput] = useState<number>(0);
   const [discountType, setDiscountType] = useState<'amount' | 'percent'>('amount');
   const [extraCharges, setExtraCharges] = useState<ExtraChargeItem[]>([]);
@@ -96,24 +109,40 @@ export const BillingView: React.FC<BillingViewProps> = ({
   const [newExtraAmount, setNewExtraAmount] = useState<number | ''>('');
   const [notes, setNotes] = useState('');
 
-  // Split Payment Breakdown
+  // Split Payment State
+  const [splitMode, setSplitMode] = useState<'method' | 'players'>('method');
   const [splitCash, setSplitCash] = useState<number>(0);
   const [splitUpi, setSplitUpi] = useState<number>(0);
-  const [splitCard, setSplitCard] = useState<number>(0);
+
+  // Two-Person Split State
+  const [p1Name, setP1Name] = useState('Player 1');
+  const [p1Amount, setP1Amount] = useState<number>(0);
+  const [p1Method, setP1Method] = useState<'cash' | 'upi' | 'credit'>('cash');
+  const [p1CustomerId, setP1CustomerId] = useState<string | null>(null);
+
+  const [p2Name, setP2Name] = useState('Player 2');
+  const [p2Amount, setP2Amount] = useState<number>(0);
+  const [p2Method, setP2Method] = useState<'cash' | 'upi' | 'credit'>('upi');
+  const [p2CustomerId, setP2CustomerId] = useState<string | null>(null);
 
   // Partial Payment
   const [customAmountPaid, setCustomAmountPaid] = useState<number | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (userRole === 'worker') {
+      setSplitMode('method');
+      setDiscountInput(0);
+      setExtraCharges([]);
+    }
+  }, [userRole]);
   const [now, setNow] = useState(Date.now());
 
   // Ledger Filter State
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'partially_paid' | 'pending' | 'refunded'>('all');
-  const [methodFilter, setMethodFilter] = useState<'all' | 'cash' | 'upi' | 'card' | 'split'>('all');
-
-  // Shift Closure Modal State
-  const [isShiftClosureOpen, setIsShiftClosureOpen] = useState(false);
+  const [methodFilter, setMethodFilter] = useState<'all' | 'cash' | 'upi' | 'split' | 'due_ledger' | 'card'>('all');
 
   // Refund Modal State
   const [refundModalItem, setRefundModalItem] = useState<SessionHistoryItem | null>(null);
@@ -140,9 +169,22 @@ export const BillingView: React.FC<BillingViewProps> = ({
     setDiscountInput(0);
     setNotes('');
     setCustomAmountPaid(null);
-    setSplitCash(0);
-    setSplitUpi(0);
-    setSplitCard(0);
+    setSplitMode('method');
+
+    const defaultCustName = session?.customerName && !session.customerName.startsWith('Table #') ? session.customerName : '';
+    setCustomerNameInput(defaultCustName);
+    setCustomerPhoneInput(session?.customerPhone || '');
+
+    // Only use an explicit, stable customer link. Never guess by a shared name or phone number.
+    const linkedCustomerId = session?.customerId || null;
+    setSelectedCrmCustomerId(linkedCustomerId);
+
+    setP1Name(defaultCustName || 'Player 1');
+    setP1CustomerId(linkedCustomerId);
+    setP1Method('cash');
+    setP2Name('Player 2');
+    setP2CustomerId(null);
+    setP2Method('upi');
   }, [selectedTableId]);
 
   let seconds = 0;
@@ -167,19 +209,22 @@ export const BillingView: React.FC<BillingViewProps> = ({
       discountVal, 
       now, 
       extraCharges, 
-      config?.roundingRule || 'nearest_1'
+      config?.roundingRule || 'nearest_1',
+      config?.minimumChargeMinutes || 0
     );
   }
 
   // Handle auto split allocation default
   useEffect(() => {
-    if (paymentMethod === 'split' && computedTotals.grandTotal > 0) {
+    if (computedTotals.grandTotal > 0) {
       const half = Math.round(computedTotals.grandTotal / 2);
+      const rem = computedTotals.grandTotal - half;
       setSplitCash(half);
-      setSplitUpi(computedTotals.grandTotal - half);
-      setSplitCard(0);
+      setSplitUpi(rem);
+      setP1Amount(half);
+      setP2Amount(rem);
     }
-  }, [paymentMethod, computedTotals.grandTotal]);
+  }, [computedTotals.grandTotal]);
 
   const handleAddExtraCharge = () => {
     if (!newExtraName.trim() || !newExtraAmount || Number(newExtraAmount) <= 0) return;
@@ -195,6 +240,14 @@ export const BillingView: React.FC<BillingViewProps> = ({
     setExtraCharges((prev) => prev.filter((c) => c.id !== id));
   };
 
+  const filteredCustomers = topCustomers.filter((c) => {
+    if (!customerNameInput.trim()) return true;
+    const q = customerNameInput.toLowerCase();
+    return c.name.toLowerCase().includes(q) || (c.phone && c.phone.includes(q));
+  });
+
+  const selectedCustomerObj = topCustomers.find((c) => c.id === selectedCrmCustomerId);
+
   const handleCheckout = async () => {
     if (!currentTable || !session || isSubmitting) return;
 
@@ -202,8 +255,8 @@ export const BillingView: React.FC<BillingViewProps> = ({
     try {
       const isUdhaar = paymentMethod === 'due_ledger';
       const finalGrandTotal = computedTotals.grandTotal;
-      const actualPaid = isUdhaar ? 0 : (customAmountPaid !== null ? customAmountPaid : finalGrandTotal);
-      const balance = isUdhaar ? finalGrandTotal : Math.max(0, finalGrandTotal - actualPaid);
+      let actualPaid = isUdhaar ? 0 : (customAmountPaid !== null ? customAmountPaid : finalGrandTotal);
+      let balance = isUdhaar ? finalGrandTotal : Math.max(0, finalGrandTotal - actualPaid);
       
       let pStatus: SessionHistoryItem['paymentStatus'] = 'paid';
       if (isUdhaar) {
@@ -216,12 +269,76 @@ export const BillingView: React.FC<BillingViewProps> = ({
 
       const receiptNo = `REC-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
       
+      let splitBreakdownData: SplitPaymentBreakdown | undefined = undefined;
+      if (paymentMethod === 'split') {
+        if (splitMode === 'players') {
+          const p1Cash = p1Method === 'cash' ? p1Amount : 0;
+          const p2Cash = p2Method === 'cash' ? p2Amount : 0;
+          const p1Upi = p1Method === 'upi' ? p1Amount : 0;
+          const p2Upi = p2Method === 'upi' ? p2Amount : 0;
+          splitBreakdownData = {
+            cash: p1Cash + p2Cash,
+            upi: p1Upi + p2Upi,
+            splitType: 'players',
+            players: [
+              {
+                name: p1Name.trim() || 'Player 1',
+                amount: p1Amount,
+                method: p1Method,
+                customerId: p1CustomerId || undefined,
+              },
+              {
+                name: p2Name.trim() || 'Player 2',
+                amount: p2Amount,
+                method: p2Method,
+                customerId: p2CustomerId || undefined,
+              }
+            ]
+          };
+        } else {
+          splitBreakdownData = {
+            cash: splitCash,
+            upi: splitUpi,
+            splitType: 'method'
+          };
+        }
+      }
+
+      if (paymentMethod === 'split' && splitMode === 'players' && splitBreakdownData?.players) {
+        const playerTotal = splitBreakdownData.players.reduce((sum, player) => sum + player.amount, 0);
+        if (Math.abs(playerTotal - finalGrandTotal) > 0.01) {
+          window.alert('Player shares must add up to the bill total before checkout.');
+          return;
+        }
+        actualPaid = splitBreakdownData.players
+          .filter((player) => player.method !== 'credit')
+          .reduce((sum, player) => sum + player.amount, 0);
+        balance = splitBreakdownData.players
+          .filter((player) => player.method === 'credit')
+          .reduce((sum, player) => sum + player.amount, 0);
+        pStatus = balance > 0 ? (actualPaid > 0 ? 'partially_paid' : 'due_ledger') : 'paid';
+      }
+
+      if (balance > 0 && !selectedCrmCustomerId && !session.customerId && !p1CustomerId && !p2CustomerId) {
+        window.alert('Select the customer from CRM before recording an unpaid balance. This links the due to the right account.');
+        return;
+      }
+      if (paymentMethod === 'split' && splitMode === 'players' && splitBreakdownData?.players?.some((player) => player.method === 'credit' && !player.customerId)) {
+        window.alert('Select a CRM customer for each player paying on credit.');
+        return;
+      }
+
+      const finalCustomerName = customerNameInput.trim() ||
+        (session.customerName && !session.customerName.startsWith('Table #') ? session.customerName : `Guest (Table #${currentTable.number})`);
+      const finalCustomerPhone = customerPhoneInput.trim() || session.customerPhone || '';
+
       const historyItem: SessionHistoryItem = {
         id: `hist-${Date.now()}`,
         tableId: currentTable.id,
         tableName: currentTable.name,
-        customerName: session.customerName,
-        customerPhone: session.customerPhone,
+        customerName: finalCustomerName,
+        customerId: selectedCrmCustomerId || session.customerId || p1CustomerId || p2CustomerId || undefined,
+        customerPhone: finalCustomerPhone,
         startTime: session.startTime,
         endTime: now,
         durationSeconds: seconds,
@@ -236,7 +353,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
         amountPaid: actualPaid,
         balanceDue: balance,
         paymentMethod: paymentMethod,
-        ...(paymentMethod === 'split' ? { splitBreakdown: { cash: splitCash, upi: splitUpi, card: splitCard } } : {}),
+        ...(splitBreakdownData ? { splitBreakdown: splitBreakdownData } : {}),
         paymentStatus: pStatus,
         foodOrders: session.foodOrders || [],
         ...(notes.trim() ? { notes: notes.trim() } : {}),
@@ -363,26 +480,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
             EOD Report
           </button>
         </div>
-
-        {/* Shift Closure Button */}
-        <button
-          onClick={() => setIsShiftClosureOpen(true)}
-          className="hidden lg:flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 transition-colors shrink-0"
-        >
-          <ArrowRightLeft className="w-4 h-4" />
-          Close Shift
-        </button>
       </div>
-
-      {/* Shift Closure Modal */}
-      <ShiftClosureModal
-        isOpen={isShiftClosureOpen}
-        onClose={() => setIsShiftClosureOpen(false)}
-        history={history}
-        config={config}
-        userRole={userRole}
-        userName={user?.displayName || user?.email || 'Staff'}
-      />
 
       {/* ========================================================================= */}
       {/* TAB 1: LIVE CHECKOUT & BILLING CONSOLE */}
@@ -412,7 +510,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
                   {occupiedTables.map((t) => {
                     const s = t.currentSession!;
                     const sec = calculateSessionSeconds(s, now);
-                    const tTotals = calculateBillTotals(s, taxRatePercent, enableTax, 0, now, [], config?.roundingRule || 'nearest_1');
+                    const tTotals = calculateBillTotals(s, taxRatePercent, enableTax, 0, now, [], config?.roundingRule || 'nearest_1', config?.minimumChargeMinutes || 0);
                     const isSelected = t.id === selectedTableId;
 
                     return (
@@ -475,17 +573,141 @@ export const BillingView: React.FC<BillingViewProps> = ({
                       </Badge>
                     </div>
 
-                    {/* Customer & Pricing Metadata Grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 rounded-2xl bg-neutral-50 border border-neutral-200/70 text-xs">
-                      <div>
-                        <span className="text-neutral-400 block mb-0.5">Customer</span>
-                        <span className="font-semibold text-neutral-900 text-sm truncate block">{session.customerName}</span>
-                        {session.customerPhone && (
-                          <span className="text-[11px] font-mono text-neutral-500 block">{session.customerPhone}</span>
-                        )}
+                    {/* Customer Information & CRM Linking Card */}
+                    <div className="p-4 sm:p-5 rounded-2xl bg-neutral-50/90 border border-neutral-200 flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <User className="w-4 h-4 text-neutral-600" />
+                          <span className="text-xs font-bold text-neutral-900 uppercase tracking-wider">
+                            Customer Details & CRM Ledger
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-neutral-500 font-medium">
+                          Record customer name & phone or link regular player
+                        </span>
                       </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 relative">
+                        {/* Customer Name with Autocomplete */}
+                        <div>
+                          <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
+                            Customer Name <span className="text-rose-500">*</span>
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={customerNameInput}
+                              onChange={(e) => {
+                                setCustomerNameInput(e.target.value);
+                                setShowCustomerSuggestions(true);
+                              }}
+                              onFocus={() => setShowCustomerSuggestions(true)}
+                              placeholder="e.g. Rahul Sharma"
+                              className="w-full bg-white border border-neutral-300 rounded-xl px-3 py-2 text-xs text-neutral-900 font-medium outline-none focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900 transition-all"
+                            />
+                            {selectedCrmCustomerId && (
+                              <span className="absolute right-2.5 top-2 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" /> Regular
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Dropdown Suggestions */}
+                          {showCustomerSuggestions && topCustomers.length > 0 && (
+                            <div className="absolute left-0 right-0 sm:right-auto sm:w-80 mt-1 bg-white border border-neutral-200 rounded-2xl shadow-xl z-30 max-h-60 overflow-y-auto divide-y divide-neutral-100">
+                              <div className="p-2.5 bg-neutral-50 flex items-center justify-between text-[11px] font-bold text-neutral-500">
+                                <span>Choose Regular Player</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowCustomerSuggestions(false)}
+                                  className="text-neutral-400 hover:text-neutral-600 text-xs px-1"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                              {filteredCustomers.slice(0, 8).map((c) => (
+                                <div
+                                  key={c.id}
+                                  onClick={() => {
+                                    setCustomerNameInput(c.name);
+                                    setCustomerPhoneInput(c.phone || '');
+                                    setSelectedCrmCustomerId(c.id);
+                                    setP1Name(c.name);
+                                    setP1CustomerId(c.id);
+                                    setShowCustomerSuggestions(false);
+                                  }}
+                                  className="p-3 hover:bg-neutral-50 cursor-pointer flex items-center justify-between text-xs transition-colors"
+                                >
+                                  <div>
+                                    <span className="font-bold text-neutral-900 block">{c.name}</span>
+                                    <span className="text-[11px] text-neutral-500 font-mono">{c.phone || 'No phone'}</span>
+                                  </div>
+                                  <div className="text-right">
+                                    {(c.outstandingDue || 0) > 0 ? (
+                                      <span className="text-rose-600 font-bold font-mono text-[11px] block">
+                                        Due: {formatCurrency(c.outstandingDue || 0, currencySymbol)}
+                                      </span>
+                                    ) : (
+                                      <span className="text-emerald-600 font-semibold font-mono text-[11px] block">
+                                        Clear Due
+                                      </span>
+                                    )}
+                                    <span className="text-[9px] uppercase font-bold font-mono text-neutral-500">
+                                      {getCustomerNumber(c)}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Customer Phone */}
+                        <div>
+                          <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
+                            Phone Number (WhatsApp Bill)
+                          </label>
+                          <input
+                            type="tel"
+                            value={customerPhoneInput}
+                            onChange={(e) => setCustomerPhoneInput(e.target.value)}
+                            placeholder="e.g. 9876543210"
+                            className="w-full bg-white border border-neutral-300 rounded-xl px-3 py-2 text-xs font-mono text-neutral-900 outline-none focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900 transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Active Customer Details Pill */}
+                      {selectedCustomerObj && (
+                        <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200/80 flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="w-4 h-4 text-emerald-600" />
+                            <span className="font-semibold text-emerald-950">
+                              {selectedCustomerObj.name} ({getCustomerNumber(selectedCustomerObj)})
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-neutral-600 text-[11px]">
+                              Outstanding Due: <strong className={`font-mono ${(selectedCustomerObj.outstandingDue || 0) > 0 ? 'text-rose-600' : 'text-emerald-700'}`}>{formatCurrency(selectedCustomerObj.outstandingDue || 0, currencySymbol)}</strong>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedCrmCustomerId(null);
+                              }}
+                              className="text-neutral-400 hover:text-neutral-700 text-[11px] underline"
+                            >
+                              Unlink
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Pricing & Duration Metadata Grid */}
+                    <div className="grid grid-cols-3 gap-3 p-3.5 rounded-2xl bg-neutral-50 border border-neutral-200/70 text-xs">
                       <div>
-                        <span className="text-neutral-400 block mb-0.5">Duration</span>
+                        <span className="text-neutral-400 block mb-0.5">Session Duration</span>
                         <span className="font-bold text-neutral-900 text-sm font-mono block">
                           {formatTimerString(seconds)}
                         </span>
@@ -504,6 +726,9 @@ export const BillingView: React.FC<BillingViewProps> = ({
                         <span className="text-neutral-400 block mb-0.5">Started At</span>
                         <span className="font-semibold text-neutral-900 text-sm block">
                           {new Date(session.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <span className="text-[10px] text-neutral-400 block">
+                          {new Date(session.startTime).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                         </span>
                       </div>
                     </div>
@@ -569,7 +794,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
                       </div>
 
                       {/* Add Extra Manual Charge Row */}
-                      <div className="p-3 rounded-2xl bg-neutral-50 border border-neutral-200/80 flex flex-col sm:flex-row items-center gap-2">
+                      {userRole !== 'worker' && <div className="p-3 rounded-2xl bg-neutral-50 border border-neutral-200/80 flex flex-col sm:flex-row items-center gap-2">
                         <Input
                           placeholder="Extra charge (e.g., Late fee, Cue damage)"
                           value={newExtraName}
@@ -592,47 +817,118 @@ export const BillingView: React.FC<BillingViewProps> = ({
                         >
                           Add Charge
                         </Button>
-                      </div>
+                      </div>}
                     </div>
 
-                    {/* Discounts Section */}
-                    <div className="flex flex-col gap-2 p-4 rounded-2xl bg-neutral-50 border border-neutral-200">
+                    {/* Manual Discount Controls */}
+                    {userRole !== 'worker' && <div className="flex flex-col gap-3 p-4 sm:p-5 rounded-2xl bg-neutral-50/90 border border-neutral-200">
                       <div className="flex items-center justify-between gap-4">
                         <div className="flex items-center gap-2">
-                          <Percent className="w-4 h-4 text-neutral-600" />
-                          <span className="text-xs font-semibold text-neutral-800">Apply Discount</span>
+                          <Percent className="w-4 h-4 text-neutral-700" />
+                          <span className="text-xs font-bold text-neutral-900 uppercase tracking-wider">
+                            Manual Discount
+                          </span>
                         </div>
 
                         {/* Discount type toggle */}
-                        <div className="flex items-center gap-1 bg-neutral-200/80 p-0.5 rounded-lg text-[11px] font-bold">
+                        <div className="flex items-center gap-1 bg-neutral-200/80 p-0.5 rounded-xl text-[11px] font-bold">
                           <button
                             type="button"
                             onClick={() => setDiscountType('amount')}
-                            className={`px-2 py-0.5 rounded ${discountType === 'amount' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'}`}
+                            className={`px-3 py-1 rounded-lg transition-all ${
+                              discountType === 'amount'
+                                ? 'bg-neutral-900 text-white shadow-xs'
+                                : 'text-neutral-600 hover:text-neutral-900'
+                            }`}
                           >
-                            {currencySymbol} Fixed
+                            {currencySymbol} Flat Off
                           </button>
                           <button
                             type="button"
                             onClick={() => setDiscountType('percent')}
-                            className={`px-2 py-0.5 rounded ${discountType === 'percent' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600'}`}
+                            className={`px-3 py-1 rounded-lg transition-all ${
+                              discountType === 'percent'
+                                ? 'bg-neutral-900 text-white shadow-xs'
+                                : 'text-neutral-600 hover:text-neutral-900'
+                            }`}
                           >
-                            % Percent
+                            % Percent Off
                           </button>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 mt-1">
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          placeholder="0"
-                          value={discountInput || ''}
-                          onChange={(e) => setDiscountInput(Math.max(0, parseFloat(e.target.value) || 0))}
-                          className="w-full bg-white border border-neutral-300 rounded-xl px-3 py-1.5 text-xs text-right font-mono font-bold outline-none focus:border-neutral-900"
-                        />
+                      <div className="flex items-center gap-3">
+                        <div className="relative flex-1">
+                          <span className="absolute left-3 top-2.5 text-xs font-bold text-neutral-400 font-mono">
+                            {discountType === 'amount' ? currencySymbol : '%'}
+                          </span>
+                          <input
+                            type="number"
+                            min="0"
+                            step={discountType === 'percent' ? '1' : '10'}
+                            placeholder="0"
+                            value={discountInput || ''}
+                            onChange={(e) => setDiscountInput(Math.max(0, parseFloat(e.target.value) || 0))}
+                            className="w-full bg-white border border-neutral-300 rounded-xl pl-8 pr-3 py-2 text-xs font-mono font-bold text-neutral-900 outline-none focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900"
+                          />
+                        </div>
+
+                        {discountInput > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDiscountInput(0)}
+                            className="text-xs text-rose-600 hover:bg-rose-50 h-9"
+                          >
+                            Clear
+                          </Button>
+                        )}
                       </div>
+
+                      {/* Quick Preset Discount Chips */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <span className="text-[10px] uppercase font-bold text-neutral-400 mr-1">Presets:</span>
+                        {discountType === 'amount' ? (
+                          [20, 50, 100, 150, 200, 500].map((val) => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => setDiscountInput(val)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition-all border ${
+                                discountInput === val
+                                  ? 'bg-neutral-900 text-white border-neutral-900 shadow-2xs'
+                                  : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-100'
+                              }`}
+                            >
+                              {currencySymbol}{val}
+                            </button>
+                          ))
+                        ) : (
+                          [5, 10, 15, 20, 25, 50].map((val) => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => setDiscountInput(val)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition-all border ${
+                                discountInput === val
+                                  ? 'bg-neutral-900 text-white border-neutral-900 shadow-2xs'
+                                  : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-100'
+                              }`}
+                            >
+                              {val}%
+                            </button>
+                          ))
+                        )}
+                      </div>
+
+                      {computedTotals.discountAmount > 0 && (
+                        <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-xs text-emerald-800 font-bold">
+                          <span>Total Discount Saved:</span>
+                          <span className="font-mono text-sm">
+                            -{formatCurrency(computedTotals.discountAmount, currencySymbol)}
+                          </span>
+                        </div>
+                      )}
 
                       {/* Cashier Discount Warning */}
                       {isCashierDiscountCapped && (
@@ -641,7 +937,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
                           <span>Cashiers are capped at max {config?.maxCashierDiscountPercent || 10}% discount. Owner/Manager authorization required.</span>
                         </div>
                       )}
-                    </div>
+                    </div>}
 
                     {/* Billing Summary Calculation */}
                     <div className="flex flex-col gap-2 pt-2 border-t border-neutral-200 text-xs">
@@ -694,11 +990,10 @@ export const BillingView: React.FC<BillingViewProps> = ({
                         Select Payment Method
                       </h4>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                         {[
                           { id: 'upi', label: 'UPI / QR', icon: QrCode },
                           { id: 'cash', label: 'Cash', icon: Banknote },
-                          { id: 'card', label: 'Card', icon: CreditCard },
                           { id: 'split', label: 'Split Payment', icon: Split },
                           { id: 'due_ledger', label: 'Pay Later / Credit', icon: ArrowRightLeft },
                         ].map((method) => {
@@ -709,9 +1004,11 @@ export const BillingView: React.FC<BillingViewProps> = ({
                               key={method.id}
                               type="button"
                               onClick={() => setPaymentMethod(method.id as any)}
-                              className={`p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                              className={`p-3.5 rounded-2xl border flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
                                 isSelected
-                                  ? method.id === 'due_ledger' ? 'bg-amber-600 text-white border-amber-600 shadow-md scale-[1.02]' : 'bg-neutral-900 text-white border-neutral-900 shadow-md scale-[1.02]'
+                                  ? method.id === 'due_ledger'
+                                    ? 'bg-amber-600 text-white border-amber-600 shadow-md scale-[1.02]'
+                                    : 'bg-neutral-900 text-white border-neutral-900 shadow-md scale-[1.02]'
                                   : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-50'
                               }`}
                             >
@@ -724,48 +1021,339 @@ export const BillingView: React.FC<BillingViewProps> = ({
 
                       {/* Split Payment Breakdown Inputs */}
                       {paymentMethod === 'split' && (
-                        <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200 flex flex-col gap-3 mt-1">
-                          <h5 className="text-xs font-bold text-neutral-800 uppercase tracking-wider">
-                            Split Payment Breakdown
-                          </h5>
-                          <div className="grid grid-cols-3 gap-3">
+                        <div className="p-4 sm:p-5 rounded-2xl bg-neutral-50/90 border border-neutral-200 flex flex-col gap-4 mt-1">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-neutral-200">
                             <div>
-                              <label className="text-[11px] text-neutral-600 block font-semibold mb-1">Cash ({currencySymbol})</label>
-                              <input
-                                type="number"
-                                min="0"
-                                value={splitCash || ''}
-                                onChange={(e) => setSplitCash(parseFloat(e.target.value) || 0)}
-                                className="w-full bg-white border border-neutral-300 rounded-xl px-2.5 py-1 text-xs font-mono font-bold"
-                              />
+                              <h5 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">
+                                Split Payment Configuration
+                              </h5>
+                              <p className="text-[11px] text-neutral-500">
+                                Split between Cash & UPI, or split between two players
+                              </p>
                             </div>
-                            <div>
-                              <label className="text-[11px] text-neutral-600 block font-semibold mb-1">UPI ({currencySymbol})</label>
-                              <input
-                                type="number"
-                                min="0"
-                                value={splitUpi || ''}
-                                onChange={(e) => setSplitUpi(parseFloat(e.target.value) || 0)}
-                                className="w-full bg-white border border-neutral-300 rounded-xl px-2.5 py-1 text-xs font-mono font-bold"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[11px] text-neutral-600 block font-semibold mb-1">Card ({currencySymbol})</label>
-                              <input
-                                type="number"
-                                min="0"
-                                value={splitCard || ''}
-                                onChange={(e) => setSplitCard(parseFloat(e.target.value) || 0)}
-                                className="w-full bg-white border border-neutral-300 rounded-xl px-2.5 py-1 text-xs font-mono font-bold"
-                              />
+
+                            <div className="flex items-center gap-1 bg-neutral-200/80 p-0.5 rounded-xl text-xs font-bold shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setSplitMode('method')}
+                                className={`px-3 py-1.5 rounded-lg transition-all ${
+                                  splitMode === 'method'
+                                    ? 'bg-neutral-900 text-white shadow-xs'
+                                    : 'text-neutral-600 hover:text-neutral-900'
+                                }`}
+                              >
+                                Cash + UPI Split
+                              </button>
+                              {userRole !== 'worker' && <button
+                                type="button"
+                                onClick={() => setSplitMode('players')}
+                                className={`px-3 py-1.5 rounded-lg transition-all ${
+                                  splitMode === 'players'
+                                    ? 'bg-neutral-900 text-white shadow-xs'
+                                    : 'text-neutral-600 hover:text-neutral-900'
+                                }`}
+                              >
+                                Two-Person / Player Split
+                              </button>}
                             </div>
                           </div>
-                          <div className="text-[11px] font-semibold text-neutral-600 flex justify-between pt-1 border-t border-neutral-200">
-                            <span>Split Allocated Total:</span>
-                            <span className="font-mono font-bold text-neutral-900">
-                              {formatCurrency(splitCash + splitUpi + splitCard, currencySymbol)}
+
+                          {splitMode === 'method' ? (
+                            /* MODE A: Method Split (Cash + UPI) */
+                            <div className="flex flex-col gap-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="text-[11px] text-neutral-700 block font-semibold mb-1">
+                                    Cash Amount ({currencySymbol})
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={splitCash || ''}
+                                    onChange={(e) => {
+                                      const val = parseFloat(e.target.value) || 0;
+                                      setSplitCash(val);
+                                      setSplitUpi(Math.max(0, computedTotals.grandTotal - val));
+                                    }}
+                                    className="w-full bg-white border border-neutral-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-neutral-900 outline-none focus:border-neutral-900"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="text-[11px] text-neutral-700 block font-semibold mb-1">
+                                    UPI Amount ({currencySymbol})
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={splitUpi || ''}
+                                    onChange={(e) => {
+                                      const val = parseFloat(e.target.value) || 0;
+                                      setSplitUpi(val);
+                                    }}
+                                    className="w-full bg-white border border-neutral-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-neutral-900 outline-none focus:border-neutral-900"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    const half = Math.round(computedTotals.grandTotal / 2);
+                                    setSplitCash(half);
+                                    setSplitUpi(computedTotals.grandTotal - half);
+                                  }}
+                                  className="text-xs font-semibold h-8"
+                                >
+                                  50% Cash / 50% UPI
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSplitCash(computedTotals.grandTotal);
+                                    setSplitUpi(0);
+                                  }}
+                                  className="text-xs font-semibold h-8"
+                                >
+                                  All Cash
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSplitCash(0);
+                                    setSplitUpi(computedTotals.grandTotal);
+                                  }}
+                                  className="text-xs font-semibold h-8"
+                                >
+                                  All UPI
+                                </Button>
+                              </div>
+
+                              {/* Allocation validation bar */}
+                              <div className={`p-3 rounded-xl border flex items-center justify-between text-xs font-bold ${
+                                Math.round(splitCash + splitUpi) === Math.round(computedTotals.grandTotal)
+                                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                  : 'bg-amber-50 border-amber-200 text-amber-800'
+                              }`}>
+                                <span>Allocated: {formatCurrency(splitCash + splitUpi, currencySymbol)} of {formatCurrency(computedTotals.grandTotal, currencySymbol)}</span>
+                                {Math.round(splitCash + splitUpi) === Math.round(computedTotals.grandTotal) ? (
+                                  <span className="flex items-center gap-1 text-emerald-600">
+                                    <Check className="w-4 h-4" /> Exactly Matched
+                                  </span>
+                                ) : (
+                                  <span className="text-amber-700">
+                                    Difference: {formatCurrency(computedTotals.grandTotal - (splitCash + splitUpi), currencySymbol)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            /* MODE B: Two-Person / Player Split */
+                            <div className="flex flex-col gap-4">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-semibold text-neutral-600">
+                                  Split bill between 2 players with individual payment methods:
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    const half = Math.round(computedTotals.grandTotal / 2);
+                                    setP1Amount(half);
+                                    setP2Amount(computedTotals.grandTotal - half);
+                                  }}
+                                  className="text-xs font-semibold h-8 shrink-0"
+                                >
+                                  50% / 50% Equal Split
+                                </Button>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {/* Person 1 Card */}
+                                <div className="p-4 bg-white rounded-2xl border border-neutral-200 flex flex-col gap-3 shadow-xs">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-neutral-900 uppercase tracking-wider flex items-center gap-1.5">
+                                      <User className="w-3.5 h-3.5 text-neutral-500" /> Person 1
+                                    </span>
+                                    <span className="font-mono text-xs font-bold text-neutral-900">
+                                      {formatCurrency(p1Amount, currencySymbol)}
+                                    </span>
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[10px] uppercase font-bold text-neutral-500 block mb-1">Name</label>
+                                    <input
+                                      type="text"
+                                      value={p1Name}
+                                      onChange={(e) => setP1Name(e.target.value)}
+                                      placeholder="Person 1 Name"
+                                      className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-2.5 py-1.5 text-xs text-neutral-900 outline-none focus:border-neutral-900 font-medium"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[10px] uppercase font-bold text-neutral-500 block mb-1">Share Amount ({currencySymbol})</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={p1Amount || ''}
+                                      onChange={(e) => {
+                                        const val = parseFloat(e.target.value) || 0;
+                                        setP1Amount(val);
+                                        setP2Amount(Math.max(0, computedTotals.grandTotal - val));
+                                      }}
+                                      className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-2.5 py-1.5 text-xs font-mono font-bold text-neutral-900 outline-none focus:border-neutral-900"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[10px] uppercase font-bold text-neutral-500 block mb-1">Paying Via</label>
+                                    <div className="grid grid-cols-3 gap-1.5">
+                                      {[
+                                        { id: 'cash', label: 'Cash' },
+                                        { id: 'upi', label: 'UPI' },
+                                        { id: 'credit', label: 'Credit (Khata)' },
+                                      ].map((pm) => (
+                                        <button
+                                          key={pm.id}
+                                          type="button"
+                                          onClick={() => setP1Method(pm.id as any)}
+                                          className={`py-1.5 text-[11px] font-bold rounded-xl border transition-all ${
+                                            p1Method === pm.id
+                                              ? pm.id === 'credit'
+                                                ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                                                : 'bg-neutral-900 text-white border-neutral-900 shadow-2xs'
+                                              : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:bg-neutral-100'
+                                          }`}
+                                        >
+                                          {pm.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Person 2 Card */}
+                                <div className="p-4 bg-white rounded-2xl border border-neutral-200 flex flex-col gap-3 shadow-xs">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-neutral-900 uppercase tracking-wider flex items-center gap-1.5">
+                                      <User className="w-3.5 h-3.5 text-neutral-500" /> Person 2
+                                    </span>
+                                    <span className="font-mono text-xs font-bold text-neutral-900">
+                                      {formatCurrency(p2Amount, currencySymbol)}
+                                    </span>
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[10px] uppercase font-bold text-neutral-500 block mb-1">Name</label>
+                                    <input
+                                      type="text"
+                                      value={p2Name}
+                                      onChange={(e) => setP2Name(e.target.value)}
+                                      placeholder="Person 2 Name"
+                                      className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-2.5 py-1.5 text-xs text-neutral-900 outline-none focus:border-neutral-900 font-medium"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[10px] uppercase font-bold text-neutral-500 block mb-1">Share Amount ({currencySymbol})</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={p2Amount || ''}
+                                      onChange={(e) => {
+                                        const val = parseFloat(e.target.value) || 0;
+                                        setP2Amount(val);
+                                      }}
+                                      className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-2.5 py-1.5 text-xs font-mono font-bold text-neutral-900 outline-none focus:border-neutral-900"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[10px] uppercase font-bold text-neutral-500 block mb-1">Paying Via</label>
+                                    <div className="grid grid-cols-3 gap-1.5">
+                                      {[
+                                        { id: 'cash', label: 'Cash' },
+                                        { id: 'upi', label: 'UPI' },
+                                        { id: 'credit', label: 'Credit (Khata)' },
+                                      ].map((pm) => (
+                                        <button
+                                          key={pm.id}
+                                          type="button"
+                                          onClick={() => setP2Method(pm.id as any)}
+                                          className={`py-1.5 text-[11px] font-bold rounded-xl border transition-all ${
+                                            p2Method === pm.id
+                                              ? pm.id === 'credit'
+                                                ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                                                : 'bg-neutral-900 text-white border-neutral-900 shadow-2xs'
+                                              : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:bg-neutral-100'
+                                          }`}
+                                        >
+                                          {pm.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Validation Bar */}
+                              <div className={`p-3 rounded-xl border flex items-center justify-between text-xs font-bold ${
+                                Math.round(p1Amount + p2Amount) === Math.round(computedTotals.grandTotal)
+                                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                  : 'bg-amber-50 border-amber-200 text-amber-800'
+                              }`}>
+                                <span>
+                                  {p1Name || 'P1'}: {formatCurrency(p1Amount, currencySymbol)} ({p1Method.toUpperCase()}) + {p2Name || 'P2'}: {formatCurrency(p2Amount, currencySymbol)} ({p2Method.toUpperCase()})
+                                </span>
+                                {Math.round(p1Amount + p2Amount) === Math.round(computedTotals.grandTotal) ? (
+                                  <span className="flex items-center gap-1 text-emerald-600">
+                                    <Check className="w-4 h-4" /> Balanced
+                                  </span>
+                                ) : (
+                                  <span className="text-amber-700">
+                                    Difference: {formatCurrency(computedTotals.grandTotal - (p1Amount + p2Amount), currencySymbol)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Pay Later / Credit (Khata) Explanation Card */}
+                      {paymentMethod === 'due_ledger' && (
+                        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex flex-col gap-2 mt-1">
+                          <div className="flex items-center gap-2">
+                            <ArrowRightLeft className="w-4 h-4 text-amber-700" />
+                            <span className="text-xs font-bold uppercase tracking-wider text-amber-950">
+                              Khata / Udhaar Credit Account Checkout
                             </span>
                           </div>
+                          <p className="text-xs text-amber-800 leading-relaxed">
+                            This full bill of <strong className="font-mono font-bold">{formatCurrency(computedTotals.grandTotal, currencySymbol)}</strong> will be added to{' '}
+                            <strong>{customerNameInput.trim() || 'the customer'}</strong>'s Khata account in Customer CRM.
+                          </p>
+                          {selectedCustomerObj ? (
+                            <div className="mt-1 pt-2 border-t border-amber-200/80 flex items-center justify-between text-xs font-semibold">
+                              <span>Current Outstanding Due: {formatCurrency(selectedCustomerObj.outstandingDue || 0, currencySymbol)}</span>
+                              <span className="text-amber-950 font-bold font-mono">
+                                ➔ New Total Due: {formatCurrency((selectedCustomerObj.outstandingDue || 0) + computedTotals.grandTotal, currencySymbol)}
+                              </span>
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-amber-700">
+                              Tip: Make sure customer name and phone are filled above so the ledger balance can be tracked.
+                            </p>
+                          )}
                         </div>
                       )}
 
@@ -796,7 +1384,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
                       )}
 
                       {/* UPI QR Display */}
-                      {paymentMethod === 'upi' && (
+                      {(paymentMethod === 'upi' || (paymentMethod === 'split' && (splitMode === 'method' ? splitUpi > 0 : (p1Method === 'upi' || p2Method === 'upi')))) && (
                         <div className="p-4 rounded-2xl bg-neutral-900 text-white flex items-center justify-between gap-4 mt-2 shadow-md">
                           <div>
                             <span className="text-[10px] uppercase tracking-wider text-neutral-400 block font-semibold">
@@ -805,7 +1393,14 @@ export const BillingView: React.FC<BillingViewProps> = ({
                             <h4 className="text-sm font-bold mt-0.5">{upiName}</h4>
                             <p className="text-xs text-neutral-300 font-mono mt-0.5">{upiId}</p>
                             <p className="text-xs font-semibold text-emerald-400 mt-2 font-mono">
-                              Bill Amount: {formatCurrency(computedTotals.grandTotal, currencySymbol)}
+                              Scan Amount: {formatCurrency(
+                                paymentMethod === 'upi'
+                                  ? computedTotals.grandTotal
+                                  : splitMode === 'method'
+                                    ? splitUpi
+                                    : (p1Method === 'upi' ? p1Amount : 0) + (p2Method === 'upi' ? p2Amount : 0),
+                                currencySymbol
+                              )}
                             </p>
                           </div>
                           <div className="w-24 h-24 bg-white p-2 rounded-xl flex items-center justify-center shrink-0 border border-white/20">
@@ -914,8 +1509,9 @@ export const BillingView: React.FC<BillingViewProps> = ({
                 <option value="all">All Methods</option>
                 <option value="cash">Cash</option>
                 <option value="upi">UPI</option>
-                <option value="card">Card</option>
                 <option value="split">Split</option>
+                <option value="due_ledger">Credit / Khata</option>
+                <option value="card">Card (Legacy)</option>
               </select>
             </div>
 
@@ -1004,7 +1600,7 @@ export const BillingView: React.FC<BillingViewProps> = ({
                             >
                               Receipt
                             </button>
-                            {userRole !== 'cashier' && item.paymentStatus !== 'refunded' && onRefund && (
+                            {(userRole === 'owner' || userRole === 'manager') && item.paymentStatus !== 'refunded' && onRefund && (
                               <button
                                 type="button"
                                 onClick={() => setRefundModalItem(item)}
@@ -1206,8 +1802,8 @@ export const BillingView: React.FC<BillingViewProps> = ({
               {[
                 { label: 'Cash', amount: totalCash, color: 'bg-emerald-50 border-emerald-200 text-emerald-900' },
                 { label: 'UPI / QR', amount: totalUpi, color: 'bg-blue-50 border-blue-200 text-blue-900' },
-                { label: 'Card', amount: totalCard, color: 'bg-purple-50 border-purple-200 text-purple-900' },
-                { label: 'Credit Dues', amount: totalDues, color: 'bg-amber-50 border-amber-200 text-amber-900' },
+                { label: 'Split Payments', amount: todaysRecords.filter(h => h.paymentMethod === 'split').reduce((s, h) => s + (h.amountPaid ?? h.grandTotal), 0), color: 'bg-purple-50 border-purple-200 text-purple-900' },
+                { label: 'Credit Dues (Khata)', amount: totalDues, color: 'bg-amber-50 border-amber-200 text-amber-900' },
               ].map((m) => (
                 <div key={m.label} className={`p-4 rounded-2xl border ${m.color}`}>
                   <span className="text-[10px] font-bold uppercase tracking-wider opacity-70 block">{m.label}</span>
@@ -1253,14 +1849,6 @@ export const BillingView: React.FC<BillingViewProps> = ({
                     <span className="font-mono font-bold text-neutral-900">{row.val}</span>
                   </div>
                 ))}
-                <div className="border-t border-neutral-200 pt-3">
-                  <button
-                    onClick={() => setIsShiftClosureOpen(true)}
-                    className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors"
-                  >
-                    🔒 Close Shift & Reconcile Cash Drawer
-                  </button>
-                </div>
               </div>
             </div>
 

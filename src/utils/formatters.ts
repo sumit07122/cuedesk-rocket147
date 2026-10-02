@@ -1,5 +1,13 @@
 import { SessionData, OrderItem, SessionHistoryItem } from '../types';
 
+export type RoundingRule = 'none' | 'nearest_1' | 'nearest_5' | 'round_up';
+
+export function normalizeRoundingRule(value: unknown): RoundingRule {
+  return value === 'nearest_1' || value === 'nearest_5' || value === 'round_up' || value === 'none'
+    ? value
+    : 'none';
+}
+
 export function formatCurrency(amount: number, symbol: any = '₹'): string {
   let sym = '₹';
   if (typeof symbol === 'string') {
@@ -42,31 +50,74 @@ export function formatTimerString(totalSeconds: number): string {
   return `${pad(mins)}:${pad(secs)}`;
 }
 
+export function getBusinessDateKey(
+  value: Date | number | string | null | undefined,
+  timeZone: string = 'Asia/Kolkata'
+): string {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = value instanceof Date ? value : new Date(value ?? NaN);
+  if (Number.isNaN(date.getTime())) return '';
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timeZone || 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const part = (type: string) => parts.find((item) => item.type === type)?.value || '';
+    return `${part('year')}-${part('month')}-${part('day')}`;
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
+}
+
+export function getBusinessHour(value: Date | number | string, timeZone: string = 'Asia/Kolkata'): number {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return 0;
+  try {
+    const hour = new Intl.DateTimeFormat('en-GB', {
+      timeZone: timeZone || 'Asia/Kolkata',
+      hour: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(date).find((item) => item.type === 'hour')?.value;
+    return Number(hour) || 0;
+  } catch {
+    return date.getUTCHours();
+  }
+}
+
+export function shiftBusinessDateKey(dateKey: string, dayOffset: number): string {
+  const date = new Date(`${dateKey}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return '';
+  date.setUTCDate(date.getUTCDate() + dayOffset);
+  return date.toISOString().slice(0, 10);
+}
+
 export function calculateTableFee(
   session: SessionData, 
   currentTime: number = Date.now(),
-  roundingRule: 'none' | 'nearest_1' | 'nearest_5' | 'round_up' = 'none'
+  _roundingRule: 'none' | 'nearest_1' | 'nearest_5' | 'round_up' = 'none',
+  minimumChargeMinutes: number = 0
 ): number {
   const seconds = calculateSessionSeconds(session, currentTime);
   // Exact per-minute pricing
-  const minutes = Math.ceil(seconds / 60);
-  let fee = (minutes / 60) * session.hourlyRate;
-  
-  if (session.isMember && session.memberDiscountPercent) {
-    fee = fee * (1 - session.memberDiscountPercent / 100);
-  }
-  
+  const minutes = seconds > 0
+    ? Math.max(Math.ceil(seconds / 60), Math.max(0, Number(minimumChargeMinutes) || 0))
+    : 0;
+  const fee = (minutes / 60) * session.hourlyRate;
   return Math.max(0, fee);
 }
 
 export function applyRounding(amount: number, rule: 'none' | 'nearest_1' | 'nearest_5' | 'round_up' = 'none'): number {
-  if (rule === 'nearest_1') {
+  const normalizedRule = normalizeRoundingRule(rule);
+  if (normalizedRule === 'nearest_1') {
     return Math.round(amount);
   }
-  if (rule === 'nearest_5') {
+  if (normalizedRule === 'nearest_5') {
     return Math.round(amount / 5) * 5;
   }
-  if (rule === 'round_up') {
+  if (normalizedRule === 'round_up') {
     return Math.ceil(amount);
   }
   return Number(amount.toFixed(2));
@@ -84,15 +135,16 @@ export function calculateBillTotals(
   customDiscount: number = 0,
   currentTime: number = Date.now(),
   extraCharges: { id: string; name: string; amount: number }[] = [],
-  roundingRule: 'none' | 'nearest_1' | 'nearest_5' | 'round_up' = 'none'
+  roundingRule: string = 'none',
+  minimumChargeMinutes: number = 0
 ) {
-  const tableFee = calculateTableFee(session, currentTime);
+  const tableFee = calculateTableFee(session, currentTime, 'none', minimumChargeMinutes);
   const foodFee = calculateFoodTotal(session.foodOrders);
   const extraFee = extraCharges.reduce((sum, c) => sum + (c.amount || 0), 0);
   
   const subtotal = tableFee + foodFee + extraFee;
   const discountAmount = Math.min(customDiscount, subtotal);
-  const grandTotal = applyRounding(Math.max(0, subtotal - discountAmount), roundingRule);
+  const grandTotal = applyRounding(Math.max(0, subtotal - discountAmount), normalizeRoundingRule(roundingRule));
   
   return {
     tableFee,

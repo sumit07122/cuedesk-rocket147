@@ -29,11 +29,14 @@ interface TableDetailsModalProps {
   currencySymbol: string;
   taxRatePercent: number;
   enableTax: boolean;
+  minimumChargeMinutes?: number;
+  roundingRule?: 'none' | 'nearest_1' | 'nearest_5' | 'round_up';
   onStartSession: (table: TableItem) => void;
   onPauseResumeSession: (table: TableItem) => void;
   onEndSession: (table: TableItem) => void;
   onOpenAddSnacks: (table: TableItem) => void;
   onOpenTransferTable: (table: TableItem) => void;
+  canTransfer?: boolean;
   onRemoveOrderItem?: (tableId: string, orderId: string) => void;
 }
 
@@ -44,11 +47,14 @@ export const TableDetailsModal: React.FC<TableDetailsModalProps> = ({
   currencySymbol,
   taxRatePercent,
   enableTax,
+  minimumChargeMinutes = 0,
+  roundingRule = 'nearest_1',
   onStartSession,
   onPauseResumeSession,
   onEndSession,
   onOpenAddSnacks,
   onOpenTransferTable,
+  canTransfer = true,
   onRemoveOrderItem,
 }) => {
   const [now, setNow] = useState(Date.now());
@@ -81,7 +87,7 @@ export const TableDetailsModal: React.FC<TableDetailsModalProps> = ({
 
   if (isOccupied && session) {
     seconds = calculateSessionSeconds(session, now);
-    billData = calculateBillTotals(session, taxRatePercent, enableTax, 0, now);
+    billData = calculateBillTotals(session, taxRatePercent, enableTax, 0, now, [], roundingRule, minimumChargeMinutes);
   }
 
   return (
@@ -151,7 +157,7 @@ export const TableDetailsModal: React.FC<TableDetailsModalProps> = ({
                   {session.isPaused ? 'Resume Timer' : 'Pause Session'}
                 </Button>
 
-                <Button
+                {canTransfer && <Button
                   variant="secondary"
                   size="sm"
                   leftIcon={<ArrowRightLeft className="w-4 h-4" />}
@@ -161,7 +167,7 @@ export const TableDetailsModal: React.FC<TableDetailsModalProps> = ({
                   }}
                 >
                   Transfer Table
-                </Button>
+                </Button>}
               </div>
             </div>
 
@@ -174,11 +180,6 @@ export const TableDetailsModal: React.FC<TableDetailsModalProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <h4 className="text-sm font-semibold text-neutral-900">{session.customerName}</h4>
-                    {session.isMember && (
-                      <span className="text-[10px] bg-neutral-900 text-white font-bold px-1.5 py-0.5 rounded">
-                        VIP {session.memberDiscountPercent}% OFF
-                      </span>
-                    )}
                   </div>
                   {session.customerPhone && (
                     <p className="text-xs text-neutral-500 flex items-center gap-1 mt-0.5">

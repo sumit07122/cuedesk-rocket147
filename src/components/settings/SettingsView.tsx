@@ -59,15 +59,11 @@ export type SettingsSectionId =
   | 'stations'
   | 'staff'
   | 'menu'
-  | 'billing'
-  | 'credit'
   | 'reports'
   | 'backup'
   | 'notifications'
   | 'security'
-  | 'health'
-  | 'about'
-  | 'danger';
+  | 'health';
 
 interface SettingsViewProps {
   config: BusinessConfig;
@@ -76,7 +72,7 @@ interface SettingsViewProps {
   employees?: EmployeeUser[];
   history?: SessionHistoryItem[];
   customers?: TopCustomer[];
-  onUpdateConfig: (newConfig: BusinessConfig) => void;
+  onUpdateConfig: (newConfig: BusinessConfig) => void | Promise<void>;
   onAddTable: (table: Omit<TableItem, 'id' | 'status'>) => void;
   onEditTable?: (table: TableItem) => void;
   onDeleteTable: (tableId: string) => void;
@@ -85,7 +81,6 @@ interface SettingsViewProps {
   onDeleteMenuItem: (itemId: string) => void;
   onSaveEmployee?: (emp: EmployeeUser) => void;
   onDeleteEmployee?: (empId: string) => void;
-  onResetClub?: (type: 'all' | 'history' | 'crm') => Promise<void>;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -104,20 +99,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onDeleteMenuItem,
   onSaveEmployee,
   onDeleteEmployee,
-  onResetClub,
 }) => {
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('profile');
 
   // Business Config Form State
   const [businessForm, setBusinessForm] = useState<BusinessConfig>(config);
   const [isSaved, setIsSaved] = useState(false);
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
 
   // Stations State
   const [showAddTable, setShowAddTable] = useState(false);
   const [editingTable, setEditingTable] = useState<TableItem | null>(null);
   const [newTableName, setNewTableName] = useState('');
   const [newTableType, setNewTableType] = useState<TableType>('snooker');
-  const [newTableRate, setNewTableRate] = useState<number>(300.00);
+  const [newTableRate, setNewTableRate] = useState<number>(config.defaultHourlyRate || 180);
 
   // Menu State
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -135,7 +130,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
   const [newStaffPhone, setNewStaffPhone] = useState('');
-  const [newStaffRole, setNewStaffRole] = useState<'owner' | 'manager' | 'cashier' | 'kitchen'>('cashier');
+  const [newStaffRole, setNewStaffRole] = useState<'owner' | 'manager' | 'worker'>('worker');
 
   // Staff Password Change Modal State
   const [passwordModalEmp, setPasswordModalEmp] = useState<EmployeeUser | null>(null);
@@ -156,40 +151,62 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [isRestoring, setIsRestoring] = useState(false);
   const [backupMsg, setBackupMsg] = useState<string | null>(null);
 
-  // Danger Zone State
-  const [dangerModalOpen, setDangerModalOpen] = useState(false);
-  const [dangerTarget, setDangerTarget] = useState<'history' | 'crm' | 'all' | null>(null);
-  const [resetConfirmText, setResetConfirmText] = useState('');
-  const RESET_KEYWORD = 'RESET ONESHOT';
-  const [isClearingHistory, setIsClearingHistory] = useState(false);
-  const [clearSuccess, setClearSuccess] = useState(false);
-
-  // Developer Tools Hidden Drawer
-  const [showDevDrawer, setShowDevDrawer] = useState(false);
-  const [versionClickCount, setVersionClickCount] = useState(0);
+  React.useEffect(() => {
+    setBusinessForm(config);
+    setNewTableRate(config.defaultHourlyRate || 180);
+  }, [config]);
 
   // Handle saving general config
-  const handleSaveConfig = () => {
-    onUpdateConfig(businessForm);
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 3000);
+  const handleSaveConfig = async () => {
+    if (!businessForm.clubName.trim()) {
+      alert('Enter the club name before saving.');
+      return;
+    }
+    if (!businessForm.currencySymbol.trim() || !businessForm.currencyCode.trim()) {
+      alert('Enter a currency symbol and code.');
+      return;
+    }
+    const hourlyRate = Number(businessForm.defaultHourlyRate);
+    const minimumMinutes = Number(businessForm.minimumChargeMinutes || 0);
+    if (!Number.isFinite(hourlyRate) || hourlyRate <= 0 || !Number.isFinite(minimumMinutes) || minimumMinutes < 0) {
+      alert('Enter a valid hourly rate and a minimum charge time of zero or more minutes.');
+      return;
+    }
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: businessForm.timeZone || 'Asia/Kolkata' });
+    } catch {
+      alert('Enter a valid time zone, such as Asia/Kolkata.');
+      return;
+    }
+    setIsSavingConfig(true);
+    try {
+      await onUpdateConfig({
+        ...businessForm,
+        clubName: businessForm.clubName.trim(),
+        currencySymbol: businessForm.currencySymbol.trim(),
+        currencyCode: businessForm.currencyCode.trim().toUpperCase(),
+        defaultHourlyRate: hourlyRate,
+        minimumChargeMinutes: minimumMinutes,
+        timeZone: businessForm.timeZone?.trim() || 'Asia/Kolkata',
+      });
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3000);
+    } catch (error: any) {
+      alert(error?.message || 'Club settings could not be saved. Check your connection and try again.');
+    } finally {
+      setIsSavingConfig(false);
+    }
   };
 
-  // 13 Navigation Tabs Definition
+  // Navigation Tabs Definition
   const sections: { id: SettingsSectionId; label: string; icon: React.FC<{ className?: string }>; badge?: string }[] = [
     { id: 'profile', label: 'Club Profile', icon: Building2 },
     { id: 'stations', label: 'Gaming Stations', icon: Grid2X2, badge: `${tables.length}` },
-    { id: 'staff', label: 'Staff & Roles', icon: Users },
     { id: 'menu', label: 'Menu & Food', icon: Utensils, badge: `${menuItems.length}` },
-    { id: 'billing', label: 'Billing Settings', icon: Receipt },
-    { id: 'credit', label: 'Customer & Credit', icon: CreditCard },
     { id: 'reports', label: 'Reports & Export', icon: BarChart3 },
     { id: 'backup', label: 'Backup & Restore', icon: HardDrive },
-    { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'security', label: 'Security & Audit', icon: ShieldCheck },
     { id: 'health', label: 'System Health', icon: Activity },
-    { id: 'about', label: 'About CueDesk', icon: Info },
-    { id: 'danger', label: 'Danger Zone', icon: AlertTriangle, badge: 'Wipe' },
   ];
 
   return (
@@ -209,15 +226,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
 
         {/* Global Save Button for configuration forms */}
-        {(activeSection === 'profile' || activeSection === 'billing' || activeSection === 'credit' || activeSection === 'notifications') && (
+        {activeSection === 'profile' && (
           <Button
             variant="primary"
             size="md"
-            onClick={handleSaveConfig}
+            onClick={() => void handleSaveConfig()}
+            disabled={isSavingConfig}
             leftIcon={isSaved ? <Check className="w-4 h-4 text-emerald-400" /> : <Save className="w-4 h-4" />}
             className="self-start sm:self-auto shadow-sm"
           >
-            {isSaved ? 'Saved to Cloud' : 'Save Changes'}
+            {isSavingConfig ? 'Saving…' : isSaved ? 'Saved to Cloud' : 'Save Changes'}
           </Button>
         )}
       </div>
@@ -233,24 +251,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           {sections.map((sec) => {
             const Icon = sec.icon;
             const isActive = activeSection === sec.id;
-            const isDanger = sec.id === 'danger';
-
             return (
               <button
                 key={sec.id}
                 onClick={() => setActiveSection(sec.id)}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
                   isActive
-                    ? isDanger
-                      ? 'bg-rose-600 text-white shadow-xs'
-                      : 'bg-neutral-900 text-white shadow-xs'
-                    : isDanger
-                    ? 'text-rose-600 hover:bg-rose-50'
+                    ? 'bg-neutral-900 text-white shadow-xs'
                     : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
                 }`}
               >
                 <div className="flex items-center gap-2.5">
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : isDanger ? 'text-rose-600' : 'text-neutral-400'}`} />
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-neutral-400'}`} />
                   <span>{sec.label}</span>
                 </div>
                 {sec.badge && (
@@ -293,7 +305,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <Input
                     value={businessForm.tagline || ''}
                     onChange={(e) => setBusinessForm({ ...businessForm, tagline: e.target.value })}
-                    placeholder="e.g. Premium Cue Sports & Gaming Arena"
+                    placeholder="e.g. Local Snooker and Gaming Club"
                   />
                 </div>
 
@@ -302,7 +314,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <Input
                     value={businessForm.address}
                     onChange={(e) => setBusinessForm({ ...businessForm, address: e.target.value })}
-                    placeholder="e.g. Level 2, Grand Arena Plaza, Metro Ave"
+                    placeholder="Enter the club's address"
                   />
                 </div>
 
@@ -314,7 +326,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <Input
                     value={businessForm.phone}
                     onChange={(e) => setBusinessForm({ ...businessForm, phone: e.target.value })}
-                    placeholder="+91 98765 43210"
+                    placeholder="Enter the club phone number"
                   />
                 </div>
 
@@ -324,9 +336,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <span>WhatsApp Business Number</span>
                   </label>
                   <Input
-                    value={businessForm.whatsappNumber || businessForm.phone}
+                    value={businessForm.whatsappNumber ?? ''}
                     onChange={(e) => setBusinessForm({ ...businessForm, whatsappNumber: e.target.value })}
-                    placeholder="+91 98765 43210"
+                    placeholder="Optional WhatsApp number"
                   />
                 </div>
 
@@ -346,6 +358,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     onChange={(e) => setBusinessForm({ ...businessForm, operatingHours: e.target.value })}
                     placeholder="10:00 AM – 11:00 PM"
                   />
+                </div>
+
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Default Table Rate per Hour ({businessForm.currencySymbol || '₹'})</label>
+                  <Input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={businessForm.defaultHourlyRate || ''}
+                    onChange={(e) => setBusinessForm({ ...businessForm, defaultHourlyRate: Number(e.target.value) })}
+                    placeholder="180"
+                  />
+                  <p className="text-[10px] text-neutral-500 mt-1">Used when a new table is added. Each table can still have its own rate.</p>
+                </div>
+
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Minimum Billing Time (minutes)</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="5"
+                    value={businessForm.minimumChargeMinutes ?? 0}
+                    onChange={(e) => setBusinessForm({ ...businessForm, minimumChargeMinutes: Number(e.target.value) })}
+                    placeholder="0"
+                  />
+                  <p className="text-[10px] text-neutral-500 mt-1">Set 0 for exact per-minute billing.</p>
+                </div>
+
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Business Time Zone</label>
+                  <Input
+                    value={businessForm.timeZone || 'Asia/Kolkata'}
+                    onChange={(e) => setBusinessForm({ ...businessForm, timeZone: e.target.value.trim() })}
+                    placeholder="Asia/Kolkata"
+                  />
+                  <p className="text-[10px] text-neutral-500 mt-1">Daily reports use this time zone even if the device is set differently.</p>
                 </div>
 
                 <div>
@@ -384,7 +432,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   onClick={() => {
                     setEditingTable(null);
                     setNewTableName(`Table 0${tables.length + 1}`);
-                    setNewTableRate(180.00);
+                    setNewTableRate(config.defaultHourlyRate || 180);
                     setShowAddTable(true);
                   }}
                 >
@@ -553,7 +601,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-base font-extrabold text-neutral-900">Staff Accounts & Access Roles</h3>
-                  <p className="text-xs text-neutral-500 mt-0.5">Role-based credentials for Owner, Managers, Cashiers, and Kitchen display.</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">Role-based credentials for Owner, Manager, and Club Worker.</p>
                 </div>
                 <Button
                   variant="primary"
@@ -579,10 +627,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
                             emp.role === 'owner' ? 'bg-amber-100 text-amber-900 border-amber-300' :
                             emp.role === 'manager' ? 'bg-emerald-100 text-emerald-900 border-emerald-300' :
-                            emp.role === 'kitchen' ? 'bg-purple-100 text-purple-900 border-purple-300' :
-                            'bg-blue-100 text-blue-900 border-blue-300'
+                            'bg-sky-100 text-sky-900 border-sky-300'
                           }`}>
-                            {emp.role}
+                            {emp.role === 'worker' ? 'Worker' : emp.role}
                           </span>
                         </div>
                         <p className="text-[11px] text-neutral-500 font-mono mt-0.5 truncate">{emp.email}</p>
@@ -628,10 +675,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/70 text-xs space-y-2">
                 <h5 className="font-bold text-neutral-800">Role Privilege Matrix</h5>
                 <ul className="space-y-1 text-neutral-600 text-[11px] list-disc pl-4">
-                  <li><strong>Owner:</strong> Full system access, financials, destructive wipes, and cloud database tools.</li>
-                  <li><strong>Manager:</strong> Daily shift closures, financial reports, expense recording, and station management.</li>
-                  <li><strong>Cashier / Desk:</strong> Session timers, billing checkout, snacks additions, and customer dues.</li>
-                  <li><strong>Kitchen Staff:</strong> Kitchen Display (KDS) order management screen at <code>/kds</code>.</li>
+                  <li><strong>Owner:</strong> Full system access, financial reports, club settings, and staff credentials.</li>
+                  <li><strong>Manager:</strong> Daily operations, financial reports, expense recording, and station management.</li>
+                  <li><strong>Club Worker:</strong> Table sessions, billing & checkout, café orders, and customer CRM.</li>
                 </ul>
               </div>
 
@@ -682,9 +728,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           onChange={(e) => setNewStaffRole(e.target.value as any)}
                           className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-xs font-bold"
                         >
-                          <option value="cashier">Cashier / Desk Marker</option>
+                          <option value="worker">Club Worker</option>
                           <option value="manager">Club Manager</option>
-                          <option value="kitchen">Kitchen / KDS Operator</option>
                           <option value="owner">Club Owner</option>
                         </select>
                       </div>
@@ -867,7 +912,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-base font-extrabold text-neutral-900">Food & Beverage Catalog</h3>
-                  <p className="text-xs text-neutral-500 mt-0.5">Items displayed on table order modals and Kitchen Display (KDS).</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">Items displayed on table order modals and café inventory.</p>
                 </div>
                 <Button
                   variant="primary"
@@ -1003,136 +1048,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           )}
 
           {/* ========================================================= */}
-          {/* 5. BILLING SETTINGS */}
-          {/* ========================================================= */}
-          {activeSection === 'billing' && (
-            <Card className="p-6 space-y-6">
-              <div>
-                <h3 className="text-base font-extrabold text-neutral-900">Billing & Payment Rules</h3>
-                <p className="text-xs text-neutral-500 mt-0.5">Rates calculation, rounding rules, discounts, and payment methods.</p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div>
-                  <label className="font-bold text-neutral-700 block mb-1">Default Base Rate ({config.currencySymbol}/hr)</label>
-                  <Input
-                    type="number"
-                    value={businessForm.defaultHourlyRate}
-                    onChange={(e) => setBusinessForm({ ...businessForm, defaultHourlyRate: parseFloat(e.target.value) || 0 })}
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-neutral-700 block mb-1">Minimum Charge Duration (Minutes)</label>
-                  <select
-                    value={businessForm.minimumChargeMinutes || 30}
-                    onChange={(e) => setBusinessForm({ ...businessForm, minimumChargeMinutes: parseInt(e.target.value) })}
-                    className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl font-bold"
-                  >
-                    <option value={0}>No minimum charge (Pay exact seconds)</option>
-                    <option value={15}>15 Minutes minimum</option>
-                    <option value={30}>30 Minutes minimum</option>
-                    <option value={60}>1 Hour minimum</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-bold text-neutral-700 block mb-1">Cashier Max Discount Allowance (%)</label>
-                  <Input
-                    type="number"
-                    value={businessForm.maxCashierDiscountPercent || 10}
-                    onChange={(e) => setBusinessForm({ ...businessForm, maxCashierDiscountPercent: parseInt(e.target.value) || 0 })}
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-neutral-700 block mb-1">Currency Rounding Rule</label>
-                  <select
-                    value={businessForm.roundingRule || 'nearest_1'}
-                    onChange={(e) => setBusinessForm({ ...businessForm, roundingRule: e.target.value as any })}
-                    className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl font-bold"
-                  >
-                    <option value="none">Exact cents / paise (no rounding)</option>
-                    <option value="nearest_1">Round to nearest ₹1</option>
-                    <option value="nearest_5">Round to nearest ₹5</option>
-                    <option value="round_up">Always round UP to next ₹1</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-bold text-neutral-700 block mb-1">Club UPI ID for QR Billing</label>
-                  <Input
-                    value={businessForm.upiId || 'oneshot@upi'}
-                    onChange={(e) => setBusinessForm({ ...businessForm, upiId: e.target.value })}
-                    placeholder="oneshot@upi"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-neutral-700 block mb-1">UPI Payee Business Name</label>
-                  <Input
-                    value={businessForm.upiName || 'One Shot Snooker Gaming Club'}
-                    onChange={(e) => setBusinessForm({ ...businessForm, upiName: e.target.value })}
-                    placeholder="One Shot Snooker Gaming Club"
-                  />
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {/* ========================================================= */}
-          {/* 6. CUSTOMER & CREDIT */}
-          {/* ========================================================= */}
-          {activeSection === 'credit' && (
-            <Card className="p-6 space-y-6">
-              <div>
-                <h3 className="text-base font-extrabold text-neutral-900">Customer & Credit (Udhaar) Rules</h3>
-                <p className="text-xs text-neutral-500 mt-0.5">Player credit limits, risk tiers, and automated WhatsApp reminder details.</p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div>
-                  <label className="font-bold text-neutral-700 block mb-1">Default Player Credit Limit ({config.currencySymbol})</label>
-                  <Input
-                    type="number"
-                    value={businessForm.maxCreditLimit || 2000}
-                    onChange={(e) => setBusinessForm({ ...businessForm, maxCreditLimit: parseFloat(e.target.value) || 0 })}
-                  />
-                  <span className="text-[11px] text-neutral-400 mt-1 block">
-                    Cashiers will receive warnings when a player's balance exceeds this limit.
-                  </span>
-                </div>
-
-                <div>
-                  <label className="font-bold text-neutral-700 block mb-1">Credit Risk Classification</label>
-                  <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-xl space-y-1.5 text-[11px]">
-                    <div className="flex items-center justify-between">
-                      <span className="text-emerald-700 font-bold">● GOOD:</span>
-                      <span className="text-neutral-600">&lt; 50% of credit limit</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-amber-700 font-bold">● MODERATE:</span>
-                      <span className="text-neutral-600">50% – 99% of credit limit</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-rose-700 font-bold">● OVER LIMIT:</span>
-                      <span className="text-neutral-600">100%+ (Checkout requires manager)</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label className="font-bold text-neutral-700 block mb-1">WhatsApp Reminder Message Template</label>
-                  <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-mono text-neutral-700 leading-relaxed">
-                    "Hello [Customer Name], gentle reminder from One Shot Snooker Gaming Club: you have an outstanding session balance of ₹[Amount Due]. Kindly clear via UPI to: {businessForm.upiId || 'oneshot@upi'}. Thank you!"
-                  </div>
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {/* ========================================================= */}
-          {/* 7. REPORTS & EXPORT */}
+          {/* 5. REPORTS & EXPORT */}
           {/* ========================================================= */}
           {activeSection === 'reports' && (
             <Card className="p-6 space-y-6">
@@ -1445,9 +1361,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         const targetEmail = user?.email || 'owner@oneshotsnooker.com';
                         await updateUserPassword(targetEmail, myNewPass);
                         const selfEmp = employees.find((e) => e.email.toLowerCase() === targetEmail.toLowerCase() || e.role === (user?.role || 'owner'));
-                        if (selfEmp && onSaveEmployee) {
-                          onSaveEmployee({ ...selfEmp, password: myNewPass });
-                        }
                         setMyPassMsg({ text: 'Your account password was updated successfully!', isError: false });
                         setMyNewPass('');
                         setMyConfirmPass('');
@@ -1462,19 +1375,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </Button>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/80 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-neutral-800">Auto Logout Timer</span>
-                    <select className="p-1.5 bg-white border border-neutral-300 rounded-lg text-xs font-bold">
-                      <option value="4">After 4 Hours of Inactivity</option>
-                      <option value="8">After 8 Hours of Inactivity</option>
-                      <option value="never">Never (Stay Signed In on Counter PC)</option>
-                    </select>
-                  </div>
-                  <p className="text-[11px] text-neutral-500">
-                    Automatically signs out staff when counter computer is left unattended.
-                  </p>
-                </div>
               </div>
             </Card>
           )}
@@ -1486,283 +1386,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <Card className="p-6">
               <SystemHealthSection
                 currentClubId={config.id}
-                onOpenDeveloperDrawer={() => setShowDevDrawer(true)}
               />
-            </Card>
-          )}
-
-          {/* ========================================================= */}
-          {/* 12. ABOUT CUEDESK */}
-          {/* ========================================================= */}
-          {activeSection === 'about' && (
-            <Card className="p-6 space-y-6">
-              <div className="flex items-center gap-4">
-                <img
-                  src="/logo.png"
-                  alt="CueDesk Logo"
-                  className="w-16 h-16 rounded-2xl object-cover ring-2 ring-amber-300 shadow-md cursor-pointer"
-                  onClick={() => {
-                    const next = versionClickCount + 1;
-                    setVersionClickCount(next);
-                    if (next >= 5) {
-                      setShowDevDrawer(true);
-                      setVersionClickCount(0);
-                    }
-                  }}
-                  title="CueDesk One Shot OS"
-                />
-                <div>
-                  <h3 className="text-lg font-black text-neutral-900 tracking-tight">CueDesk Pro OS</h3>
-                  <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">
-                    Custom Edition for One Shot Snooker Gaming Club
-                  </p>
-                  <p className="text-[11px] text-neutral-400 font-mono mt-0.5">
-                    Build: 2026.09-production • Cloud Firestore Realtime Engine
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/80 text-xs space-y-2 text-neutral-600">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-neutral-800">Licensed Venue</span>
-                  <span>One Shot Snooker Gaming Club</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-neutral-800">Deployment Type</span>
-                  <span className="text-emerald-700 font-bold">Cloud Production</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-neutral-800">Customer Support</span>
-                  <span>support@oneshotsnooker.com</span>
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {/* ========================================================= */}
-          {/* 13. DANGER ZONE */}
-          {/* ========================================================= */}
-          {activeSection === 'danger' && (
-            <Card className="p-6 space-y-6 border-rose-200 bg-rose-50/10">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
-                  <AlertTriangle className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-extrabold text-rose-900">Danger Zone — Destructive Operations</h3>
-                  <p className="text-xs text-rose-700 mt-0.5">
-                    High privilege actions. Data wiping cannot be undone. All actions require typing strict confirmation.
-                  </p>
-                </div>
-              </div>
-
-              {/* 3 Destructive Action Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {/* 1. Reset Sales History */}
-                <div className="p-4 rounded-2xl bg-white border border-rose-200 flex flex-col justify-between gap-3 shadow-2xs">
-                  <div>
-                    <h5 className="font-bold text-neutral-900 text-xs">Clear Sales & Revenue History</h5>
-                    <p className="text-[11px] text-neutral-500 mt-1">
-                      Wipes all billing receipts, session history, active timers, and revenue counters back to ₹0, keeping CRM players, catalog, and staff intact.
-                    </p>
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      setDangerTarget('history');
-                      setResetConfirmText('');
-                      setDangerModalOpen(true);
-                    }}
-                    className="bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 justify-center font-bold"
-                  >
-                    Reset Sales & Revenue
-                  </Button>
-                </div>
-
-                {/* 2. Wipe CRM Database */}
-                <div className="p-4 rounded-2xl bg-white border border-rose-200 flex flex-col justify-between gap-3 shadow-2xs">
-                  <div>
-                    <h5 className="font-bold text-neutral-900 text-xs">Wipe CRM Customer Database</h5>
-                    <p className="text-[11px] text-neutral-500 mt-1">
-                      Deletes all customer profiles, contact numbers, and credit/udhaar ledgers from CRM, keeping sales history and tables intact.
-                    </p>
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      setDangerTarget('crm');
-                      setResetConfirmText('');
-                      setDangerModalOpen(true);
-                    }}
-                    className="bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 justify-center font-bold"
-                  >
-                    Wipe CRM Database
-                  </Button>
-                </div>
-
-                {/* 3. Full Club Reset */}
-                <div className="p-4 rounded-2xl bg-white border border-rose-300 flex flex-col justify-between gap-3 shadow-2xs">
-                  <div>
-                    <h5 className="font-bold text-rose-900 text-xs">Full Club Factory Reset</h5>
-                    <p className="text-[11px] text-neutral-500 mt-1">
-                      Completely wipes all sales receipts, revenue, CRM customers, orders, expenses, and restores all tables to fresh empty state.
-                    </p>
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      setDangerTarget('all');
-                      setResetConfirmText('');
-                      setDangerModalOpen(true);
-                    }}
-                    className="bg-rose-600 text-white hover:bg-rose-700 border-none justify-center font-bold shadow-xs"
-                  >
-                    Full Factory Reset
-                  </Button>
-                </div>
-              </div>
-
-              {clearSuccess && (
-                <div className="p-3 rounded-xl bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-bold flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-                  <span>Operation completed: Data successfully wiped.</span>
-                </div>
-              )}
             </Card>
           )}
 
         </div>
       </div>
-
-      {/* ========================================================= */}
-      {/* DANGER ZONE CONFIRMATION MODAL (Strict RESET ONESHOT) */}
-      {/* ========================================================= */}
-      {dangerModalOpen && (
-        <div className="fixed inset-0 bg-neutral-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 border border-rose-200">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-              <h3 className="text-base font-extrabold text-rose-700 flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-rose-600" />
-                <span>Confirm High-Privilege Wipe</span>
-              </h3>
-              <button
-                onClick={() => {
-                  setDangerModalOpen(false);
-                  setResetConfirmText('');
-                }}
-                className="p-1 text-neutral-400 hover:text-neutral-900 rounded-lg cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 leading-relaxed font-medium">
-                ⚠️ You are about to permanently delete{' '}
-                <strong>
-                  {dangerTarget === 'all'
-                    ? 'ALL club data: sales receipts, revenue, CRM customer database, orders, and telemetry logs'
-                    : dangerTarget === 'crm'
-                    ? 'ALL CRM customer records, phone numbers, and credit/udhaar ledgers'
-                    : 'all billing receipts, session history, and revenue counters'}
-                </strong>{' '}
-                for <strong>{config.clubName}</strong>.
-              </div>
-
-              <div>
-                <label className="font-extrabold text-neutral-800 block mb-1">
-                  Type <span className="font-mono text-rose-600 font-black tracking-wider">RESET ONESHOT</span> below to confirm:
-                </label>
-                <input
-                  type="text"
-                  placeholder="Type RESET ONESHOT here..."
-                  value={resetConfirmText}
-                  onChange={(e) => setResetConfirmText(e.target.value)}
-                  className="w-full bg-neutral-50 border border-neutral-300 rounded-xl p-3 text-sm font-mono font-bold tracking-wider uppercase outline-none focus:border-rose-600 focus:ring-1 focus:ring-rose-600"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-100">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setDangerModalOpen(false);
-                  setResetConfirmText('');
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={resetConfirmText.trim().toUpperCase() !== RESET_KEYWORD || isClearingHistory}
-                onClick={async () => {
-                  if (resetConfirmText.trim().toUpperCase() !== RESET_KEYWORD) return;
-                  setIsClearingHistory(true);
-                  try {
-                    const target = dangerTarget || 'all';
-                    if (onResetClub) {
-                      await onResetClub(target);
-                    }
-                    setClearSuccess(true);
-                    setDangerModalOpen(false);
-                    setResetConfirmText('');
-                    setTimeout(() => setClearSuccess(false), 5000);
-                  } catch (err: any) {
-                    alert('Error clearing data: ' + (err?.message || err));
-                  } finally {
-                    setIsClearingHistory(false);
-                  }
-                }}
-                className={`transition-all ${
-                  resetConfirmText.trim().toUpperCase() === RESET_KEYWORD
-                    ? 'bg-rose-600 hover:bg-rose-700 text-white cursor-pointer'
-                    : 'bg-neutral-200 text-neutral-400 cursor-not-allowed border-none'
-                }`}
-              >
-                {isClearingHistory ? 'Wiping Data...' : 'PERMANENTLY DELETE DATA'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================= */}
-      {/* HIDDEN DEVELOPER DRAWER (Accessible via ?dev=true or click) */}
-      {/* ========================================================= */}
-      {showDevDrawer && (
-        <div className="fixed inset-0 bg-neutral-900/80 backdrop-blur-md flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-3xl w-full shadow-2xl space-y-6 my-8 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b pb-4">
-              <div>
-                <h3 className="text-base font-extrabold text-neutral-900 flex items-center gap-2">
-                  <Sliders className="w-5 h-5 text-amber-500" />
-                  <span>Developer Diagnostics & Overrides</span>
-                </h3>
-                <p className="text-xs text-neutral-500 mt-0.5">
-                  Internal developer tool for checking direct database connection strings.
-                </p>
-              </div>
-              <button onClick={() => setShowDevDrawer(false)} className="p-1 text-neutral-400 hover:text-black cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <FirebaseConnectSection currentClubId={config.id} />
-
-            <div className="flex justify-end pt-4 border-t">
-              <Button variant="outline" size="sm" onClick={() => setShowDevDrawer(false)}>
-                Close Developer Tool
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

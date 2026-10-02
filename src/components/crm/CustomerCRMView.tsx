@@ -23,9 +23,13 @@ import {
   Wallet,
   Eye,
   MessageCircle,
-  Copy
+  Copy,
+  Share2,
+  ArrowUpDown,
+  BadgePercent,
+  BookOpen
 } from 'lucide-react';
-import { TopCustomer, BusinessConfig, UdhaarTransaction } from '../../types';
+import { TopCustomer, BusinessConfig, UdhaarTransaction, SessionHistoryItem } from '../../types';
 
 // WhatsApp phone normalizer: ensures country code '91' for 10-digit Indian numbers & strips symbols
 const normalizeWhatsAppPhone = (phone: string): string => {
@@ -75,6 +79,54 @@ const getWhatsAppReminderText = (
     `Thank you for playing with us!\n` +
     `— Team ${cName}`;
 };
+
+// Formats detailed Member Account Statement for 1-click WhatsApp sharing
+const getCustomerStatementText = (
+  cust: TopCustomer,
+  clubName: string = 'One Shot Snooker Gaming Club',
+  currencySymbol: string = '₹',
+  upiId?: string
+): string => {
+  const dateStr = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const dues = (cust.outstandingDue || 0).toFixed(0);
+  const wallet = (cust.walletBalance || 0).toFixed(0);
+  const spent = (cust.totalSpent || 0).toFixed(0);
+  const sessions = cust.sessionsCount || 0;
+  const hours = (cust.totalHoursPlayed || 0).toFixed(1);
+  const cName = clubName || 'One Shot Snooker Gaming Club';
+
+  let text = `🎱 *${cName} — Customer Account Statement*\n` +
+    `👤 *Player:* ${cust.name} (${cust.phone})\n` +
+    `🪪 *Customer ID:* ${getCustomerNumber(cust)}\n` +
+    `📅 *Statement Date:* ${dateStr}\n\n` +
+    `📊 *Activity Summary:*\n` +
+    `• Total Sessions: ${sessions}\n` +
+    `• Gaming Time: ${hours} hours\n` +
+    `• Lifetime Spend: ${currencySymbol}${spent}\n` +
+    `• Advance / Wallet Balance: ${currencySymbol}${wallet}\n` +
+    `• Current Credit Due: *${currencySymbol}${dues}*\n\n`;
+
+  const recentTx = (cust.udhaarLedger || []).slice(0, 3);
+  if (recentTx.length > 0) {
+    text += `📜 *Recent Account Transactions:*\n`;
+    recentTx.forEach((tx) => {
+      const d = new Date(tx.timestamp).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      const sign = tx.type === 'payment_received' || tx.type === 'deposit_added' ? '✓' : '+';
+      text += `• ${d}: ${sign} ${currencySymbol}${tx.amount} (${tx.description})\n`;
+    });
+    text += `\n`;
+  }
+
+  if (Number(dues) > 0) {
+    text += `⚠️ *Outstanding Balance to Clear:* ${currencySymbol}${dues}\n`;
+    if (upiId) text += `📲 *Pay via UPI:* \`${upiId}\`\n\n`;
+  } else {
+    text += `🟢 *All account dues are cleared!*\n\n`;
+  }
+
+  text += `Thank you for choosing ${cName}! 🎱`;
+  return text;
+};
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -82,24 +134,29 @@ import { Badge } from '../ui/Badge';
 import { formatCurrency } from '../../utils/formatters';
 import { exportCreditLedgerToExcel } from '../../utils/excelExport';
 import { useAuth } from '../../context/AuthContext';
+import { createCustomerIdentity, getCustomerNumber } from '../../utils/customerIdentity';
 
 interface CustomerCRMViewProps {
   customers: TopCustomer[];
+  history?: SessionHistoryItem[];
   config: BusinessConfig;
   onSaveCustomer: (customer: TopCustomer) => Promise<void>;
+  onRecordAccountTransaction: (customerId: string, transaction: UdhaarTransaction) => Promise<void>;
   onDeleteCustomer: (customerId: string) => Promise<void>;
 }
 
 export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
   customers,
+  history = [],
   config,
   onSaveCustomer,
+  onRecordAccountTransaction,
   onDeleteCustomer,
 }) => {
   const { user } = useAuth();
+  const canManageAccountBalances = user?.role === 'owner' || user?.role === 'manager';
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [membershipFilter, setMembershipFilter] = useState<string>('all');
   const [creditFilter, setCreditFilter] = useState<string>('all');
 
   // Modals
@@ -111,7 +168,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
   // Settlement Modal State
   const [settlingCustomer, setSettlingCustomer] = useState<TopCustomer | null>(null);
   const [settleAmount, setSettleAmount] = useState<string>('');
-  const [settleMethod, setSettleMethod] = useState<'cash' | 'upi' | 'card'>('upi');
+  const [settleMethod, setSettleMethod] = useState<'cash' | 'upi'>('upi');
   const [settleNotes, setSettleNotes] = useState<string>('');
 
   // Add Manual Credit Charge Modal State
@@ -122,6 +179,15 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
   // Delete Customer State
   const [deletingCustomer, setDeletingCustomer] = useState<TopCustomer | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Advance Deposit Modal State
+  const [depositingCustomer, setDepositingCustomer] = useState<TopCustomer | null>(null);
+  const [depositAmount, setDepositAmount] = useState<string>('');
+  const [depositMethod, setDepositMethod] = useState<'cash' | 'upi'>('upi');
+  const [depositNotes, setDepositNotes] = useState<string>('');
+
+  // Sorting
+  const [sortBy, setSortBy] = useState<'dues' | 'spent' | 'sessions' | 'recent' | 'name'>('dues');
 
   // WhatsApp Reminder State
   const [whatsAppCustomer, setWhatsAppCustomer] = useState<TopCustomer | null>(null);
@@ -134,6 +200,13 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
     setWhatsAppTone(tone);
     setWhatsAppMessage(getWhatsAppReminderText(cust, config.clubName, config.currencySymbol, config.upiId, tone));
     setIsCopied(false);
+  };
+
+  const handleShareStatement = (cust: TopCustomer) => {
+    const text = getCustomerStatementText(cust, config.clubName, config.currencySymbol, config.upiId);
+    const phone = normalizeWhatsAppPhone(cust.phone);
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
   };
 
   const handleToneChange = (tone: 'gentle' | 'standard' | 'urgent') => {
@@ -166,10 +239,6 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
       c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.phone.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesMembership = 
-      membershipFilter === 'all' || 
-      (c.membershipStatus || c.tier || 'Regular').toLowerCase() === membershipFilter.toLowerCase();
-
     const dueAmt = c.outstandingDue || 0;
     const limit = c.creditLimit || DEFAULT_CREDIT_LIMIT;
 
@@ -179,26 +248,48 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
       (creditFilter === 'high_risk' && (dueAmt >= limit || dueAmt >= 1500)) ||
       (creditFilter === 'cleared' && dueAmt === 0);
 
-    return matchesSearch && matchesMembership && matchesCredit;
+    return matchesSearch && matchesCredit;
+  });
+
+  // Sort Logic
+  const sortedAndFilteredCustomers = [...filteredCustomers].sort((a, b) => {
+    if (sortBy === 'dues') {
+      return (b.outstandingDue || 0) - (a.outstandingDue || 0);
+    }
+    if (sortBy === 'spent') {
+      return (b.totalSpent || 0) - (a.totalSpent || 0);
+    }
+    if (sortBy === 'sessions') {
+      return (b.sessionsCount || 0) - (a.sessionsCount || 0);
+    }
+    if (sortBy === 'recent') {
+      return (b.updatedAt || 0) - (a.updatedAt || 0);
+    }
+    return a.name.localeCompare(b.name);
   });
 
   const totalDuesAcrossClub = customers.reduce((acc, c) => acc + (c.outstandingDue || 0), 0);
+  const totalAdvanceDeposits = customers.reduce((acc, c) => acc + (c.walletBalance || 0), 0);
   const customersWithDuesCount = customers.filter((c) => (c.outstandingDue || 0) > 0).length;
   const highRiskCustomersCount = customers.filter((c) => (c.outstandingDue || 0) >= (c.creditLimit || DEFAULT_CREDIT_LIMIT)).length;
 
   const handleOpenAddModal = () => {
+    const identity = createCustomerIdentity();
     setEditingCustomer({
-      id: `c-${Date.now()}`,
+      ...identity,
       name: '',
       phone: '',
-      sessionsCount: 1,
+      email: '',
+      sessionsCount: 0,
       totalSpent: 0,
       totalHoursPlayed: 0,
       dateJoined: new Date().toISOString().split('T')[0],
-      membershipStatus: 'Regular',
-      lastVisit: 'Today',
+      lastVisit: '',
       creditLimit: DEFAULT_CREDIT_LIMIT,
       outstandingDue: 0,
+      walletBalance: 0,
+      customDiscountPercent: 0,
+      preferredGame: 'Snooker',
       notes: ''
     });
     setIsEditModalOpen(true);
@@ -215,7 +306,10 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
 
     try {
       setIsSaving(true);
-      await onSaveCustomer(editingCustomer as TopCustomer);
+      await onSaveCustomer({
+        ...editingCustomer,
+        customerNumber: editingCustomer.customerNumber || getCustomerNumber(editingCustomer as TopCustomer),
+      } as TopCustomer);
       setIsEditModalOpen(false);
       setEditingCustomer(null);
     } catch (err) {
@@ -243,28 +337,25 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
     if (!settlingCustomer || !settleAmount || Number(settleAmount) <= 0) return;
     const paid = Number(settleAmount);
     const currentDue = settlingCustomer.outstandingDue || 0;
-    const newDue = Math.max(0, currentDue - paid);
+    if (paid > currentDue) {
+      alert('Settlement cannot exceed the current outstanding balance.');
+      return;
+    }
 
     const newTx: UdhaarTransaction = {
-      id: `tx_${Date.now()}`,
+      id: `tx_${crypto.randomUUID()}`,
       timestamp: Date.now(),
       type: 'payment_received',
       amount: paid,
       description: settleNotes.trim() || `Settled Credit Payment (${settleMethod.toUpperCase()})`,
       paymentMethod: settleMethod,
+      source: 'balance_settlement',
       recordedBy: user?.displayName || user?.email || 'Staff'
-    };
-
-    const updatedCust: TopCustomer = {
-      ...settlingCustomer,
-      outstandingDue: newDue,
-      totalSpent: (settlingCustomer.totalSpent || 0) + paid,
-      udhaarLedger: [newTx, ...(settlingCustomer.udhaarLedger || [])]
     };
 
     try {
       setIsSaving(true);
-      await onSaveCustomer(updatedCust);
+      await onRecordAccountTransaction(settlingCustomer.id, newTx);
       setSettlingCustomer(null);
       setSettleAmount('');
       setSettleNotes('');
@@ -279,32 +370,54 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
   const handleConfirmAddCredit = async () => {
     if (!addingCreditCustomer || !creditChargeAmount || Number(creditChargeAmount) <= 0) return;
     const charge = Number(creditChargeAmount);
-    const currentDue = addingCreditCustomer.outstandingDue || 0;
-    const newDue = currentDue + charge;
 
     const newTx: UdhaarTransaction = {
-      id: `tx_${Date.now()}`,
+      id: `tx_${crypto.randomUUID()}`,
       timestamp: Date.now(),
       type: 'due_added',
       amount: charge,
       description: creditChargeReason.trim() || 'Manual Credit Charge Added',
+      source: 'manual_due',
       recordedBy: user?.displayName || user?.email || 'Staff'
-    };
-
-    const updatedCust: TopCustomer = {
-      ...addingCreditCustomer,
-      outstandingDue: newDue,
-      udhaarLedger: [newTx, ...(addingCreditCustomer.udhaarLedger || [])]
     };
 
     try {
       setIsSaving(true);
-      await onSaveCustomer(updatedCust);
+      await onRecordAccountTransaction(addingCreditCustomer.id, newTx);
       setAddingCreditCustomer(null);
       setCreditChargeAmount('');
       setCreditChargeReason('');
     } catch (err) {
       alert('Failed to add credit charge.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Submit Advance Deposit
+  const handleConfirmAddDeposit = async () => {
+    if (!depositingCustomer || !depositAmount || Number(depositAmount) <= 0) return;
+    const added = Number(depositAmount);
+
+    const newTx: UdhaarTransaction = {
+      id: `tx_${crypto.randomUUID()}`,
+      timestamp: Date.now(),
+      type: 'deposit_added',
+      amount: added,
+      description: depositNotes.trim() || `Advance Deposit Added (${depositMethod.toUpperCase()})`,
+      paymentMethod: depositMethod,
+      source: 'deposit',
+      recordedBy: user?.displayName || user?.email || 'Staff'
+    };
+
+    try {
+      setIsSaving(true);
+      await onRecordAccountTransaction(depositingCustomer.id, newTx);
+      setDepositingCustomer(null);
+      setDepositAmount('');
+      setDepositNotes('');
+    } catch (err) {
+      alert('Failed to record advance deposit.');
     } finally {
       setIsSaving(false);
     }
@@ -331,12 +444,9 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                   <h3 className="text-base font-extrabold">{viewingProfileCustomer.name}</h3>
                   <p className="text-xs text-neutral-300">{viewingProfileCustomer.phone}</p>
                   <div className="mt-1">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                      viewingProfileCustomer.membershipStatus === 'VIP' ? 'bg-amber-400 text-black'
-                      : viewingProfileCustomer.membershipStatus === 'Platinum' ? 'bg-purple-400 text-white'
-                      : viewingProfileCustomer.membershipStatus === 'Gold' ? 'bg-yellow-400 text-black'
-                      : 'bg-neutral-600 text-white'
-                    }`}>{viewingProfileCustomer.membershipStatus || 'Regular'}</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-neutral-700 text-amber-300">
+                      {getCustomerNumber(viewingProfileCustomer)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -361,12 +471,20 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                   <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mt-0.5">Lifetime Spent</div>
                 </div>
                 <div className={`p-3 rounded-2xl border text-center ${
-                  (viewingProfileCustomer.outstandingDue || 0) > 0 ? 'bg-rose-50 border-rose-200' : 'bg-neutral-50 border-neutral-200'
+                  (viewingProfileCustomer.walletBalance || 0) > 0 ? 'bg-blue-50 border-blue-200' : 'bg-neutral-50 border-neutral-200'
                 }`}>
-                  <div className={`text-xl font-black ${ (viewingProfileCustomer.outstandingDue || 0) > 0 ? 'text-rose-700' : 'text-neutral-400' }`}>
-                    {formatCurrency(viewingProfileCustomer.outstandingDue || 0, config.currencySymbol)}
+                  <div className={`text-xl font-black ${ (viewingProfileCustomer.walletBalance || 0) > 0 ? 'text-blue-700' : 'text-neutral-400' }`}>
+                    {formatCurrency(viewingProfileCustomer.walletBalance || 0, config.currencySymbol)}
                   </div>
-                  <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mt-0.5">Credit Due</div>
+                  <div className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mt-0.5">Advance Vault</div>
+                </div>
+                <div className={`col-span-2 p-3 rounded-2xl border flex items-center justify-between px-5 ${
+                  (viewingProfileCustomer.outstandingDue || 0) > 0 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50/50 border-emerald-200'
+                }`}>
+                  <span className="text-xs font-bold text-neutral-700">Outstanding Credit Due</span>
+                  <span className={`text-xl font-black font-mono ${ (viewingProfileCustomer.outstandingDue || 0) > 0 ? 'text-rose-700' : 'text-emerald-700' }`}>
+                    {formatCurrency(viewingProfileCustomer.outstandingDue || 0, config.currencySymbol)}
+                  </span>
                 </div>
               </div>
 
@@ -374,7 +492,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
               {(viewingProfileCustomer.creditLimit || 0) > 0 && (
                 <div className="p-4 bg-white border border-neutral-200 rounded-2xl space-y-2">
                   <div className="flex justify-between text-xs font-bold">
-                    <span className="text-neutral-700">Credit Usage</span>
+                    <span className="text-neutral-700">Credit Limit Usage</span>
                     <span className={`${ ((viewingProfileCustomer.outstandingDue || 0) / (viewingProfileCustomer.creditLimit || 1)) > 0.8 ? 'text-rose-600' : 'text-neutral-500' }`}>
                       {formatCurrency(viewingProfileCustomer.outstandingDue || 0, config.currencySymbol)} / {formatCurrency(viewingProfileCustomer.creditLimit || 0, config.currencySymbol)}
                     </span>
@@ -394,72 +512,136 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
 
               {/* Quick Info */}
               <div className="p-4 bg-white border border-neutral-200 rounded-2xl space-y-2 text-xs">
-                <h4 className="font-extrabold text-neutral-800 uppercase tracking-wider text-[10px]">Profile Info</h4>
-                <div className="flex justify-between"><span className="text-neutral-500">Member Since</span><span className="font-semibold text-neutral-900">{viewingProfileCustomer.dateJoined || 'N/A'}</span></div>
+                <h4 className="font-extrabold text-neutral-800 uppercase tracking-wider text-[10px]">Player Profile Details</h4>
+                <div className="flex justify-between"><span className="text-neutral-500">Phone Number</span><span className="font-semibold text-neutral-900 font-mono">{viewingProfileCustomer.phone}</span></div>
+                {viewingProfileCustomer.email && (
+                  <div className="flex justify-between"><span className="text-neutral-500">Email Address</span><span className="font-semibold text-neutral-900">{viewingProfileCustomer.email}</span></div>
+                )}
+                <div className="flex justify-between"><span className="text-neutral-500">Preferred Game</span><span className="font-semibold text-neutral-900">{viewingProfileCustomer.preferredGame || 'Snooker'}</span></div>
+                <div className="flex justify-between"><span className="text-neutral-500">Customer Since</span><span className="font-semibold text-neutral-900">{viewingProfileCustomer.dateJoined || 'N/A'}</span></div>
                 <div className="flex justify-between"><span className="text-neutral-500">Last Visit</span><span className="font-semibold text-neutral-900">{viewingProfileCustomer.lastVisit || 'N/A'}</span></div>
-                <div className="flex justify-between"><span className="text-neutral-500">Credit Limit</span><span className="font-semibold text-neutral-900">{formatCurrency(viewingProfileCustomer.creditLimit || DEFAULT_CREDIT_LIMIT, config.currencySymbol)}</span></div>
+                <div className="flex justify-between"><span className="text-neutral-500">Credit Risk Limit</span><span className="font-semibold text-neutral-900">{formatCurrency(viewingProfileCustomer.creditLimit || DEFAULT_CREDIT_LIMIT, config.currencySymbol)}</span></div>
                 {viewingProfileCustomer.notes && (
                   <div className="pt-2 border-t border-neutral-100">
-                    <span className="text-neutral-500 block mb-1">Notes</span>
+                    <span className="text-neutral-500 block mb-1">Player Notes</span>
                     <p className="text-neutral-800 font-medium leading-relaxed">{viewingProfileCustomer.notes}</p>
                   </div>
                 )}
               </div>
 
-              {/* Credit Ledger History */}
+              {/* Linked club visits. Legacy records are not guessed by name or phone. */}
               <div className="p-4 bg-white border border-neutral-200 rounded-2xl space-y-3">
-                <h4 className="font-extrabold text-neutral-800 uppercase tracking-wider text-[10px]">Credit Ledger History ({(viewingProfileCustomer.udhaarLedger || []).length} transactions)</h4>
-                {(viewingProfileCustomer.udhaarLedger || []).length === 0 ? (
-                  <p className="text-xs text-neutral-400 text-center py-3">No credit transactions yet</p>
+                <h4 className="font-extrabold text-neutral-800 uppercase tracking-wider text-[10px]">Recent Club Activity</h4>
+                {history.filter((item) => item.customerId === viewingProfileCustomer.id).slice(0, 10).length === 0 ? (
+                  <p className="text-xs text-neutral-400 text-center py-3">No linked visits yet. Link this customer when preparing their next bill.</p>
                 ) : (
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {(viewingProfileCustomer.udhaarLedger || []).map((tx) => (
-                      <div key={tx.id} className={`flex items-center justify-between p-2.5 rounded-xl border text-xs ${
-                        tx.type === 'payment_received' ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'
-                      }`}>
-                        <div>
-                          <span className={`font-bold ${ tx.type === 'payment_received' ? 'text-emerald-700' : 'text-rose-700' }`}>
-                            {tx.type === 'payment_received' ? '✓ Paid' : '+ Due Added'}
-                          </span>
-                          <p className="text-[10px] text-neutral-500 mt-0.5">{tx.description}</p>
-                          <p className="text-[9px] text-neutral-400">{new Date(tx.timestamp).toLocaleString('en-IN')}</p>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {history.filter((item) => item.customerId === viewingProfileCustomer.id).slice(0, 10).map((item) => (
+                      <div key={item.id} className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 text-xs">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-bold text-neutral-900">{item.tableName}</p>
+                            <p className="text-[10px] text-neutral-500 mt-0.5">
+                              {new Date(item.endTime || item.startTime).toLocaleString('en-IN')}
+                              {' · '}{Math.max(0, Math.round((item.durationSeconds || 0) / 60))} min
+                            </p>
+                            <p className="text-[10px] text-neutral-500 mt-1">Receipt {item.receiptNo} · {item.paymentMethod.toUpperCase()}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="font-extrabold text-neutral-900">{formatCurrency(item.grandTotal, config.currencySymbol)}</p>
+                            <p className={item.balanceDue > 0 ? 'text-rose-600 font-bold' : 'text-emerald-700 font-semibold'}>
+                              {item.balanceDue > 0 ? `Due ${formatCurrency(item.balanceDue, config.currencySymbol)}` : 'Paid'}
+                            </p>
+                          </div>
                         </div>
-                        <span className={`font-extrabold text-sm ${ tx.type === 'payment_received' ? 'text-emerald-700' : 'text-rose-700' }`}>
-                          {tx.type === 'payment_received' ? '-' : '+'}{formatCurrency(tx.amount, config.currencySymbol)}
-                        </span>
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Credit & Deposit Ledger History */}
+              <div className="p-4 bg-white border border-neutral-200 rounded-2xl space-y-3">
+                <h4 className="font-extrabold text-neutral-800 uppercase tracking-wider text-[10px]">Financial Ledger Audit ({(viewingProfileCustomer.udhaarLedger || []).length} transactions)</h4>
+                {(viewingProfileCustomer.udhaarLedger || []).length === 0 ? (
+                  <p className="text-xs text-neutral-400 text-center py-3">No credit or deposit transactions recorded yet</p>
+                ) : (
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {(viewingProfileCustomer.udhaarLedger || []).map((tx) => {
+                      const isCreditAdd = tx.type === 'due_added';
+                      const isDeposit = tx.type === 'deposit_added';
+                      const isPaid = tx.type === 'payment_received';
+                      return (
+                        <div key={tx.id} className={`flex items-center justify-between p-2.5 rounded-xl border text-xs ${
+                          isPaid ? 'bg-emerald-50 border-emerald-100'
+                          : isDeposit ? 'bg-blue-50 border-blue-100'
+                          : isCreditAdd ? 'bg-rose-50 border-rose-100'
+                          : 'bg-amber-50 border-amber-100'
+                        }`}>
+                          <div>
+                            <span className={`font-bold ${
+                              isPaid ? 'text-emerald-700'
+                              : isDeposit ? 'text-blue-700'
+                              : isCreditAdd ? 'text-rose-700'
+                              : 'text-amber-700'
+                            }`}>
+                              {isPaid ? '✓ Paid / Settle'
+                              : isDeposit ? '💎 Advance Deposited'
+                              : isCreditAdd ? '+ Due Added'
+                              : tx.type === 'due_reversed' ? '− Due Reversed' : '⚡ Tab Deducted'}
+                            </span>
+                            <p className="text-[10px] text-neutral-500 mt-0.5">{tx.description}</p>
+                            <p className="text-[9px] text-neutral-400">{new Date(tx.timestamp).toLocaleString('en-IN')}</p>
+                          </div>
+                          <span className={`font-extrabold text-sm ${
+                            isPaid ? 'text-emerald-700'
+                            : isDeposit ? 'text-blue-700'
+                            : isCreditAdd ? 'text-rose-700'
+                            : 'text-amber-700'
+                          }`}>
+                            {isPaid || tx.type === 'deposit_used' || tx.type === 'due_reversed' ? '-' : '+'}{formatCurrency(tx.amount, config.currencySymbol)}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
             </div>
 
             {/* Drawer Footer Actions */}
-            <div className="p-4 border-t border-neutral-200 bg-neutral-50 grid grid-cols-2 sm:grid-cols-3 gap-2 shrink-0">
-              <button
-                onClick={() => { setSettlingCustomer(viewingProfileCustomer); setViewingProfileCustomer(null); }}
-                className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
-              >
-                <Wallet className="w-3.5 h-3.5" /> Settle Credit
-              </button>
-              {(viewingProfileCustomer.outstandingDue || 0) > 0 && (
+            <div className="p-4 border-t border-neutral-200 bg-neutral-50 flex flex-col gap-2 shrink-0">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <button
+                  onClick={() => { setSettlingCustomer(viewingProfileCustomer); setViewingProfileCustomer(null); }}
+                  className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
+                >
+                  <Wallet className="w-3.5 h-3.5" /> Settle
+                </button>
                 <button
                   onClick={() => {
-                    const c = viewingProfileCustomer;
+                    setDepositingCustomer(viewingProfileCustomer);
+                    setDepositAmount('1000');
                     setViewingProfileCustomer(null);
-                    handleOpenWhatsAppModal(c);
                   }}
-                  className="py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
+                  className="py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
                 >
-                  <MessageCircle className="w-3.5 h-3.5 text-emerald-600" /> WhatsApp
+                  <PlusCircle className="w-3.5 h-3.5" /> + Deposit
                 </button>
-              )}
-              <button
-                onClick={() => { handleOpenEditModal(viewingProfileCustomer); setViewingProfileCustomer(null); }}
-                className="py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <Edit className="w-3.5 h-3.5" /> Edit Profile
-              </button>
+                <button
+                  onClick={() => handleShareStatement(viewingProfileCustomer)}
+                  className="py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
+                  title="Send full account statement via WhatsApp"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-emerald-600" /> Statement
+                </button>
+                <button
+                  onClick={() => { handleOpenEditModal(viewingProfileCustomer); setViewingProfileCustomer(null); }}
+                  className="py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1"
+                >
+                  <Edit className="w-3.5 h-3.5" /> Edit
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -500,21 +682,34 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
       </div>
 
       {/* Summary KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="p-4 flex items-center gap-4 bg-rose-50/50 border-rose-200">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+        <Card className="p-4 flex items-center gap-3 bg-rose-50/50 border-rose-200">
           <div className="w-10 h-10 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
             <DollarSign className="w-5 h-5" />
           </div>
           <div>
-            <span className="text-[10px] font-extrabold text-rose-800 uppercase tracking-wider block">Total Outstanding Credit</span>
+            <span className="text-[10px] font-extrabold text-rose-800 uppercase tracking-wider block">Outstanding Credit</span>
             <div className="text-xl font-black text-rose-900 font-mono">
-              ₹{totalDuesAcrossClub.toFixed(0)}
+              {formatCurrency(totalDuesAcrossClub, config.currencySymbol)}
             </div>
-            <span className="text-[10px] font-semibold text-rose-700">{customersWithDuesCount} customers with unpaid dues</span>
+            <span className="text-[10px] font-semibold text-rose-700">{customersWithDuesCount} players due</span>
           </div>
         </Card>
 
-        <Card className="p-4 flex items-center gap-4">
+        <Card className="p-4 flex items-center gap-3 bg-blue-50/50 border-blue-200">
+          <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+            <Wallet className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="text-[10px] font-extrabold text-blue-800 uppercase tracking-wider block">Advance Vault Held</span>
+            <div className="text-xl font-black text-blue-900 font-mono">
+              {formatCurrency(totalAdvanceDeposits, config.currencySymbol)}
+            </div>
+            <span className="text-[10px] font-semibold text-blue-700">Prepaid balances</span>
+          </div>
+        </Card>
+
+        <Card className="p-4 flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
             <ShieldAlert className="w-5 h-5" />
           </div>
@@ -523,87 +718,98 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
             <div className="text-xl font-black text-neutral-900 font-mono">
               {highRiskCustomersCount}
             </div>
-            <span className="text-[10px] font-semibold text-amber-700">Dues exceed assigned limit</span>
+            <span className="text-[10px] font-semibold text-amber-700">Exceed limit</span>
           </div>
         </Card>
 
-        <Card className="p-4 flex items-center gap-4">
+        <Card className="p-4 flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
             <Users className="w-5 h-5" />
           </div>
           <div>
             <span className="text-[10px] font-extrabold text-neutral-400 uppercase tracking-wider block">Total Active Players</span>
             <div className="text-xl font-black text-neutral-900 font-mono">{customers.length}</div>
-            <span className="text-[10px] font-semibold text-emerald-700">CRM Profiles Saved</span>
+            <span className="text-[10px] font-semibold text-emerald-700">Saved profiles</span>
           </div>
         </Card>
 
-        <Card className="p-4 flex items-center gap-4">
+        <Card className="p-4 flex items-center gap-3 col-span-2 lg:col-span-1">
           <div className="w-10 h-10 rounded-2xl bg-neutral-900 text-white flex items-center justify-center shrink-0 shadow-2xs">
             <Clock className="w-5 h-5" />
           </div>
           <div>
-            <span className="text-[10px] font-extrabold text-neutral-400 uppercase tracking-wider block">Total Hours Played</span>
+            <span className="text-[10px] font-extrabold text-neutral-400 uppercase tracking-wider block">Total Gaming Time</span>
             <div className="text-xl font-black text-neutral-900 font-mono">
               {customers.reduce((acc, c) => acc + (c.totalHoursPlayed || c.sessionsCount * 1.5 || 0), 0).toFixed(0)} hrs
             </div>
-            <span className="text-[10px] font-semibold text-neutral-500">Recorded sessions</span>
+            <span className="text-[10px] font-semibold text-neutral-500">All sessions</span>
           </div>
         </Card>
       </div>
 
       {/* Filters and Search Bar */}
-      <Card className="p-4 flex flex-col md:flex-row gap-3 items-center justify-between">
-        <div className="relative w-full md:w-80">
-          <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-3" />
-          <Input
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by customer name or phone..."
-            className="pl-9 text-xs"
-          />
-        </div>
+      <Card className="p-3 sm:p-4 flex flex-col gap-3">
+        <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
+          <div className="relative w-full md:w-72">
+            <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-3" />
+            <Input
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search player name, phone, email..."
+              className="pl-9 text-xs"
+            />
+          </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
-          <span className="text-xs font-bold text-neutral-500 whitespace-nowrap">Credit Status:</span>
-          <select
-            value={creditFilter}
-            onChange={(e) => setCreditFilter(e.target.value)}
-            className="bg-neutral-50 border border-neutral-200 text-xs font-bold rounded-xl px-3 py-2 text-neutral-800 outline-none"
-          >
-            <option value="all">All Credit Statuses</option>
-            <option value="has_dues">🔴 Has Dues (&gt;₹0)</option>
-            <option value="high_risk">⚠️ High Risk / Limit Exceeded</option>
-            <option value="cleared">🟢 Fully Cleared</option>
-          </select>
+          <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto no-scrollbar py-0.5 flex-wrap sm:flex-nowrap">
+            {[
+              { id: 'all', label: `All (${customers.length})` },
+              { id: 'has_dues', label: `🔴 Dues (${customersWithDuesCount})` },
+              { id: 'high_risk', label: `⚠️ Over Limit (${highRiskCustomersCount})` },
+              { id: 'cleared', label: `🟢 Cleared (${customers.filter(c => (c.outstandingDue || 0) <= 0).length})` },
+            ].map((chip) => (
+              <button
+                key={chip.id}
+                type="button"
+                onClick={() => setCreditFilter(chip.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                  creditFilter === chip.id
+                    ? 'bg-neutral-900 text-white shadow-xs'
+                    : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200/70'
+                }`}
+              >
+                {chip.label}
+              </button>
+            ))}
 
-          <span className="text-xs font-bold text-neutral-500 whitespace-nowrap ml-2">Tier:</span>
-          <select
-            value={membershipFilter}
-            onChange={(e) => setMembershipFilter(e.target.value)}
-            className="bg-neutral-50 border border-neutral-200 text-xs font-bold rounded-xl px-3 py-2 text-neutral-800 outline-none"
-          >
-            <option value="all">All Tiers</option>
-            <option value="VIP">VIP</option>
-            <option value="Platinum">Platinum</option>
-            <option value="Gold">Gold</option>
-            <option value="Silver">Silver</option>
-            <option value="Regular">Regular</option>
-          </select>
+            <div className="flex items-center gap-1.5 bg-neutral-100 border border-neutral-200 rounded-xl px-2.5 py-1.5 ml-1">
+              <ArrowUpDown className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="bg-transparent text-xs font-bold text-neutral-700 outline-none cursor-pointer"
+              >
+                <option value="dues">Sort: Highest Dues</option>
+                <option value="spent">Sort: Top Spenders</option>
+                <option value="sessions">Sort: Most Visits</option>
+                <option value="recent">Sort: Recently Active</option>
+                <option value="name">Sort: Name A-Z</option>
+              </select>
+            </div>
+          </div>
         </div>
       </Card>
 
       {/* Customer Directory & Credit Ledger Table / Mobile Cards */}
       {/* Mobile Card List View (Visible on small screens) */}
       <div className="block lg:hidden space-y-3">
-        {filteredCustomers.length === 0 ? (
+        {sortedAndFilteredCustomers.length === 0 ? (
           <Card className="p-8 text-center text-neutral-400 font-medium text-xs">
             No matching customer credit records found.
           </Card>
         ) : (
-          filteredCustomers.map((cust) => {
-            const status = cust.membershipStatus || cust.tier || 'Regular';
+          sortedAndFilteredCustomers.map((cust) => {
             const dueAmt = cust.outstandingDue || 0;
+            const walletAmt = cust.walletBalance || 0;
             const limit = cust.creditLimit || DEFAULT_CREDIT_LIMIT;
             const isOverLimit = dueAmt >= limit && dueAmt > 0;
             const isModerateRisk = dueAmt > limit * 0.5 && !isOverLimit;
@@ -617,20 +823,19 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                     </div>
                     <div>
                       <div className="font-extrabold text-neutral-900 text-sm">{cust.name}</div>
-                      <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                         <span className="text-[11px] text-neutral-500 font-mono flex items-center gap-1">
                           <Phone className="w-3 h-3 text-neutral-400" />
                           {cust.phone}
                         </span>
-                        <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${
-                          status.toLowerCase() === 'vip' || status.toLowerCase() === 'platinum'
-                            ? 'bg-amber-100 text-amber-900 border-amber-300'
-                            : status.toLowerCase() === 'gold'
-                            ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                            : 'bg-neutral-100 text-neutral-700 border-neutral-200'
-                        }`}>
-                          {status}
+                        <span className="text-[9px] font-extrabold font-mono px-1.5 py-0.5 rounded border bg-neutral-100 text-neutral-700 border-neutral-200">
+                          {getCustomerNumber(cust)}
                         </span>
+                        {walletAmt > 0 && (
+                          <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
+                            Vault: {formatCurrency(walletAmt, config.currencySymbol)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -650,18 +855,24 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 bg-neutral-50 rounded-xl p-2.5 border border-neutral-100 text-xs">
+                <div className="grid grid-cols-3 gap-2 bg-neutral-50 rounded-xl p-2.5 border border-neutral-100 text-xs">
                   <div>
                     <span className="text-[10px] text-neutral-400 font-semibold block uppercase">Due Amount</span>
                     {dueAmt > 0 ? (
                       <span className={`font-black font-mono ${isOverLimit ? 'text-rose-600' : 'text-amber-700'}`}>
-                        ₹{dueAmt.toFixed(0)} <span className="text-[9px] font-normal text-neutral-400">(Limit: ₹{limit.toFixed(0)})</span>
+                        ₹{dueAmt.toFixed(0)} <span className="text-[9px] font-normal text-neutral-400">({limit.toFixed(0)})</span>
                       </span>
                     ) : (
                       <span className="font-bold text-emerald-600 flex items-center gap-1 text-[11px]">
                         <CheckCircle2 className="w-3 h-3" /> Cleared
                       </span>
                     )}
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-neutral-400 font-semibold block uppercase">Advance Vault</span>
+                    <span className="font-bold font-mono text-blue-600">
+                      {formatCurrency(walletAmt, config?.currencySymbol || '₹')}
+                    </span>
                   </div>
                   <div>
                     <span className="text-[10px] text-neutral-400 font-semibold block uppercase">Total Spent</span>
@@ -672,7 +883,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                 </div>
 
                 <div className="flex items-center justify-between pt-1 gap-1.5 flex-wrap">
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 flex-wrap">
                     <button
                       onClick={() => setViewingProfileCustomer(cust)}
                       className="px-2.5 py-1.5 bg-neutral-900 hover:bg-neutral-700 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer"
@@ -690,25 +901,42 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                         <Wallet className="w-3 h-3" /> Settle
                       </button>
                     )}
+                    <button
+                      onClick={() => {
+                        setDepositingCustomer(cust);
+                        setDepositAmount('1000');
+                      }}
+                      className="px-2 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                      title="Add Advance Prepaid Deposit"
+                    >
+                      <PlusCircle className="w-3 h-3 text-blue-600" /> + Deposit
+                    </button>
                     {dueAmt > 0 && (
                       <button
                         onClick={() => handleOpenWhatsAppModal(cust)}
-                        className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-2xs cursor-pointer"
+                        className="px-2 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-2xs cursor-pointer"
                         title="Send WhatsApp Payment Reminder"
                       >
-                        <MessageCircle className="w-3 h-3 text-emerald-600" /> WhatsApp
+                        <MessageCircle className="w-3 h-3 text-emerald-600" /> Reminder
                       </button>
                     )}
                     <button
+                      onClick={() => handleShareStatement(cust)}
+                      className="px-2 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                      title="Share Statement via WhatsApp"
+                    >
+                      <Share2 className="w-3 h-3 text-neutral-500" /> Statement
+                    </button>
+                    {canManageAccountBalances && <button
                       onClick={() => {
                         setAddingCreditCustomer(cust);
                         setCreditChargeAmount('');
                         setCreditChargeReason('');
                       }}
-                      className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                      className="px-2 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer"
                     >
                       <PlusCircle className="w-3 h-3" /> Charge
-                    </button>
+                    </button>}
                   </div>
 
                   <div className="flex items-center gap-1">
@@ -718,12 +946,12 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                     >
                       <Edit className="w-4 h-4" />
                     </button>
-                    <button
+                    {canManageAccountBalances && <button
                       onClick={() => setDeletingCustomer(cust)}
                       className="p-1.5 hover:bg-rose-50 text-rose-600 rounded-lg cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
-                    </button>
+                    </button>}
                   </div>
                 </div>
               </Card>
@@ -740,25 +968,26 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
               <tr>
                 <th className="py-3.5 px-4">Customer Profile</th>
                 <th className="py-3.5 px-4">Phone Number</th>
-                <th className="py-3.5 px-4">Membership</th>
+                <th className="py-3.5 px-4">Customer ID</th>
                 <th className="py-3.5 px-4">Credit Limit</th>
-                <th className="py-3.5 px-4">Outstanding Credit Dues</th>
+                <th className="py-3.5 px-4">Advance Vault</th>
+                <th className="py-3.5 px-4">Outstanding Due</th>
                 <th className="py-3.5 px-4">Risk Status</th>
                 <th className="py-3.5 px-4">Total Spend</th>
                 <th className="py-3.5 px-4 text-right">Credit & Audit Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
-              {filteredCustomers.length === 0 ? (
+              {sortedAndFilteredCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-12 text-neutral-400 font-medium">
+                  <td colSpan={9} className="text-center py-12 text-neutral-400 font-medium">
                     No matching customer credit records found.
                   </td>
                 </tr>
               ) : (
-                filteredCustomers.map((cust) => {
-                  const status = cust.membershipStatus || cust.tier || 'Regular';
+                sortedAndFilteredCustomers.map((cust) => {
                   const dueAmt = cust.outstandingDue || 0;
+                  const walletAmt = cust.walletBalance || 0;
                   const limit = cust.creditLimit || DEFAULT_CREDIT_LIMIT;
                   const isOverLimit = dueAmt >= limit && dueAmt > 0;
                   const isModerateRisk = dueAmt > limit * 0.5 && !isOverLimit;
@@ -772,7 +1001,10 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                           </div>
                           <div>
                             <div className="font-bold text-neutral-900">{cust.name}</div>
-                            <div className="text-[10px] text-neutral-400 font-mono">{cust.sessionsCount || 0} visits • {cust.totalHoursPlayed || 0}h played</div>
+                            <div className="text-[10px] text-neutral-400 font-mono">
+                              {cust.sessionsCount || 0} visits • {cust.totalHoursPlayed || 0}h played
+                              {cust.preferredGame ? ` • ${cust.preferredGame}` : ''}
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -782,22 +1014,27 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                           <Phone className="w-3 h-3 text-neutral-400" />
                           {cust.phone}
                         </span>
+                        {cust.email && (
+                          <span className="text-[10px] text-neutral-400 block truncate max-w-[140px]">{cust.email}</span>
+                        )}
                       </td>
 
-                      <td className="py-3.5 px-4">
-                        <span className={`inline-block text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded border ${
-                          status.toLowerCase() === 'vip' || status.toLowerCase() === 'platinum'
-                            ? 'bg-amber-100 text-amber-900 border-amber-300'
-                            : status.toLowerCase() === 'gold'
-                            ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                            : 'bg-neutral-100 text-neutral-700 border-neutral-200'
-                        }`}>
-                          {status}
-                        </span>
+                      <td className="py-3.5 px-4 font-mono text-[10px] font-bold text-neutral-700">
+                        {getCustomerNumber(cust)}
                       </td>
 
                       <td className="py-3.5 px-4 font-mono font-bold text-neutral-700">
                         ₹{limit.toFixed(0)}
+                      </td>
+
+                      <td className="py-3.5 px-4 font-mono font-bold">
+                        {walletAmt > 0 ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-lg">
+                            {formatCurrency(walletAmt, config?.currencySymbol || '₹')}
+                          </span>
+                        ) : (
+                          <span className="text-neutral-400 text-xs">₹0</span>
+                        )}
                       </td>
 
                       <td className="py-3.5 px-4 font-mono">
@@ -837,7 +1074,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                       </td>
 
                       <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
                           {/* View Profile Button */}
                           <button
                             onClick={() => setViewingProfileCustomer(cust)}
@@ -855,21 +1092,43 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                                 setSettlingCustomer(cust);
                                 setSettleAmount(String(dueAmt));
                               }}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold transition-all shadow-2xs flex items-center gap-1 cursor-pointer"
+                              className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold transition-all shadow-2xs flex items-center gap-1 cursor-pointer"
                             >
                               <CreditCard className="w-3 h-3" />
                               Settle
                             </button>
                           )}
 
-                          {/* Add Credit Charge Button */}
+                          {/* Advance Deposit Button */}
                           <button
+                            onClick={() => {
+                              setDepositingCustomer(cust);
+                              setDepositAmount('1000');
+                            }}
+                            className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
+                            title="Add Advance Prepaid Deposit"
+                          >
+                            <PlusCircle className="w-3 h-3 text-blue-600" />
+                            <span>+ Deposit</span>
+                          </button>
+
+                          {/* Statement WhatsApp Button */}
+                          <button
+                            onClick={() => handleShareStatement(cust)}
+                            className="p-1.5 text-neutral-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                            title="Share Full Statement on WhatsApp"
+                          >
+                            <Share2 className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Add Credit Charge Button */}
+                          {canManageAccountBalances && <button
                             onClick={() => setAddingCreditCustomer(cust)}
                             className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
                             title="Add Manual Credit Charge"
                           >
-                            <PlusCircle className="w-4 h-4" />
-                          </button>
+                            <PlusCircle className="w-3.5 h-3.5" />
+                          </button>}
 
                           {/* WhatsApp Reminder Button */}
                           {dueAmt > 0 && (
@@ -889,17 +1148,17 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                             className="p-1.5 text-neutral-400 hover:text-neutral-900 rounded-lg hover:bg-neutral-100 transition-colors cursor-pointer"
                             title="Edit Profile"
                           >
-                            <Edit className="w-4 h-4" />
+                            <Edit className="w-3.5 h-3.5" />
                           </button>
 
                           {/* Delete Button */}
-                          <button
+                          {canManageAccountBalances && <button
                             onClick={() => setDeletingCustomer(cust)}
                             className="p-1.5 text-neutral-400 hover:text-rose-600 rounded-lg hover:bg-neutral-100 transition-colors cursor-pointer"
                             title="Delete Customer"
                           >
                             <Trash2 className="w-4 h-4" />
-                          </button>
+                          </button>}
                         </div>
                       </td>
                     </tr>
@@ -919,10 +1178,9 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
               <Trash2 className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-base font-extrabold text-neutral-900">Delete Customer Profile?</h3>
+              <h3 className="text-base font-extrabold text-neutral-900">Archive Customer Profile?</h3>
               <p className="text-xs text-neutral-500 mt-1">
-                Are you sure you want to delete profile for <strong className="text-neutral-900">{deletingCustomer.name}</strong>?
-                This will remove their CRM profile and credit ledger record.
+                Archive <strong className="text-neutral-900">{deletingCustomer.name}</strong>? Their bills and account history will be kept, and their customer portal will be disabled.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-2 pt-2">
@@ -939,7 +1197,7 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                 disabled={isDeleting}
                 className="py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl cursor-pointer shadow-xs"
               >
-                {isDeleting ? 'Deleting...' : 'Delete Profile'}
+                {isDeleting ? 'Archiving...' : 'Archive Profile'}
               </button>
             </div>
           </div>
@@ -986,15 +1244,55 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                   onChange={(e) => setSettleAmount(e.target.value)}
                   className="w-full bg-neutral-50 border border-neutral-300 rounded-xl p-3 font-mono font-bold text-sm outline-none focus:border-neutral-900 text-neutral-900"
                 />
+
+                {/* 1-Click Quick Fill Presets */}
+                <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                  <span className="text-[10px] text-neutral-400 font-bold uppercase">Quick Fill:</span>
+                  <button
+                    type="button"
+                    onClick={() => setSettleAmount(String(Math.round(settlingCustomer.outstandingDue || 0)))}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-300 text-xs font-bold hover:bg-emerald-100 transition-colors cursor-pointer"
+                  >
+                    Full ₹{Math.round(settlingCustomer.outstandingDue || 0)}
+                  </button>
+                  {(settlingCustomer.outstandingDue || 0) > 500 && (
+                    <button
+                      type="button"
+                      onClick={() => setSettleAmount('500')}
+                      className="px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-700 border border-neutral-200 text-xs font-bold hover:bg-neutral-200 transition-colors cursor-pointer"
+                    >
+                      ₹500
+                    </button>
+                  )}
+                  {(settlingCustomer.outstandingDue || 0) > 1000 && (
+                    <button
+                      type="button"
+                      onClick={() => setSettleAmount('1000')}
+                      className="px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-700 border border-neutral-200 text-xs font-bold hover:bg-neutral-200 transition-colors cursor-pointer"
+                    >
+                      ₹1,000
+                    </button>
+                  )}
+                </div>
+
+                {/* Remaining Balance Calculator */}
+                {Number(settleAmount) > 0 && (
+                  <div className="flex justify-between items-center text-xs text-neutral-600 mt-2.5 bg-neutral-50 border border-neutral-200 p-2.5 rounded-xl">
+                    <span className="font-medium">Remaining Credit Due:</span>
+                    <span className={`font-mono font-extrabold ${Math.max(0, (settlingCustomer.outstandingDue || 0) - Number(settleAmount)) === 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      ₹{Math.max(0, (settlingCustomer.outstandingDue || 0) - Number(settleAmount)).toFixed(2)}
+                      {Math.max(0, (settlingCustomer.outstandingDue || 0) - Number(settleAmount)) === 0 && ' (Fully Cleared! 🎉)'}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div>
                 <label className="font-bold text-neutral-700 block mb-1">Payment Method</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   {[
                     { id: 'upi', label: '📱 UPI / QR' },
                     { id: 'cash', label: '💵 Cash' },
-                    { id: 'card', label: '💳 Card' },
                   ].map((m) => (
                     <button
                       key={m.id}
@@ -1102,17 +1400,140 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
         </div>
       )}
 
+      {/* MODAL: RECORD ADVANCE DEPOSIT */}
+      {depositingCustomer && (
+        <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-neutral-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+              <div>
+                <h3 className="text-base font-extrabold text-neutral-900 flex items-center gap-2">
+                  <PlusCircle className="w-5 h-5 text-blue-600" />
+                  Record Advance Deposit
+                </h3>
+                <p className="text-xs text-neutral-500">{depositingCustomer.name} • {depositingCustomer.phone}</p>
+              </div>
+              <button onClick={() => setDepositingCustomer(null)} className="p-1 text-neutral-400 hover:text-neutral-900 rounded-lg cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Current Advance Vault Balance */}
+            <div className="p-4 rounded-2xl bg-neutral-900 text-white flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase text-neutral-400 tracking-wider block">Current Advance Vault</span>
+                <span className="text-2xl font-black font-mono text-blue-400">
+                  {formatCurrency(depositingCustomer.walletBalance || 0, config.currencySymbol)}
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] font-extrabold uppercase text-neutral-400 tracking-wider block">Total Sessions</span>
+                <span className="text-sm font-bold font-mono text-neutral-300">{depositingCustomer.sessionsCount || 0} visits</span>
+              </div>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-neutral-700 block mb-1">Deposit Amount to Add ({config.currencySymbol}) *</label>
+                <input
+                  type="number"
+                  step="50"
+                  min="1"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  className="w-full bg-neutral-50 border border-neutral-300 rounded-xl p-3 font-mono font-bold text-sm outline-none focus:border-neutral-900 text-neutral-900"
+                  placeholder="e.g. 1000"
+                />
+
+                {/* 1-Click Quick Preset Chips */}
+                <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                  <span className="text-[10px] text-neutral-400 font-bold uppercase">Quick Add:</span>
+                  {['500', '1000', '2000', '5000'].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setDepositAmount(amt)}
+                      className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 text-xs font-bold hover:bg-blue-100 transition-colors cursor-pointer"
+                    >
+                      +{config.currencySymbol}{amt}
+                    </button>
+                  ))}
+                </div>
+
+                {/* New Balance Projection */}
+                {Number(depositAmount) > 0 && (
+                  <div className="flex justify-between items-center text-xs text-neutral-600 mt-2.5 bg-neutral-50 border border-neutral-200 p-2.5 rounded-xl">
+                    <span className="font-medium">New Vault Balance:</span>
+                    <span className="font-mono font-extrabold text-blue-600">
+                      {formatCurrency((depositingCustomer.walletBalance || 0) + Number(depositAmount), config.currencySymbol)}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="font-bold text-neutral-700 block mb-1">Payment Method</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'upi', label: '📱 UPI / QR' },
+                    { id: 'cash', label: '💵 Cash' },
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setDepositMethod(m.id as any)}
+                      className={`py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                        depositMethod === m.id
+                          ? 'bg-neutral-900 text-white border-neutral-900 shadow-2xs'
+                          : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:bg-neutral-100'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-neutral-700 block mb-1">Deposit Notes / Reference</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Prepaid hour pack / UPI Ref #48102"
+                  value={depositNotes}
+                  onChange={(e) => setDepositNotes(e.target.value)}
+                  className="w-full bg-neutral-50 border border-neutral-300 rounded-xl p-3 text-xs outline-none focus:border-neutral-900 font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-100">
+              <Button variant="outline" size="sm" onClick={() => setDepositingCustomer(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={!depositAmount || Number(depositAmount) <= 0 || isSaving}
+                onClick={handleConfirmAddDeposit}
+                className="bg-blue-600 hover:bg-blue-700 text-white border-none shadow-xs"
+              >
+                {isSaving ? 'Processing...' : 'Confirm Deposit'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: ADD / EDIT CUSTOMER PROFILE */}
       {isEditModalOpen && editingCustomer && (
         <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-neutral-200">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-neutral-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-neutral-100 pb-4 mb-4">
               <h3 className="text-base font-extrabold text-neutral-900">
                 {editingCustomer.id ? 'Edit Customer CRM Profile' : 'Add New Customer Profile'}
               </h3>
               <button
                 onClick={() => setIsEditModalOpen(false)}
-                className="text-neutral-400 hover:text-neutral-900 font-bold text-lg"
+                className="text-neutral-400 hover:text-neutral-900 font-bold text-lg cursor-pointer"
               >
                 ×
               </button>
@@ -1143,44 +1564,43 @@ export const CustomerCRMView: React.FC<CustomerCRMViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Membership Status</label>
-                  <select
-                    value={editingCustomer.membershipStatus || 'Regular'}
-                    onChange={(e) => setEditingCustomer({ ...editingCustomer, membershipStatus: e.target.value as any })}
-                    className="w-full bg-neutral-50 border border-neutral-200 text-xs font-semibold rounded-xl p-2.5 outline-none"
-                  >
-                    <option value="Regular">Regular</option>
-                    <option value="Silver">Silver Member</option>
-                    <option value="Gold">Gold Member</option>
-                    <option value="Platinum">Platinum Member</option>
-                    <option value="VIP">VIP Elite</option>
-                  </select>
+                  <label className="block text-xs font-bold text-neutral-700 mb-1">Email Address</label>
+                  <Input
+                    type="email"
+                    value={editingCustomer.email || ''}
+                    onChange={(e) => setEditingCustomer({ ...editingCustomer, email: e.target.value })}
+                    disabled={!canManageAccountBalances}
+                    placeholder="player@example.com"
+                    className="text-xs"
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Max Credit Risk Limit (₹)</label>
-                  <Input
-                    type="number"
-                    step="100"
-                    value={editingCustomer.creditLimit || DEFAULT_CREDIT_LIMIT}
-                    onChange={(e) => setEditingCustomer({ ...editingCustomer, creditLimit: parseFloat(e.target.value) || DEFAULT_CREDIT_LIMIT })}
-                    className="text-xs font-mono font-bold"
-                  />
+                  <label className="block text-xs font-bold text-neutral-700 mb-1">Customer ID</label>
+                  <Input value={getCustomerNumber(editingCustomer as TopCustomer)} disabled className="text-xs font-mono bg-neutral-100" />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 mb-1">Current Outstanding Due (₹)</label>
-                  <Input
-                    type="number"
-                    step="1"
-                    value={editingCustomer.outstandingDue || 0}
-                    onChange={(e) => setEditingCustomer({ ...editingCustomer, outstandingDue: parseFloat(e.target.value) || 0 })}
-                    className="text-xs font-mono font-bold text-rose-600"
-                  />
+                  <label className="block text-xs font-bold text-neutral-700 mb-1">Preferred Game / Area</label>
+                  <select
+                    value={editingCustomer.preferredGame || 'Snooker'}
+                    onChange={(e) => setEditingCustomer({ ...editingCustomer, preferredGame: e.target.value })}
+                    className="w-full bg-neutral-50 border border-neutral-200 text-xs font-semibold rounded-xl p-2.5 outline-none"
+                  >
+                    <option value="Snooker">Snooker</option>
+                    <option value="Pool">8-Ball Pool</option>
+                    <option value="PS5">PlayStation 5</option>
+                    <option value="VIP Lounge">VIP Lounge</option>
+                    <option value="General">General Gaming</option>
+                  </select>
                 </div>
               </div>
+
+              <p className="p-3 rounded-xl bg-amber-50 border border-amber-100 text-[11px] text-amber-900">
+                Balances and credit limits are managed through recorded account transactions, not by editing this profile.
+              </p>
 
               <div>
                 <label className="block text-xs font-bold text-neutral-700 mb-1">Special Notes / Preferences</label>

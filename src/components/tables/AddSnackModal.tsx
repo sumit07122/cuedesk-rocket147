@@ -12,7 +12,7 @@ interface AddSnackModalProps {
   table: TableItem | null;
   menuItems: MenuItem[];
   currencySymbol: string;
-  onAddOrderItems: (tableId: string, itemsToAdd: OrderItem[]) => void;
+  onAddOrderItems: (tableId: string, itemsToAdd: OrderItem[]) => Promise<void>;
 }
 
 export const AddSnackModal: React.FC<AddSnackModalProps> = ({
@@ -52,7 +52,7 @@ export const AddSnackModal: React.FC<AddSnackModalProps> = ({
 
   const totalItemsCount = Object.values(cartQuantities).reduce((acc: number, q: number) => acc + q, 0);
 
-  const handleConfirmAdd = () => {
+  const handleConfirmAdd = async () => {
     const newOrderItems: OrderItem[] = [];
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -73,7 +73,14 @@ export const AddSnackModal: React.FC<AddSnackModalProps> = ({
     });
 
     if (newOrderItems.length > 0) {
-      onAddOrderItems(table.id, newOrderItems);
+      try {
+        await onAddOrderItems(table.id, newOrderItems);
+      } catch {
+        setCartQuantities({});
+        onClose();
+        window.alert('Not all items could be added. Refresh the table and check the bill before trying again.');
+        return;
+      }
     }
     setCartQuantities({});
     onClose();

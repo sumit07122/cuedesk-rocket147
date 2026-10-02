@@ -106,17 +106,16 @@ export type PageView =
   | 'maintenance'
   | 'reports'
   | 'settings'
-  | 'kds'
-  | 'tournaments'
   | 'lockers'
   | 'arena'
+  | 'super-admin'
   | 'login';
 
 export type TableType = 'snooker' | 'pool' | 'american_pool' | 'table_tennis' | 'ps5' | 'ps4' | 'magnet_table' | 'carom' | 'vip' | 'xbox' | 'pc_rig';
 
 export type TableStatus = 'available' | 'occupied' | 'reserved' | 'cleaning' | 'payment_pending' | 'maintenance';
 
-export type UserRole = 'owner' | 'manager' | 'cashier' | 'kitchen';
+export type UserRole = 'owner' | 'manager' | 'worker' | 'customer';
 
 export interface UserProfile {
   id: string;
@@ -128,6 +127,7 @@ export interface UserProfile {
   photoURL?: string;
   role: UserRole;
   clubId: string;
+  customerId?: string;
   status?: 'active' | 'inactive' | 'disabled' | 'pending';
   lastLoginAt?: number;
   lastLogin?: number;
@@ -243,6 +243,7 @@ export interface SessionData {
   id: string;
   tableId: string;
   customerName: string;
+  customerId?: string;
   customerPhone?: string;
   playersCount?: number;
   isMember?: boolean;
@@ -253,12 +254,14 @@ export interface SessionData {
   pausedAt?: number;
   totalPausedSeconds: number;
   foodOrders: OrderItem[];
+  foodTotal?: number;
   notes?: string;
   rateType: 'standard' | 'peak' | 'vip' | 'discounted';
 }
 
 export interface TableItem {
   id: string;
+  lastReceiptId?: string;
   clubId?: string;
   number: number;
   name: string;
@@ -278,10 +281,20 @@ export interface ExtraChargeItem {
   amount: number;
 }
 
+export interface SplitPaymentPlayer {
+  name: string;
+  phone?: string;
+  amount: number;
+  method: 'cash' | 'upi' | 'credit';
+  customerId?: string;
+}
+
 export interface SplitPaymentBreakdown {
   cash: number;
   upi: number;
-  card: number;
+  card?: number;
+  splitType?: 'method' | 'players';
+  players?: SplitPaymentPlayer[];
 }
 
 export interface FrameScore {
@@ -295,11 +308,15 @@ export interface FrameScore {
 export interface UdhaarTransaction {
   id: string;
   timestamp: number;
-  type: 'due_added' | 'payment_received';
+  type: 'due_added' | 'due_reversed' | 'payment_received' | 'deposit_added' | 'deposit_used';
   amount: number;
   description: string;
   receiptNo?: string;
+  receiptId?: string;
   paymentMethod?: string;
+  source?: 'bill' | 'balance_settlement' | 'deposit' | 'manual_due';
+  customerId?: string;
+  recordedByEmail?: string;
   recordedBy: string;
 }
 
@@ -346,6 +363,7 @@ export interface SessionHistoryItem {
   tableId: string;
   tableName: string;
   customerName: string;
+  customerId?: string;
   customerPhone?: string;
   startTime: number;
   endTime: number;
@@ -366,15 +384,18 @@ export interface SessionHistoryItem {
   foodOrders?: OrderItem[];
   notes?: string;
   refundReason?: string;
+  refundedAmount?: number;
   refundedBy?: string;
   refundedAt?: number;
   processedBy?: string;
+  customerIds?: string[];
   receiptNo: string;
   timestamp: string;
 }
 
 export interface TopCustomer {
   id: string;
+  customerNumber?: string;
   clubId?: string;
   name: string;
   phone: string;
@@ -386,11 +407,70 @@ export interface TopCustomer {
   tier?: 'silver' | 'gold' | 'platinum';
   lastVisit: string;
   notes?: string;
+  email?: string;
+  customDiscountPercent?: number;
+  preferredGame?: string;
   walletBalance?: number;
   outstandingDue?: number;
   creditLimit?: number;
   udhaarLedger?: UdhaarTransaction[];
   updatedAt?: number;
+  archived?: boolean;
+  lastReceiptId?: string;
+  lastAccountTransactionId?: string;
+}
+
+/** Deliberately limited customer data exposed to the signed-in customer portal. */
+export interface CustomerPortalProfile {
+  id: string;
+  clubId: string;
+  customerNumber: string;
+  name: string;
+  email: string;
+  clubName: string;
+  currencySymbol: string;
+  sessionsCount: number;
+  totalSpent: number;
+  totalHoursPlayed: number;
+  outstandingDue: number;
+  walletBalance: number;
+  lastVisit: string;
+  enabled: boolean;
+}
+
+export interface CustomerPortalReceipt {
+  id: string;
+  receiptNo: string;
+  clubId: string;
+  customerId: string;
+  tableName: string;
+  startTime: number;
+  endTime: number;
+  durationSeconds: number;
+  tableFee: number;
+  foodFee: number;
+  extraFee: number;
+  total: number;
+  paid: number;
+  due: number;
+  paymentMethod: string;
+  paymentStatus: SessionHistoryItem['paymentStatus'];
+  foodOrders?: OrderItem[];
+  refundedAmount?: number;
+  refundReason?: string;
+}
+
+export interface CustomerPortalActivity {
+  id: string;
+  clubId: string;
+  timestamp: number;
+  type: 'payment_received' | 'due_added' | 'due_reversed' | 'deposit_added' | 'deposit_used' | 'refund_issued';
+  amount: number;
+  description: string;
+  receiptNo?: string;
+  receiptId?: string;
+  paymentMethod?: string;
+  recordedByEmail?: string;
 }
 
 export interface EmployeeUser {
@@ -402,7 +482,6 @@ export interface EmployeeUser {
   role: UserRole;
   joiningDate: string;
   status: 'active' | 'inactive';
-  password?: string;
   lastActiveTime?: number;
   loginHistory?: { timestamp: number; ip?: string; deviceInfo?: string }[];
 }
@@ -474,6 +553,8 @@ export interface NotificationItem {
   message: string;
   timestamp: number;
   read: boolean;
+  resolved?: boolean;
+  resolvedAt?: number;
   severity?: 'info' | 'warning' | 'error' | 'success';
   targetId?: string;
 }
@@ -510,4 +591,3 @@ export interface BusinessConfig extends ClubInfo {
   trialEndDate?: number;
   featureFlags?: FeatureFlags;
 }
-

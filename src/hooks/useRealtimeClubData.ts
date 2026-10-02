@@ -1,8 +1,5 @@
 import { useState, useEffect } from 'react';
 import { 
-  SaaSClubProfile,
-  SubscriptionPlanId,
-  FeatureFlags,
   TableItem, 
   MenuItem, 
   SessionHistoryItem, 
@@ -39,18 +36,12 @@ import {
   subscribeExpenses,
   subscribeMaintenance,
   subscribeNotifications,
-  subscribeSaaSClubs,
-  createSaaSClubWorkspace,
-  updateSaaSClubPlan,
-  extendSaaSClubTrial,
-  updateSaaSClubFeatureFlags,
-  suspendSaaSClubWorkspace,
-  deleteSaaSClubWorkspace,
   updateClubSettings,
   saveTable,
   updateTableStatus,
   deleteTableDoc,
   startTableSession,
+  transferTableSession,
   togglePauseTableSession,
   addOrdersToSession,
   requestTableCheckout,
@@ -67,6 +58,7 @@ import {
   recordStockAdjustment,
   recordPurchase,
   saveCustomerCRM,
+  recordCustomerAccountTransaction,
   deleteCustomerCRM,
   saveEmployee,
   deleteEmployee,
@@ -78,11 +70,11 @@ import {
   resolveTableMaintenance,
   createNotification,
   markNotificationAsRead,
+  markNotificationAsResolved,
+  deleteNotification,
   clearAllNotifications,
-  clearHistoryAndAnalytics,
   logAuditEvent
 } from '../services/dbService';
-import { SUBSCRIPTION_PLANS } from '../data/saasPlans';
 import { 
   initialBusinessConfig,
   initialTables,
@@ -112,14 +104,10 @@ export const useRealtimeClubData = (clubId: string) => {
   const [expenses, setExpenses] = useState<ExpenseRecord[]>(initialExpenses);
   const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>(initialMaintenanceRecords);
   const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications);
-  const [saasClubs, setSaasClubs] = useState<SaaSClubProfile[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   useEffect(() => {
-    // Subscribe to all SaaS clubs dynamically
-    const unsubSaas = subscribeSaaSClubs((data) => setSaasClubs(data));
-
-    if (!clubId) return () => unsubSaas();
+    if (!clubId) return;
 
     // Safety timeout: never leave UI in loading state
     const safetyTimer = setTimeout(() => {
@@ -165,7 +153,6 @@ export const useRealtimeClubData = (clubId: string) => {
 
     return () => {
       clearTimeout(safetyTimer);
-      unsubSaas();
       unsubConfig();
       unsubTables();
       unsubMenuItems();
@@ -191,17 +178,6 @@ export const useRealtimeClubData = (clubId: string) => {
   };
 
   const handleSaveTable = async (table: TableItem, userEmail: string = 'system') => {
-    // Enforce Plan Capacity Limits
-    const currentPlanId = config.planId || 'professional';
-    const plan = SUBSCRIPTION_PLANS[currentPlanId] || SUBSCRIPTION_PLANS.professional;
-    const isNew = !tables.some((t) => t.id === table.id);
-
-    if (isNew && tables.length >= plan.maxTables) {
-      const err = `Plan limit reached! Your ${plan.name} allows up to ${plan.maxTables} tables. Please upgrade your subscription plan to add more tables.`;
-      alert(err);
-      throw new Error(err);
-    }
-
     await saveTable(clubId, table);
     await logAuditEvent(clubId, 'SAVE_TABLE', userEmail, `Saved table ${table.name}`);
   };
@@ -214,6 +190,11 @@ export const useRealtimeClubData = (clubId: string) => {
   const handleStartSession = async (tableId: string, session: SessionData, userEmail: string = 'system') => {
     await startTableSession(clubId, tableId, session);
     await logAuditEvent(clubId, 'START_SESSION', userEmail, `Started session for ${session.customerName} on table ${tableId}`);
+  };
+
+  const handleTransferTableSession = async (sourceTableId: string, targetTableId: string, userEmail: string = 'system') => {
+    await transferTableSession(clubId, sourceTableId, targetTableId);
+    await logAuditEvent(clubId, 'TRANSFER_SESSION', userEmail, `Moved an active session from table ${sourceTableId} to ${targetTableId}`);
   };
 
   const handleTogglePause = async (tableId: string, currentSession: SessionData, userEmail: string = 'system') => {
@@ -241,13 +222,17 @@ export const useRealtimeClubData = (clubId: string) => {
   };
 
   const handleFinalizeBill = async (historyRecord: SessionHistoryItem, userEmail: string = 'system') => {
-    await finalizeSessionPayment(clubId, historyRecord);
-    await logAuditEvent(
-      clubId, 
-      'FINALIZE_BILL', 
-      userEmail, 
-      `Settled receipt #${historyRecord.receiptNo} (${historyRecord.paymentMethod.toUpperCase()}) total ${historyRecord.grandTotal}`
+    await finalizeSessionPayment(clubId, {
+      ...historyRecord,
+      processedBy: historyRecord.processedBy || userEmail,
+    });
+    // Auto-resolve any checkout requests for this table
+    const relatedNotifs = notifications.filter(
+      (n) => n.type === 'checkout_req' && (n.targetId === historyRecord.tableId || n.message?.includes(`Table ID ${historyRecord.tableId}`) || n.message?.includes(`Table #${historyRecord.tableId}`))
     );
+    for (const notif of relatedNotifs) {
+      markNotificationAsResolved(clubId, notif.id).catch(() => {});
+    }
   };
 
   const handleRefundPayment = async (historyId: string, reason: string, userEmail: string = 'system') => {
@@ -277,16 +262,31 @@ export const useRealtimeClubData = (clubId: string) => {
       message: `${name} requested a session on Table ID ${tableId}`,
       timestamp: Date.now(),
       read: false,
-      severity: 'info'
+      severity: 'info',
+      targetId: tableId
     });
   };
 
   const handleApproveSessionRequest = async (requestId: string, tableId: string, session: SessionData) => {
     await approveCustomerSessionRequest(clubId, requestId, tableId, session);
+    // Auto-resolve booking notification
+    const relatedNotifs = notifications.filter(
+      (n) => n.type === 'new_booking' && (n.targetId === requestId || n.targetId === tableId || n.message?.includes(tableId))
+    );
+    for (const notif of relatedNotifs) {
+      markNotificationAsResolved(clubId, notif.id).catch(() => {});
+    }
   };
 
   const handleRejectSessionRequest = async (requestId: string) => {
     await rejectCustomerSessionRequest(clubId, requestId);
+    // Auto-resolve booking notification
+    const relatedNotifs = notifications.filter(
+      (n) => n.type === 'new_booking' && (n.targetId === requestId)
+    );
+    for (const notif of relatedNotifs) {
+      markNotificationAsResolved(clubId, notif.id).catch(() => {});
+    }
   };
 
   const handleCreateFoodOrder = async (order: Omit<FoodOrder, 'id'>) => {
@@ -295,6 +295,14 @@ export const useRealtimeClubData = (clubId: string) => {
 
   const handleUpdateOrderStatus = async (order: FoodOrder, status: FoodOrderStatus, userEmail: string = 'staff') => {
     await updateFoodOrderStatus(clubId, order, status, userEmail);
+    if (status === 'delivered' || status === 'cancelled') {
+      const relatedNotifs = notifications.filter(
+        (n) => n.type === 'food_order' && (n.targetId === order.id || n.message?.includes(order.tableName || ''))
+      );
+      for (const notif of relatedNotifs) {
+        markNotificationAsResolved(clubId, notif.id).catch(() => {});
+      }
+    }
   };
 
   const handleRecordStockAdjustment = async (
@@ -332,23 +340,16 @@ export const useRealtimeClubData = (clubId: string) => {
     await saveCustomerCRM(clubId, customer);
   };
 
+  const handleRecordCustomerAccountTransaction = async (customerId: string, entry: import('../types').UdhaarTransaction) => {
+    await recordCustomerAccountTransaction(clubId, customerId, entry);
+  };
+
   const handleDeleteCustomerCRM = async (customerId: string) => {
     setTopCustomers((prev) => prev.filter((c) => c.id !== customerId));
     await deleteCustomerCRM(clubId, customerId);
   };
 
   const handleSaveEmployee = async (employee: Partial<EmployeeUser>) => {
-    // Enforce Plan Employee Limits
-    const currentPlanId = config.planId || 'professional';
-    const plan = SUBSCRIPTION_PLANS[currentPlanId] || SUBSCRIPTION_PLANS.professional;
-    const isNew = !employees.some((e) => e.id === employee.id);
-
-    if (isNew && employees.length >= plan.maxEmployees) {
-      const err = `Employee limit reached! Your ${plan.name} allows up to ${plan.maxEmployees} employees. Please upgrade your subscription plan to add more staff.`;
-      alert(err);
-      throw new Error(err);
-    }
-
     const empId = await saveEmployee(clubId, employee);
     await createNotification(clubId, {
       clubId,
@@ -401,93 +402,45 @@ export const useRealtimeClubData = (clubId: string) => {
       message: `${record.tableName} set to maintenance: ${record.reason}`,
       timestamp: Date.now(),
       read: false,
-      severity: 'error'
+      severity: 'error',
+      targetId: record.tableId
     });
   };
 
   const handleResolveMaintenance = async (tableId: string, maintenanceId: string) => {
     await resolveTableMaintenance(clubId, tableId, maintenanceId);
+    // Auto-resolve any maintenance notification for this table
+    const relatedNotifs = notifications.filter(
+      (n) => n.type === 'table_maintenance' && (n.targetId === tableId || n.message?.includes(tableId))
+    );
+    for (const notif of relatedNotifs) {
+      markNotificationAsResolved(clubId, notif.id).catch(() => {});
+    }
   };
 
   const handleMarkNotificationRead = async (notificationId: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n))
+    );
     await markNotificationAsRead(clubId, notificationId);
+  };
+
+  const handleResolveNotification = async (notificationId: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notificationId ? { ...n, read: true, resolved: true, resolvedAt: Date.now() } : n))
+    );
+    await markNotificationAsResolved(clubId, notificationId);
+  };
+
+  const handleDeleteNotification = async (notificationId: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+    await deleteNotification(clubId, notificationId);
   };
 
   const handleClearNotifications = async () => {
     const ids = notifications.map(n => n.id);
+    setNotifications([]);
     await clearAllNotifications(clubId, ids);
-  };
-
-  const handleResetClubData = async (resetType: 'all' | 'history' | 'crm' = 'all') => {
-    setIsLoading(true);
-    try {
-      if (resetType === 'history') {
-        setHistory([]);
-        setFoodOrders([]);
-        setSessionRequests([]);
-        setTables((prev) =>
-          prev.map((t) => ({
-            ...t,
-            status: 'available',
-            currentSession: null,
-            isMaintenance: false,
-          }))
-        );
-        try {
-          await clearHistoryAndAnalytics(clubId, 'history');
-        } catch (err) {
-          console.warn('Remote clearHistoryAndAnalytics error (safe fallback):', err);
-        }
-      } else if (resetType === 'crm') {
-        setTopCustomers([]);
-        try {
-          await clearHistoryAndAnalytics(clubId, 'crm');
-        } catch (err) {
-          console.warn('Remote clear CRM error (safe fallback):', err);
-        }
-      } else {
-        // Full Club Reset: wipe all collections, restore tables and clear customer CRM
-        setHistory([]);
-        setFoodOrders([]);
-        setSessionRequests([]);
-        setNotifications([]);
-        setExpenses([]);
-        setAttendance([]);
-        setAuditLogs([]);
-        setPurchaseRecords([]);
-        setInventoryAdjustments([]);
-        setTopCustomers([]);
-
-        // Reset all tables to available
-        setTables((prev) =>
-          prev.map((t) => ({
-            ...t,
-            status: 'available',
-            currentSession: null,
-            isMaintenance: false,
-          }))
-        );
-
-        // Clear remote collections if online
-        try {
-          await clearHistoryAndAnalytics(clubId, 'all');
-        } catch (err) {
-          console.warn('Remote full wipe warning (safe fallback):', err);
-        }
-
-        // Clear local storage daily snapshots & cached club data
-        try {
-          for (let i = localStorage.length - 1; i >= 0; i--) {
-            const key = localStorage.key(i);
-            if (key && (key.startsWith('oneshot_daily_snapshot_') || key.startsWith('cuedesk_snapshot_'))) {
-              localStorage.removeItem(key);
-            }
-          }
-        } catch {}
-      }
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   return {
@@ -506,12 +459,12 @@ export const useRealtimeClubData = (clubId: string) => {
     expenses,
     maintenanceRecords,
     notifications,
-    saasClubs,
     isLoading,
     updateConfig: handleUpdateConfig,
     saveTable: handleSaveTable,
     deleteTable: handleDeleteTable,
     startSession: handleStartSession,
+    transferSession: handleTransferTableSession,
     togglePause: handleTogglePause,
     addOrders: handleAddOrders,
     requestCheckout: handleRequestCheckout,
@@ -527,10 +480,10 @@ export const useRealtimeClubData = (clubId: string) => {
     updateOrderStatus: handleUpdateOrderStatus,
     recordStockAdjustment: handleRecordStockAdjustment,
     recordPurchase: handleRecordPurchase,
-    resetClubData: handleResetClubData,
     // Phase 7 Actions
     saveCustomer: handleSaveCustomerCRM,
     saveCustomerCRM: handleSaveCustomerCRM,
+    recordCustomerAccountTransaction: handleRecordCustomerAccountTransaction,
     deleteCustomer: handleDeleteCustomerCRM,
     deleteCustomerCRM: handleDeleteCustomerCRM,
     saveEmployee: handleSaveEmployee,
@@ -542,14 +495,9 @@ export const useRealtimeClubData = (clubId: string) => {
     recordMaintenance: handleRecordMaintenance,
     resolveMaintenance: handleResolveMaintenance,
     markNotificationRead: handleMarkNotificationRead,
+    resolveNotification: handleResolveNotification,
+    deleteNotification: handleDeleteNotification,
     clearAllNotifications: handleClearNotifications,
     clearNotifications: handleClearNotifications,
-    // Phase 8 SaaS Workspace Actions
-    createSaaSClubWorkspace,
-    updateSaaSClubPlan,
-    extendSaaSClubTrial,
-    updateSaaSClubFeatureFlags,
-    suspendSaaSClubWorkspace,
-    deleteSaaSClubWorkspace
   };
 };

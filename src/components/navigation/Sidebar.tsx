@@ -11,12 +11,11 @@ import {
   Users,
   UserCheck,
   TrendingUp,
-  ChefHat,
-  Trophy,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  BookOpen
 } from 'lucide-react';
-import { PageView, SaaSClubProfile, UserRole } from '../../types';
+import { PageView, UserRole } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 
 interface SidebarProps {
@@ -25,10 +24,7 @@ interface SidebarProps {
   occupiedCount: number;
   totalTables: number;
   onLogout: () => void;
-  clubs?: SaaSClubProfile[];
   clubName?: string;
-  onOpenOnboarding?: () => void;
-  onOpenSuperAdmin?: () => void;
 }
 
 interface NavItem {
@@ -52,12 +48,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   occupiedCount,
   totalTables,
   onLogout,
-  clubs = [],
   clubName = 'One Shot Snooker Club',
-  onOpenOnboarding = () => {},
-  onOpenSuperAdmin = () => {},
 }) => {
-  const { user, currentClubId, role, hasPermission, switchRole } = useAuth();
+  const { user, currentClubId, role, hasPermission, switchRole, isReviewMode } = useAuth();
 
   // Collapsible mini-rail state persisted in localStorage
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
@@ -85,58 +78,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items: [
         { 
           id: 'dashboard', 
-          label: 'Dashboard', 
+          label: 'Live Tables & Home',
           icon: LayoutDashboard, 
-          minRole: 'cashier',
-          tooltip: 'Live Club Overview & Stats'
-        },
-        { 
-          id: 'tables', 
-          label: 'Table Manager', 
-          icon: Grid2X2, 
           badge: `${occupiedCount}/${totalTables}`,
           badgeType: 'live',
-          minRole: 'cashier',
-          tooltip: 'Monitor & Transfer Tables'
+          minRole: 'worker',
+          tooltip: 'Live Tables, Timers & Operations'
         },
         { 
           id: 'billing', 
           label: 'Billing & POS', 
           icon: Receipt, 
-          minRole: 'cashier',
+          minRole: 'worker',
           tooltip: 'Quick Checkout & Receipts'
         },
         { 
           id: 'menu-inventory', 
           label: 'Menu & Stock', 
           icon: Utensils, 
-          minRole: 'cashier',
+          minRole: 'manager',
           tooltip: 'Café Menu & Inventory Stock'
-        },
-        { 
-          id: 'kds', 
-          label: 'Kitchen KDS', 
-          icon: ChefHat, 
-          minRole: 'kitchen',
-          tooltip: 'Live Kitchen Order Display'
         },
       ]
     },
     {
-      title: 'Arena & Players',
+      title: 'Customers & CRM',
       items: [
-        { 
-          id: 'tournaments', 
-          label: 'Tournaments', 
-          icon: Trophy, 
-          minRole: 'cashier',
-          tooltip: 'Knockouts & League Brackets'
-        },
         { 
           id: 'customers', 
           label: 'Customer CRM', 
           icon: Users, 
-          minRole: 'cashier',
+          minRole: 'worker',
           tooltip: 'Member Profiles & Credit Ledgers'
         },
       ]
@@ -146,10 +118,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items: [
         { 
           id: 'employees', 
-          label: 'Staff & Shifts', 
+          label: 'Staff',
           icon: UserCheck, 
           minRole: 'owner',
-          tooltip: 'Staff Attendance & Shift Logs'
+          tooltip: 'Staff accounts, roles and invitations'
         },
         { 
           id: 'expenses', 
@@ -179,8 +151,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const roleBadgeStyles: Record<string, string> = {
     owner: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
     manager: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
-    cashier: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
-    kitchen: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
+    worker: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
   };
 
   return (
@@ -382,9 +353,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Quick Role Preview Bar (Expanded only) */}
-        {!isCollapsed && switchRole && (
+        {!isCollapsed && isReviewMode && switchRole && (
           <div className="p-1 bg-[#131825] rounded-xl border border-[#1E2638] flex items-center gap-1">
-            {(['owner', 'manager', 'cashier', 'kitchen'] as any[]).map((r) => (
+            {(['owner', 'manager', 'worker'] as UserRole[]).map((r) => (
               <button
                 key={r}
                 type="button"
@@ -396,7 +367,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }`}
                 title={`Switch preview role to ${r.toUpperCase()}`}
               >
-                {r === 'kitchen' ? 'KDS' : r}
+                {r === 'worker' ? 'WORKER' : r.toUpperCase()}
               </button>
             ))}
           </div>

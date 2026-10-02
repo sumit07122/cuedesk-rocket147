@@ -1,43 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Activity, 
-  CheckCircle2, 
-  AlertCircle, 
-  RefreshCw, 
-  ShieldCheck, 
-  Server, 
-  Database, 
-  Radio, 
-  HardDrive, 
-  Clock,
-  Layers,
-  Code
-} from 'lucide-react';
-import { testFirestoreHealth, currentConfigSource } from '../../lib/firebase';
+import { Activity, CheckCircle2, AlertCircle, RefreshCw, ShieldCheck, Database, HardDrive, Radio } from 'lucide-react';
+import { auth, testFirestoreHealth, currentConfigSource } from '../../lib/firebase';
 import { getAvailableAutoSnapshots } from '../../utils/autoSnapshot';
 
 interface SystemHealthSectionProps {
   currentClubId?: string;
-  onOpenDeveloperDrawer?: () => void;
 }
 
 export const SystemHealthSection: React.FC<SystemHealthSectionProps> = ({
   currentClubId = 'club-royal-cue',
-  onOpenDeveloperDrawer
 }) => {
   const [isChecking, setIsChecking] = useState(false);
   const [dbStatus, setDbStatus] = useState<{
     connected: boolean;
     latencyMs?: number;
     message?: string;
-  }>({ connected: true, latencyMs: 24, message: 'Operational' });
+  }>({ connected: false, message: 'Not checked yet' });
   const [lastCheckTime, setLastCheckTime] = useState<string>(new Date().toLocaleTimeString());
   const [snapshotCount, setSnapshotCount] = useState<number>(0);
+  const isAuthVerified = Boolean(auth.currentUser?.emailVerified);
 
   const runHealthCheck = async () => {
     setIsChecking(true);
     try {
-      const res = await testFirestoreHealth();
+      const res = await testFirestoreHealth(currentClubId);
       setDbStatus(res);
       setLastCheckTime(new Date().toLocaleTimeString());
     } catch (e: any) {
@@ -53,7 +39,7 @@ export const SystemHealthSection: React.FC<SystemHealthSectionProps> = ({
       const snaps = getAvailableAutoSnapshots();
       setSnapshotCount(snaps.length);
     } catch {}
-  }, []);
+  }, [currentClubId]);
 
   return (
     <div className="space-y-6">
@@ -66,7 +52,9 @@ export const SystemHealthSection: React.FC<SystemHealthSectionProps> = ({
             <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border ${
               dbStatus.connected
                 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                : 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+                : isChecking
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                  : 'bg-rose-500/20 text-rose-400 border-rose-500/30'
             }`}>
               <Activity className="w-6 h-6" />
             </div>
@@ -76,14 +64,16 @@ export const SystemHealthSection: React.FC<SystemHealthSectionProps> = ({
                 <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold uppercase tracking-wider flex items-center gap-1 ${
                   dbStatus.connected
                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                    : isChecking
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
                 }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${dbStatus.connected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
-                  {dbStatus.connected ? 'All Systems Operational' : 'Degraded Connectivity'}
+                  <span className={`w-1.5 h-1.5 rounded-full ${dbStatus.connected ? 'bg-emerald-400 animate-pulse' : isChecking ? 'bg-amber-300 animate-pulse' : 'bg-rose-400'}`} />
+                  {isChecking ? 'Checking club database' : dbStatus.connected ? 'Club database connected' : 'Club database unavailable'}
                 </span>
               </div>
               <p className="text-xs text-neutral-400 mt-0.5">
-                Real-time cloud database, authentication, and multi-device sync status.
+                Checks access to this club’s saved settings in Firestore.
               </p>
             </div>
           </div>
@@ -108,18 +98,15 @@ export const SystemHealthSection: React.FC<SystemHealthSectionProps> = ({
               <Database className="w-4 h-4 text-emerald-600" />
               <span>Cloud Database</span>
             </div>
-            <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-              <CheckCircle2 className="w-3 h-3" />
-              Connected
-            </span>
+            <StatusPill active={dbStatus.connected} checking={isChecking} />
           </div>
           <p className="text-[11px] text-neutral-500">
-            Google Cloud Firestore (asia-south1 Mumbai). Authoritative single source of truth.
+            Firestore connection for this club workspace.
           </p>
           <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-[11px] font-mono text-neutral-400">
             <span>Latency</span>
             <span className="font-bold text-neutral-700">
-              {dbStatus.latencyMs ? `${dbStatus.latencyMs} ms` : '~25 ms'}
+              {dbStatus.latencyMs ? `${dbStatus.latencyMs} ms` : 'Not measured'}
             </span>
           </div>
         </div>
@@ -131,17 +118,14 @@ export const SystemHealthSection: React.FC<SystemHealthSectionProps> = ({
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
               <span>Authentication</span>
             </div>
-            <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-              <CheckCircle2 className="w-3 h-3" />
-              Connected
-            </span>
+            <StatusPill active={isAuthVerified} />
           </div>
           <p className="text-[11px] text-neutral-500">
-            Firebase Auth Service with role-based token validation & security rule enforcement.
+            Email verification status for the current Firebase sign-in.
           </p>
           <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-[11px] font-mono text-neutral-400">
             <span>Security Model</span>
-            <span className="font-bold text-neutral-700">Role-Guarded</span>
+            <span className="font-bold text-neutral-700">{isAuthVerified ? 'Verified account' : 'Not verified'}</span>
           </div>
         </div>
 
@@ -150,19 +134,16 @@ export const SystemHealthSection: React.FC<SystemHealthSectionProps> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-neutral-700 font-bold text-xs">
               <Radio className="w-4 h-4 text-emerald-600" />
-              <span>Realtime Sync</span>
+              <span>Last database check</span>
             </div>
-            <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-              <CheckCircle2 className="w-3 h-3" />
-              Operational
-            </span>
+            <span className="flex items-center gap-1 text-[11px] font-bold text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded-md border border-neutral-200">{dbStatus.connected ? 'Successful' : isChecking ? 'Checking' : 'No connection'}</span>
           </div>
           <p className="text-[11px] text-neutral-500">
-            Bi-directional WebSocket sync for live timers, food queue, and table state updates.
+            This is the time of the most recent manual or automatic Firestore check.
           </p>
           <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-[11px] font-mono text-neutral-400">
             <span>Last Sync</span>
-            <span className="font-bold text-neutral-700">{lastCheckTime}</span>
+            <span className="font-bold text-neutral-700">{lastCheckTime || 'Not checked'}</span>
           </div>
         </div>
 
@@ -173,13 +154,13 @@ export const SystemHealthSection: React.FC<SystemHealthSectionProps> = ({
               <HardDrive className="w-4 h-4 text-emerald-600" />
               <span>Backup Status</span>
             </div>
-            <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-              <CheckCircle2 className="w-3 h-3" />
-              Healthy
+            <span className={`flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-md border ${snapshotCount > 0 ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-amber-800 bg-amber-50 border-amber-200'}`}>
+              {snapshotCount > 0 ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+              {snapshotCount > 0 ? 'Local copies found' : 'No local copies'}
             </span>
           </div>
           <p className="text-[11px] text-neutral-500">
-            Automatic daily snapshots saved locally with manual cloud-export capability.
+            Daily snapshots are stored in this browser only. Use Backup & Restore to download a separate copy.
           </p>
           <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-[11px] font-mono text-neutral-400">
             <span>Snapshots Stored</span>
@@ -192,12 +173,12 @@ export const SystemHealthSection: React.FC<SystemHealthSectionProps> = ({
       <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/70 text-xs space-y-2 text-neutral-600">
         <div className="flex items-center justify-between">
           <span className="font-bold text-neutral-800">Application Version</span>
-          <span className="font-mono font-semibold">v2.4.0 (One Shot Production Build)</span>
+          <span className="font-mono font-semibold">One Shot Club Manager</span>
         </div>
         <div className="flex items-center justify-between">
           <span className="font-bold text-neutral-800">Configuration Source</span>
           <span className="font-mono capitalize font-semibold text-neutral-800">
-            {currentConfigSource === 'env' ? 'Production Environment (.env / Vercel)' : 'Managed Deployment Config'}
+            {currentConfigSource === 'env' ? 'Deployment environment variables' : currentConfigSource === 'custom' ? 'Legacy custom setting (ignored)' : 'Bundled development config'}
           </span>
         </div>
         <div className="flex items-center justify-between">
@@ -206,18 +187,18 @@ export const SystemHealthSection: React.FC<SystemHealthSectionProps> = ({
         </div>
       </div>
 
-      {/* Developer Tools Access link (hidden/secondary) */}
-      {onOpenDeveloperDrawer && (
-        <div className="pt-2 flex justify-end">
-          <button
-            onClick={onOpenDeveloperDrawer}
-            className="text-[11px] font-bold text-neutral-400 hover:text-neutral-700 flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <Code className="w-3.5 h-3.5" />
-            <span>Developer Diagnostics & Overrides</span>
-          </button>
-        </div>
-      )}
     </div>
   );
 };
+
+const StatusPill: React.FC<{ active: boolean; checking?: boolean }> = ({ active, checking = false }) => (
+  <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-bold ${
+    checking
+      ? 'border-amber-200 bg-amber-50 text-amber-800'
+      : active
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+        : 'border-rose-200 bg-rose-50 text-rose-800'
+  }`}>
+    {checking ? 'Checking' : active ? 'Available' : 'Unavailable'}
+  </span>
+);

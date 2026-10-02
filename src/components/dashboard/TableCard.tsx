@@ -22,6 +22,8 @@ interface TableCardProps {
   currencySymbol?: string;
   taxRatePercent?: number;
   enableTax?: boolean;
+  minimumChargeMinutes?: number;
+  roundingRule?: 'none' | 'nearest_1' | 'nearest_5' | 'round_up';
   onSelectTable: (table: TableItem) => void;
   onStartSession: (table: TableItem) => void;
   onEndSession: (table: TableItem) => void;
@@ -34,6 +36,8 @@ export const TableCard: React.FC<TableCardProps> = ({
   currencySymbol = '$',
   taxRatePercent = 8,
   enableTax = true,
+  minimumChargeMinutes = 0,
+  roundingRule = 'nearest_1',
   onSelectTable,
   onStartSession,
   onEndSession,
@@ -65,7 +69,7 @@ export const TableCard: React.FC<TableCardProps> = ({
 
   if (isOccupied && table.currentSession) {
     timerSeconds = calculateSessionSeconds(table.currentSession, now);
-    const totals = calculateBillTotals(table.currentSession, taxRatePercent, enableTax, 0, now);
+    const totals = calculateBillTotals(table.currentSession, taxRatePercent, enableTax, 0, now, [], roundingRule, minimumChargeMinutes);
     currentBill = totals.grandTotal;
     foodCount = table.currentSession.foodOrders.reduce((acc, order) => acc + order.quantity, 0);
   }
@@ -168,9 +172,6 @@ export const TableCard: React.FC<TableCardProps> = ({
                 <span className="font-semibold text-neutral-800 truncate">
                   {table.currentSession.customerName}
                 </span>
-                {table.currentSession.isMember && (
-                  <span className="text-[10px] bg-neutral-900 text-white font-bold px-1 rounded">VIP</span>
-                )}
               </div>
 
               {foodCount > 0 && (
