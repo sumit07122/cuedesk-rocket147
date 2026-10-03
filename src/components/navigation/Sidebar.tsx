@@ -13,7 +13,7 @@ import {
   TrendingUp,
   ChevronLeft,
   ChevronRight,
-  Wrench,
+  ClipboardList,
   X
 } from 'lucide-react';
 import { PageView, UserRole } from '../../types';
@@ -153,11 +153,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           tooltip: 'Financial Reports & Insights'
         },
         { 
-          id: 'maintenance', 
-          label: 'Table Maintenance', 
-          icon: Wrench, 
-          minRole: 'manager',
-          tooltip: 'Repairs, re-clothing & table service records'
+          id: 'daily-report', 
+          label: 'Daily Report', 
+          icon: ClipboardList, 
+          minRole: 'worker',
+          tooltip: 'Daily sales, session audit ledger & customer transactions'
         },
         { 
           id: 'settings', 

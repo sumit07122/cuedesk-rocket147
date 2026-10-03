@@ -25,8 +25,8 @@ import { CustomerCRMView } from './components/crm/CustomerCRMView';
 import { CustomerPortalView } from './components/crm/CustomerPortalView';
 import { EmployeeManagementView } from './components/employees/EmployeeManagementView';
 import { ExpenseProfitView } from './components/expenses/ExpenseProfitView';
-import { TableMaintenanceView } from './components/maintenance/TableMaintenanceView';
 import { ReportsView } from './components/reports/ReportsView';
+import { DailyReportView } from './components/reports/DailyReportView';
 import { SettingsView } from './components/settings/SettingsView';
 import { LoginView } from './components/auth/LoginView';
 import { ToastContainer, ToastMessage } from './components/ui/Toast';
@@ -643,20 +643,15 @@ function StaffClubApp() {
                 }}
               />
             </RoleGuard>
-          ) : activePage === 'maintenance' ? (
-            <RoleGuard requiredPage="maintenance" onNavigateHome={() => setActivePage('dashboard')}>
-              <TableMaintenanceView
+          ) : activePage === 'daily-report' ? (
+            <RoleGuard requiredPage="daily-report" onNavigateHome={() => setActivePage('dashboard')}>
+              <DailyReportView
+                history={history}
+                customers={topCustomers}
                 tables={tables}
-                maintenanceRecords={maintenanceRecords}
-                config={config}
-                onRecordMaintenance={async (record) => {
-                  await recordMaintenance(record);
-                  addToast('warning', 'Table Flagged for Maintenance', `${record.tableName} under repair.`);
-                }}
-                onResolveMaintenance={async (tableId, maintenanceId) => {
-                  await resolveMaintenance(tableId, maintenanceId);
-                  addToast('success', 'Maintenance Resolved', `Table is now operational!`);
-                }}
+                currencySymbol={config.currencySymbol}
+                timeZone={businessTimeZone}
+                clubName={config.clubName}
               />
             </RoleGuard>
           ) : activePage === 'reports' ? (

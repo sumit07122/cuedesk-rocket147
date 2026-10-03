@@ -29,6 +29,7 @@ import {
   Cell 
 } from 'recharts';
 import { SessionHistoryItem, TopCustomer, TableItem } from '../../types';
+import { DailyReportView } from './DailyReportView';
 import { StatCard } from '../dashboard/StatCard';
 import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
@@ -54,6 +55,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 }) => {
   const [searchHistory, setSearchHistory] = useState('');
   const [revenueTimeframe, setRevenueTimeframe] = useState<'daily' | 'weekly'>('weekly');
+  const [activeReportTab, setActiveReportTab] = useState<'analytics' | 'daily'>('analytics');
 
   const recognizedHistory = history.filter((item) => item.paymentStatus !== 'refunded');
   const totalRevenue = recognizedHistory.reduce((sum, item) => sum + (Number(item.grandTotal) || 0), 0);
@@ -251,6 +253,42 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         </div>
       </div>
 
+      {/* Switcher Tabs */}
+      <div className="flex items-center gap-1.5 bg-neutral-100 p-1.5 rounded-2xl w-fit">
+        <button
+          onClick={() => setActiveReportTab('analytics')}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+            activeReportTab === 'analytics'
+              ? 'bg-neutral-900 text-white shadow-xs'
+              : 'text-neutral-600 hover:text-neutral-900'
+          }`}
+        >
+          <TrendingUp className="w-3.5 h-3.5" />
+          <span>Analytics & Trends</span>
+        </button>
+        <button
+          onClick={() => setActiveReportTab('daily')}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+            activeReportTab === 'daily'
+              ? 'bg-neutral-900 text-white shadow-xs'
+              : 'text-neutral-600 hover:text-neutral-900'
+          }`}
+        >
+          <Receipt className="w-3.5 h-3.5 text-amber-500" />
+          <span>Daily Report & Audit Ledger</span>
+        </button>
+      </div>
+
+      {activeReportTab === 'daily' ? (
+        <DailyReportView
+          history={history}
+          customers={topCustomers}
+          tables={tables}
+          currencySymbol={currencySymbol}
+          timeZone={timeZone}
+        />
+      ) : (
+        <>
       {/* Metrics Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-4">
         <StatCard
@@ -821,6 +859,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             </table>
           </div>
         </Card>
+      )}
+        </>
       )}
     </div>
   );

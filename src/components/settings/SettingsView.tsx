@@ -115,7 +115,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [newTableNumber, setNewTableNumber] = useState<number>(1);
   const [newTableType, setNewTableType] = useState<TableType>('snooker');
   const [newTableRate, setNewTableRate] = useState<number>(config.defaultHourlyRate || 180);
-  const [newTableMaintenance, setNewTableMaintenance] = useState<boolean>(false);
 
   // Menu State
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -558,15 +557,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-white text-neutral-600 border border-neutral-200">
                             {tbl.type.replace('_', ' ')}
                           </span>
-                          {(tbl.isMaintenance || tbl.status === 'maintenance') && (
-                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
-                              Maintenance
-                            </span>
-                          )}
                         </div>
                       </div>
-                      <Badge variant={tbl.status === 'occupied' ? 'danger' : tbl.status === 'maintenance' ? 'warning' : 'success'}>
-                        {tbl.status === 'occupied' ? 'Active Session' : tbl.status === 'maintenance' ? 'Maintenance' : 'Ready'}
+                      <Badge variant={tbl.status === 'occupied' ? 'danger' : 'success'}>
+                        {tbl.status === 'occupied' ? 'Active Session' : 'Ready'}
                       </Badge>
                     </div>
 
@@ -678,20 +672,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         </span>
                       </div>
 
-                      <div className="pt-2">
-                        <label className="flex items-center gap-2 cursor-pointer p-2.5 rounded-xl bg-neutral-50 border border-neutral-200">
-                          <input
-                            type="checkbox"
-                            checked={newTableMaintenance}
-                            onChange={(e) => setNewTableMaintenance(e.target.checked)}
-                            className="w-4 h-4 rounded text-neutral-900 accent-neutral-900"
-                          />
-                          <div>
-                            <span className="font-bold text-neutral-800 block text-xs">Flag as Under Maintenance</span>
-                            <span className="text-[10px] text-neutral-500 block">Blocks new sessions from starting until repair is resolved</span>
-                          </div>
-                        </label>
-                      </div>
                     </div>
 
                     <div className="flex justify-end gap-2 pt-3 border-t">
@@ -710,9 +690,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               name: newTableName.trim(),
                               type: newTableType,
                               hourlyRate: newTableRate,
-                              perMinuteRate: Number((newTableRate / 60).toFixed(2)),
-                              isMaintenance: newTableMaintenance,
-                              status: newTableMaintenance ? 'maintenance' : (editingTable.status === 'maintenance' ? 'available' : editingTable.status)
+                              perMinuteRate: Number((newTableRate / 60).toFixed(2))
                             });
                           } else {
                             onAddTable({
@@ -720,8 +698,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               name: newTableName.trim(),
                               type: newTableType,
                               hourlyRate: newTableRate,
-                              perMinuteRate: Number((newTableRate / 60).toFixed(2)),
-                              isMaintenance: newTableMaintenance
+                              perMinuteRate: Number((newTableRate / 60).toFixed(2))
                             });
                           }
                           setShowAddTable(false);

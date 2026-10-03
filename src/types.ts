@@ -105,6 +105,7 @@ export type PageView =
   | 'expenses'
   | 'maintenance'
   | 'reports'
+  | 'daily-report'
   | 'settings'
   | 'lockers'
   | 'arena'

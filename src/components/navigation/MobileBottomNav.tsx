@@ -10,7 +10,7 @@ import {
   Utensils,
   UserCheck,
   TrendingUp,
-  Wrench,
+  ClipboardList,
   QrCode,
   X,
   ChevronRight
@@ -37,7 +37,7 @@ const moreItems = [
   { id: 'employees' as PageView, label: 'Staff', icon: UserCheck },
   { id: 'expenses' as PageView, label: 'Expenses & Profit', icon: TrendingUp },
   { id: 'reports' as PageView, label: 'Reports & Analytics', icon: BarChart3 },
-  { id: 'maintenance' as PageView, label: 'Table Maintenance', icon: Wrench },
+  { id: 'daily-report' as PageView, label: 'Daily Report', icon: ClipboardList },
   { id: 'settings' as PageView, label: 'Club Settings', icon: Settings },
 ];
 

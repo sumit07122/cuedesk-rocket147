@@ -66,8 +66,8 @@ const ROLE_ALLOWED_PAGES: Record<UserRole, PageView[]> = {
     'customers', 
     'employees', 
     'expenses', 
-    'maintenance', 
     'reports', 
+    'daily-report', 
     'settings', 
     'login'
   ],
@@ -79,8 +79,8 @@ const ROLE_ALLOWED_PAGES: Record<UserRole, PageView[]> = {
     'menu-inventory', 
     'customers', 
     'expenses', 
-    'maintenance', 
     'reports', 
+    'daily-report', 
     'login'
   ],
   worker: [
@@ -88,6 +88,7 @@ const ROLE_ALLOWED_PAGES: Record<UserRole, PageView[]> = {
     'tables', 
     'table-details', 
     'billing', 
+    'daily-report', 
     'customers', 
     'login'
   ],
