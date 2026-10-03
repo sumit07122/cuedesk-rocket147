@@ -22,8 +22,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const { signInWithEmail, signUpWithEmail, signUpCustomerWithEmail, sendPasswordReset } = useAuth();
 
   const [mode, setMode] = useState<'signin' | 'forgot' | 'customer-signup' | 'staff-signup'>('signin');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('owner');
+  const [password, setPassword] = useState('1234');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [inviteCode, setInviteCode] = useState('');
@@ -163,14 +163,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             <form onSubmit={handleEmailSignIn} className="flex flex-col gap-3.5">
 
               <div>
-                <label className="text-xs font-bold text-neutral-300 block mb-1">User Email Address</label>
+                <label className="text-xs font-bold text-neutral-300 block mb-1">Username / Email</label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 text-amber-500/70 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <User className="w-4 h-4 text-amber-500/70 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
-                    type="email"
+                    type="text"
                     required
-                    autoComplete="off"
-                    placeholder="Enter registered email address..."
+                    autoComplete="username"
+                    placeholder="Enter 'owner' or registered email..."
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-[#18181f] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-neutral-500 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all font-medium"
@@ -181,23 +181,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-bold text-neutral-300">Password</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode('forgot');
-                      clearMessages();
-                    }}
-                    className="text-[11px] font-semibold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
-                  >
-                    Reset Password
-                  </button>
+                  <span className="text-[11px] font-mono text-amber-400/80">Default: 1234</span>
                 </div>
                 <div className="relative flex items-center">
                   <Lock className="w-4 h-4 text-amber-500/70 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     required
-                    autoComplete="new-password"
+                    autoComplete="current-password"
                     placeholder="Enter password..."
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -218,10 +209,32 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 </div>
               </div>
 
+              {/* Default Credentials Quick Banner */}
+              <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
+                <div className="flex items-center gap-1.5 font-medium">
+                  <Key className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Default Login:</span>
+                  <span className="font-bold font-mono bg-black/40 px-1.5 py-0.5 rounded text-white">owner</span>
+                  <span className="text-neutral-500">/</span>
+                  <span className="font-bold font-mono bg-black/40 px-1.5 py-0.5 rounded text-white">1234</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail('owner');
+                    setPassword('1234');
+                    clearMessages();
+                  }}
+                  className="text-[10px] font-bold uppercase tracking-wider text-amber-400 hover:text-amber-200 underline cursor-pointer"
+                >
+                  Reset
+                </button>
+              </div>
+
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider transition-all duration-200 hover:shadow-lg hover:shadow-amber-500/20 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full mt-1 py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider transition-all duration-200 hover:shadow-lg hover:shadow-amber-500/20 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
               >
                 {loading ? (
                   <>
@@ -234,12 +247,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
-              </button>
-              <button type="button" onClick={() => { setMode('customer-signup'); clearMessages(); }} className="text-xs font-semibold text-neutral-400 hover:text-amber-300">
-                Create a customer account to view your club activity
-              </button>
-              <button type="button" onClick={() => { setMode('staff-signup'); clearMessages(); }} className="text-xs font-semibold text-neutral-500 hover:text-amber-300">
-                Activate an invited staff account
               </button>
             </form>
           )}

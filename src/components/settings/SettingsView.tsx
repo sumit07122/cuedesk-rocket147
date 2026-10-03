@@ -930,8 +930,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         size="sm"
                         disabled={isUpdatingEmpPass || !newEmpPassword || !confirmEmpPassword}
                         onClick={async () => {
-                          if (!newEmpPassword || newEmpPassword.length < 6) {
-                            setEmpPassMsg({ text: 'Password must be at least 6 characters.', isError: true });
+                          if (!newEmpPassword || newEmpPassword.length < 4) {
+                            setEmpPassMsg({ text: 'Password must be at least 4 characters.', isError: true });
                             return;
                           }
                           if (newEmpPassword !== confirmEmpPassword) {
@@ -1446,8 +1446,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     size="sm"
                     disabled={isUpdatingMyPass || !myNewPass || !myConfirmPass}
                     onClick={async () => {
-                      if (!myNewPass || myNewPass.length < 6) {
-                        setMyPassMsg({ text: 'Password must be at least 6 characters.', isError: true });
+                      if (!myNewPass || myNewPass.length < 4) {
+                        setMyPassMsg({ text: 'Password must be at least 4 characters.', isError: true });
                         return;
                       }
                       if (myNewPass !== myConfirmPass) {

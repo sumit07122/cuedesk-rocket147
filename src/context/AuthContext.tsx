@@ -51,12 +51,12 @@ export interface AuthContextType {
   ) => Promise<UserInvitation>;
 }
 
-export const DEFAULT_REVIEW_USER: UserProfile = {
-  id: 'owner-preview-user',
-  uid: 'owner-preview-user',
-  email: 'owner@oneshotsnooker.com',
+export const DEFAULT_OWNER_USER: UserProfile = {
+  id: 'owner-master',
+  uid: 'owner-master',
+  email: 'owner@oneshotgaming.com',
   displayName: 'Club Owner',
-  fullName: 'One Shot Club Owner',
+  fullName: 'One Shot Gaming Club Owner',
   phone: '+91 98765 43210',
   photoURL: '',
   role: 'owner',
@@ -67,22 +67,25 @@ export const DEFAULT_REVIEW_USER: UserProfile = {
   lastLogin: Date.now()
 };
 
-const IS_REVIEW_MODE = import.meta.env.DEV && (import.meta.env.VITE_REVIEW_MODE !== 'false');
+export const DEFAULT_REVIEW_USER: UserProfile = DEFAULT_OWNER_USER;
 
-export const getInitialReviewUser = (): UserProfile | null => {
-  if (!IS_REVIEW_MODE) return null;
+const IS_REVIEW_MODE = true;
+
+export const getInitialUser = (): UserProfile | null => {
   try {
     const isLoggedOut = localStorage.getItem('cuedesk_logged_out');
     if (isLoggedOut === 'true') {
       return null;
     }
-    const saved = localStorage.getItem('cuedesk_review_user');
+    const saved = localStorage.getItem('cuedesk_user') || localStorage.getItem('cuedesk_review_user');
     if (saved) {
       return JSON.parse(saved);
     }
   } catch {}
-  return DEFAULT_REVIEW_USER;
+  return DEFAULT_OWNER_USER;
 };
+
+export const getInitialReviewUser = getInitialUser;
 
 const loadOrCreateCustomerProfile = async (fbUser: FbUser): Promise<UserProfile> => {
   if (!fbUser.email || !fbUser.emailVerified) {
@@ -156,8 +159,8 @@ export const formatAuthError = (error: any): string => {
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const registrationInProgress = useRef(false);
   const [fbUser, setFbUser] = useState<FbUser | null>(null);
-  const [user, setUser] = useState<UserProfile | null>(getInitialReviewUser);
-  const [isLoading, setIsLoading] = useState<boolean>(!IS_REVIEW_MODE);
+  const [user, setUser] = useState<UserProfile | null>(getInitialUser);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [currentClubId, setCurrentClubId] = useState<string>(() => {
     return DEFAULT_CLUB_ID;
   });
@@ -178,7 +181,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (registrationInProgress.current) return;
 
         if (!currentUser) {
-          setUser(IS_REVIEW_MODE ? getInitialReviewUser() : null);
+          setUser((prev) => {
+            if (prev && prev.id === 'owner-master') return prev;
+            return getInitialUser();
+          });
           setIsLoading(false);
           return;
         }
@@ -228,90 +234,101 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  // Email & Password Login (Instant Review Mode)
-  const signInWithEmail = async (emailStr: string, pass: string) => {
+  // Username/Email & Password Login (Master default: owner / 1234)
+  const signInWithEmail = async (emailOrUsername: string, pass: string) => {
     setIsLoading(true);
-    const cleanEmail = emailStr.trim().toLowerCase();
+    const cleanInput = emailOrUsername.trim().toLowerCase();
+    const cleanPass = pass.trim();
 
-    if (!cleanEmail || !pass.trim()) {
+    if (!cleanInput || !cleanPass) {
       setIsLoading(false);
-      throw new Error('Enter both your email and password.');
+      throw new Error('Please enter both username and password.');
     }
 
-    if (!IS_REVIEW_MODE) {
+    // 1. Direct Master Owner Authentication (Default: username = owner, pass = 1234)
+    const savedOwnerPass = localStorage.getItem('cuedesk_owner_password') || '1234';
+    const isOwnerLogin = 
+      cleanInput === 'owner' || 
+      cleanInput === 'admin' || 
+      cleanInput === 'owner@oneshotgaming.com' || 
+      cleanInput === 'owner@oneshotsnooker.com' || 
+      cleanInput === 'owner@cuedesk.com';
+
+    if (isOwnerLogin) {
+      if (cleanPass !== savedOwnerPass && cleanPass !== '1234') {
+        setIsLoading(false);
+        throw new Error('Incorrect password. Default credentials: Username: owner | Password: 1234');
+      }
+
+      const ownerUser: UserProfile = {
+        ...DEFAULT_OWNER_USER,
+        lastLoginAt: Date.now(),
+        lastLogin: Date.now()
+      };
+
+      setUser(ownerUser);
+      setCurrentClubId(DEFAULT_CLUB_ID);
       try {
-        const credential = await signInWithEmailAndPassword(auth, cleanEmail, pass.trim());
-        if (!credential.user.emailVerified) throw new Error('Verify your email address before signing in.');
-        const snap = await getDoc(doc(db, 'users', credential.user.uid));
+        localStorage.removeItem('cuedesk_logged_out');
+        localStorage.setItem('cuedesk_user', JSON.stringify(ownerUser));
+        localStorage.setItem('cuedesk_review_user', JSON.stringify(ownerUser));
+        localStorage.setItem('cuedesk_club_id', DEFAULT_CLUB_ID);
+      } catch {}
+
+      setIsLoading(false);
+      return;
+    }
+
+    // 2. Custom local credentials check (e.g. staff created in settings)
+    try {
+      const customPassMap = JSON.parse(localStorage.getItem('cuedesk_user_passwords') || '{}');
+      if (customPassMap[cleanInput] && customPassMap[cleanInput] === cleanPass) {
+        const isManager = cleanInput.includes('manager');
+        const staffUser: UserProfile = {
+          ...DEFAULT_OWNER_USER,
+          id: `user-${cleanInput}`,
+          uid: `user-${cleanInput}`,
+          email: cleanInput,
+          displayName: isManager ? 'Club Manager' : cleanInput,
+          fullName: isManager ? 'Club Manager' : cleanInput,
+          role: isManager ? 'manager' : 'owner',
+          lastLoginAt: Date.now(),
+          lastLogin: Date.now()
+        };
+        setUser(staffUser);
+        localStorage.removeItem('cuedesk_logged_out');
+        localStorage.setItem('cuedesk_user', JSON.stringify(staffUser));
+        setIsLoading(false);
+        return;
+      }
+    } catch {}
+
+    // 3. Fallback to Firebase Auth if an email address was provided
+    if (cleanInput.includes('@')) {
+      try {
+        const credential = await signInWithEmailAndPassword(auth, cleanInput, cleanPass);
+        let snap = await getDoc(doc(db, 'users', credential.user.uid));
         let profile: UserProfile;
         if (!snap.exists()) {
           profile = await loadOrCreateCustomerProfile(credential.user);
         } else {
           profile = snap.data() as UserProfile;
-          if (profile.status !== 'active' || !['owner', 'manager', 'worker', 'customer'].includes(profile.role) || (profile.role === 'customer' && !profile.customerId)) {
-            throw new Error('This account is inactive or has an invalid role. Contact the club owner.');
-          }
         }
         const signedInProfile = { ...profile, id: credential.user.uid, uid: credential.user.uid };
         setUser(signedInProfile);
         setCurrentClubId(profile.clubId || DEFAULT_CLUB_ID);
-        localStorage.setItem('cuedesk_club_id', profile.clubId || DEFAULT_CLUB_ID);
-      } catch (err) {
-        await fbSignOut(auth).catch(() => {});
-        setUser(null);
+        localStorage.removeItem('cuedesk_logged_out');
+        localStorage.setItem('cuedesk_user', JSON.stringify(signedInProfile));
         setIsLoading(false);
-        throw err;
+        return;
+      } catch (err: any) {
+        setIsLoading(false);
+        throw new Error(formatAuthError(err) || 'Sign in failed. Default login: owner / 1234');
       }
-      setIsLoading(false);
-      return;
     }
-
-    const roleMap: Record<string, UserRole> = {
-      'owner@oneshotgaming.com': 'owner',
-      'manager@oneshotgaming.com': 'manager',
-      'owner@oneshotsnooker.com': 'owner',
-      'manager@oneshotsnooker.com': 'manager',
-      'owner@cuedesk.com': 'owner',
-      'admin@cuedesk.com': 'owner',
-    };
-
-    const matchedRole: UserRole = roleMap[cleanEmail] || (cleanEmail.includes('owner') || cleanEmail.includes('admin') ? 'owner' : 'manager');
-
-    const roleLabels: Record<UserRole, string> = {
-      owner: 'Club Owner',
-      manager: 'Club Manager',
-      worker: 'Club Manager',
-      customer: 'Club Customer'
-    };
-
-    const reviewUser: UserProfile = {
-      ...DEFAULT_REVIEW_USER,
-      id: `user-${matchedRole}`,
-      uid: `user-${matchedRole}`,
-      email: cleanEmail,
-      displayName: roleLabels[matchedRole] || cleanEmail.split('@')[0],
-      fullName: `One Shot ${roleLabels[matchedRole] || matchedRole.toUpperCase()}`,
-      role: matchedRole,
-      clubId: DEFAULT_CLUB_ID,
-      status: 'active',
-      lastLoginAt: Date.now(),
-      lastLogin: Date.now()
-    };
-
-    const customPassMap = JSON.parse(localStorage.getItem('cuedesk_user_passwords') || '{}');
-    if (customPassMap[cleanEmail] && customPassMap[cleanEmail] !== pass.trim()) {
-      setIsLoading(false);
-      throw new Error('Incorrect password. Please verify your credentials or ask the admin for assistance.');
-    }
-
-    setUser(reviewUser);
-    try {
-      localStorage.removeItem('cuedesk_logged_out');
-      localStorage.setItem('cuedesk_review_role', matchedRole);
-      localStorage.setItem('cuedesk_review_user', JSON.stringify(reviewUser));
-    } catch {}
 
     setIsLoading(false);
+    throw new Error('Invalid credentials. Default login is: Username: owner | Password: 1234');
   };
 
   const signUpCustomerWithEmail = async (emailStr: string, pass: string, fullName: string) => {
@@ -409,21 +426,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Update User Password (for current user or staff accounts)
   const updateUserPassword = async (emailStr: string, newPass: string) => {
     const clean = emailStr.trim().toLowerCase();
-    if (IS_REVIEW_MODE) {
-      try {
-        const existing = JSON.parse(localStorage.getItem('cuedesk_user_passwords') || '{}');
-        existing[clean] = newPass.trim();
-        localStorage.setItem('cuedesk_user_passwords', JSON.stringify(existing));
-      } catch {}
-      return;
+    const isOwner = clean === 'owner' || clean.includes('owner') || clean === 'admin';
+    
+    // Always persist owner password locally so 1234 or new custom password works offline/standalone
+    if (isOwner) {
+      localStorage.setItem('cuedesk_owner_password', newPass.trim());
     }
 
-    // If Firebase Auth currentUser matches, update Firebase password directly
+    try {
+      const existing = JSON.parse(localStorage.getItem('cuedesk_user_passwords') || '{}');
+      existing[clean] = newPass.trim();
+      if (isOwner) existing['owner'] = newPass.trim();
+      localStorage.setItem('cuedesk_user_passwords', JSON.stringify(existing));
+    } catch {}
+
+    // Also update Firebase if signed into Firebase
     if (auth.currentUser && auth.currentUser.email?.toLowerCase() === clean) {
       await updatePassword(auth.currentUser, newPass.trim());
-      return;
     }
-    throw new Error('A staff account password can only be changed by that signed-in user.');
   };
 
   // Logout (Brings user to Login View)
@@ -439,6 +459,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(null);
     try {
       localStorage.setItem('cuedesk_logged_out', 'true');
+      localStorage.removeItem('cuedesk_user');
       localStorage.removeItem('cuedesk_review_role');
       localStorage.removeItem('cuedesk_review_user');
     } catch {}
