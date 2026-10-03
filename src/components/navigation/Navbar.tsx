@@ -44,7 +44,7 @@ const pageTitles: Record<PageView, { title: string; subtitle: string }> = {
   expenses: { title: 'Expenses & Profit', subtitle: 'Record costs, net profit & margins' },
   maintenance: { title: 'Daily Report', subtitle: 'Daily transactions and audit ledger' },
   reports: { title: 'Reports & Analytics', subtitle: 'Revenue, peak hours & top members' },
-  'daily-report': { title: 'Daily Business Report', subtitle: 'Audit ledger, sort by date, time, customer & method' },
+  'daily-report': { title: 'Day Management & EOD Vault', subtitle: 'End-of-day closing, cash drawer reconciliation & permanent archives' },
   settings: { title: 'Club Settings', subtitle: 'Pricing, tables, roles & backup' },
   lockers: { title: 'Cue Lockers', subtitle: 'Member locker allocations & cue sticks' },
   arena: { title: 'Gaming Arena', subtitle: 'Arcade, VR & station tracking' },

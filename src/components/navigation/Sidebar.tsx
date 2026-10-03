@@ -154,10 +154,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         { 
           id: 'daily-report', 
-          label: 'Daily Report', 
+          label: 'Day Close & Daily Vault', 
           icon: ClipboardList, 
           minRole: 'worker',
-          tooltip: 'Daily sales, session audit ledger & customer transactions'
+          tooltip: 'Day closing, cash drawer reconciliation & historical day vault'
         },
         { 
           id: 'settings', 

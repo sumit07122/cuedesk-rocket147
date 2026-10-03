@@ -649,9 +649,12 @@ function StaffClubApp() {
                 history={history}
                 customers={topCustomers}
                 tables={tables}
+                expenses={expenses}
                 currencySymbol={config.currencySymbol}
                 timeZone={businessTimeZone}
                 clubName={config.clubName}
+                clubId={currentClubId}
+                currentUser={user}
               />
             </RoleGuard>
           ) : activePage === 'reports' ? (

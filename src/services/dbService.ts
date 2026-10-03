@@ -51,6 +51,7 @@ import {
   , CustomerPortalActivity
   , CustomerPortalProfile
   , CustomerPortalReceipt
+  , DailyLedgerRecord
 } from '../types';
 import { 
   initialBusinessConfig, 
@@ -2144,5 +2145,78 @@ export const markInvitationAcceptedDoc = async (invitationId: string): Promise<v
     await updateDoc(ref, { status: 'accepted', acceptedAt: Date.now() });
   } catch (err) {
     console.warn('Error marking invitation accepted:', err);
+  }
+};
+
+// --- DAILY LEDGER & DAY-CLOSING VAULT ---
+
+export const subscribeDailyLedgers = (
+  clubId: string,
+  callback: (ledgers: DailyLedgerRecord[]) => void
+) => {
+  const ledgerRef = collection(db, 'clubs', clubId, 'dailyLedger');
+  const q = query(ledgerRef, orderBy('closedAt', 'desc'));
+
+  return onSnapshot(q, (snapshot) => {
+    const list: DailyLedgerRecord[] = [];
+    snapshot.forEach((docSnap) => {
+      list.push({ id: docSnap.id, ...docSnap.data() } as DailyLedgerRecord);
+    });
+
+    // Fallback merge with localStorage daily archives
+    try {
+      const localVault = JSON.parse(localStorage.getItem(`cuedesk_daily_vault_${clubId}`) || '[]');
+      localVault.forEach((lv: DailyLedgerRecord) => {
+        if (!list.some(item => item.id === lv.id || item.dateKey === lv.dateKey)) {
+          list.push(lv);
+        }
+      });
+      list.sort((a, b) => b.closedAt - a.closedAt);
+    } catch {}
+
+    callback(list);
+  }, (err) => {
+    console.warn('subscribeDailyLedgers fallback to local vault:', err);
+    try {
+      const localVault = JSON.parse(localStorage.getItem(`cuedesk_daily_vault_${clubId}`) || '[]');
+      callback(localVault);
+    } catch {
+      callback([]);
+    }
+  });
+};
+
+export const saveDailyLedgerClosure = async (
+  clubId: string,
+  record: DailyLedgerRecord
+): Promise<void> => {
+  // 1. Save to local vault immediately for resilient offline/instant retrieval
+  try {
+    const localVault = JSON.parse(localStorage.getItem(`cuedesk_daily_vault_${clubId}`) || '[]');
+    const existingIdx = localVault.findIndex((lv: DailyLedgerRecord) => lv.dateKey === record.dateKey);
+    if (existingIdx >= 0) {
+      localVault[existingIdx] = record;
+    } else {
+      localVault.unshift(record);
+    }
+    localStorage.setItem(`cuedesk_daily_vault_${clubId}`, JSON.stringify(localVault));
+  } catch (e) {
+    console.warn('Local daily vault write error:', e);
+  }
+
+  // 2. Persist to Firestore
+  try {
+    const docRef = doc(db, 'clubs', clubId, 'dailyLedger', record.dateKey || record.id);
+    await setDoc(docRef, record, { merge: true });
+    
+    // Log audit
+    await logAuditEvent(
+      clubId,
+      'DAY_CLOSED_SEALED',
+      record.closedBy,
+      `Day ${record.dateKey} closed & ledger sealed. Total billed: ${record.totalBilled}, Cash: ${record.cashCollected}, UPI: ${record.upiCollected}`
+    );
+  } catch (err) {
+    console.warn('Firestore dailyLedger write failed (using local vault backup):', err);
   }
 };

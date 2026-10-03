@@ -592,3 +592,47 @@ export interface BusinessConfig extends ClubInfo {
   trialEndDate?: number;
   featureFlags?: FeatureFlags;
 }
+
+export interface DailyLedgerRecord {
+  id: string;
+  dateKey: string;
+  clubId: string;
+  closedAt: number;
+  closedBy: string;
+  closureNumber: string;
+  status: 'closed' | 'open' | 'auto_archived';
+  totalBilled: number;
+  totalCollected: number;
+  cashCollected: number;
+  upiCollected: number;
+  cardCollected: number;
+  creditDueAdded: number;
+  totalExpenses: number;
+  netProfit: number;
+  tableRevenue: number;
+  foodRevenue: number;
+  taxCollected: number;
+  discountGiven: number;
+  refundsTotal: number;
+  openingCash: number;
+  expectedCash: number;
+  actualCashCounted: number;
+  cashDifference: number;
+  totalSessions: number;
+  totalHoursPlayed: number;
+  uniqueCustomers: number;
+  notes?: string;
+  sessionsSummary?: {
+    id: string;
+    receiptNo: string;
+    time: string;
+    customerName: string;
+    customerPhone?: string;
+    tableName: string;
+    durationMinutes: number;
+    grandTotal: number;
+    amountPaid: number;
+    paymentMethod: string;
+    paymentStatus: string;
+  }[];
+}
