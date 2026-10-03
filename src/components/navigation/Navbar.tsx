@@ -9,12 +9,15 @@ import {
   Download,
   Volume2,
   VolumeX,
-  Menu
+  Menu,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { PageView, NotificationItem } from '../../types';
 import { Button } from '../ui/Button';
 import { NotificationCenter } from '../notifications/NotificationCenter';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 import { PWAInstallModal } from '../common/PWAInstallModal';
 import { soundEffects } from '../../utils/soundEffects';
@@ -68,8 +71,15 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const { user } = useAuth();
   const { isInstallable, isInstalled, isIOS, promptInstall } = usePWAInstall();
+  const { isDark, toggleTheme } = useTheme();
   const [showPwaModal, setShowPwaModal] = useState(false);
-  const [timeString, setTimeString] = useState('');
+  const [currentTime, setCurrentTime] = useState({
+    time: '',
+    seconds: '',
+    ampm: '',
+    date: '',
+    shortTime: '',
+  });
   const [networkStatus, setNetworkStatus] = useState<'online' | 'syncing' | 'offline'>(
     typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'online'
   );
@@ -81,7 +91,21 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   useEffect(() => {
     const update = () => {
-      setTimeString(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      const d = new Date();
+      const hours = d.getHours();
+      const minutes = d.getMinutes().toString().padStart(2, '0');
+      const seconds = d.getSeconds().toString().padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const formattedHours = (hours % 12 || 12).toString().padStart(2, '0');
+      const dateStr = d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+
+      setCurrentTime({
+        time: `${formattedHours}:${minutes}`,
+        seconds,
+        ampm,
+        date: dateStr,
+        shortTime: `${formattedHours}:${minutes} ${ampm}`,
+      });
     };
     update();
     const interval = setInterval(update, 1000);
@@ -179,11 +203,48 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="font-mono uppercase">{networkStatus}</span>
           </div>
 
-          {/* Live Clock — hidden on small mobile */}
-          <div className="hidden md:flex items-center gap-1.5 bg-neutral-100 text-neutral-600 px-2.5 py-1.5 rounded-xl text-[11px] font-mono font-bold border border-neutral-200/60">
-            <Clock className="w-3 h-3 text-neutral-400" />
-            <span>{timeString}</span>
+          {/* Live High-Precision Clock (Desktop & Tablet) */}
+          <div 
+            title="Realtime Club Operations Clock (Synchronized Live)"
+            className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gradient-to-r from-neutral-900 to-neutral-800 text-white shadow-xs select-none border border-neutral-700/40"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            </span>
+            <span className="hidden xl:inline text-[11px] font-bold text-neutral-300">
+              {currentTime.date} •
+            </span>
+            <div className="flex items-baseline font-mono font-bold tracking-tight">
+              <span className="text-xs text-white">{currentTime.time}</span>
+              <span className="text-[10px] text-amber-400 font-extrabold ml-0.5">:{currentTime.seconds}</span>
+              <span className="text-[9px] text-neutral-400 font-sans font-extrabold uppercase ml-1">{currentTime.ampm}</span>
+            </div>
           </div>
+
+          {/* Compact Live Clock for Mobile */}
+          <div 
+            className="sm:hidden flex items-center gap-1.5 px-2 py-1 rounded-lg bg-neutral-900 text-white text-[10px] font-mono font-bold border border-neutral-800"
+            title="Live Operations Clock"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+            <span>{currentTime.shortTime}</span>
+          </div>
+
+          {/* Dark / Light Theme Toggle */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            title={isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
+            aria-label="Toggle Dark/Light Theme"
+            className="p-2 rounded-xl text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 transition-all cursor-pointer border border-transparent hover:border-neutral-200 active:scale-95 shrink-0"
+          >
+            {isDark ? (
+              <Sun className="w-4 h-4 text-amber-400" />
+            ) : (
+              <Moon className="w-4 h-4 text-neutral-700" />
+            )}
+          </button>
 
           {/* Sound FX Audio Toggle */}
           <button

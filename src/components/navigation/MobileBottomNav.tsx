@@ -14,10 +14,13 @@ import {
   Camera,
   QrCode,
   X,
-  ChevronRight
+  ChevronRight,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { PageView, UserRole } from '../../types';
 import { canAccessPage } from '../../utils/permissions';
+import { useTheme } from '../../context/ThemeContext';
 
 interface MobileBottomNavProps {
   activePage: PageView;
@@ -145,12 +148,23 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-white/5">
               <h3 className="text-sm font-extrabold text-white tracking-tight">All Sections</h3>
-              <button
-                onClick={() => setIsMoreOpen(false)}
-                className="p-1.5 rounded-xl bg-white/5 text-neutral-400 hover:text-white transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  title={isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 text-xs font-bold text-neutral-200 hover:text-white cursor-pointer active:scale-95"
+                >
+                  {isDark ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-neutral-300" />}
+                  <span>{isDark ? 'Light' : 'Dark'}</span>
+                </button>
+                <button
+                  onClick={() => setIsMoreOpen(false)}
+                  className="p-1.5 rounded-xl bg-white/5 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Grid of Items */}

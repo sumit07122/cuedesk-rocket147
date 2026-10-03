@@ -23,10 +23,14 @@ if ('serviceWorker' in navigator) {
   }
 }
 
+import { ThemeProvider } from './context/ThemeContext';
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      <ThemeProvider>
+        <App />
+      </ThemeProvider>
     </ErrorBoundary>
   </StrictMode>,
 );

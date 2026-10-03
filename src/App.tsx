@@ -411,6 +411,11 @@ function StaffClubApp() {
     addToast('warning', 'Table Deleted', 'Table removed from Firestore database.');
   };
 
+  const handleEditTable = async (updatedTable: TableItem) => {
+    await saveTable(updatedTable, user?.email);
+    addToast('success', 'Gaming Station Updated', `Station #${updatedTable.number} "${updatedTable.name}" updated successfully.`);
+  };
+
   const handleAddMenuItem = async (newItemData: Omit<MenuItem, 'id'>) => {
     const newItem: MenuItem = {
       ...newItemData,
@@ -418,6 +423,11 @@ function StaffClubApp() {
     };
     await saveMenuItem(newItem, user?.email);
     addToast('success', 'Menu Item Added', `${newItem.name} saved in Firestore.`);
+  };
+
+  const handleEditMenuItem = async (updatedItem: MenuItem) => {
+    await saveMenuItem(updatedItem, user?.email);
+    addToast('success', 'Menu Item Updated', `${updatedItem.name} updated successfully.`);
   };
 
   const handleDeleteMenuItem = async (itemId: string) => {
@@ -697,10 +707,10 @@ function StaffClubApp() {
                   addToast('success', 'Settings Saved', 'Business configuration updated in Firestore.');
                 }}
                 onAddTable={handleAddTable}
-                onEditTable={saveTable}
+                onEditTable={handleEditTable}
                 onDeleteTable={handleDeleteTable}
                 onAddMenuItem={handleAddMenuItem}
-                onEditMenuItem={saveMenuItem}
+                onEditMenuItem={handleEditMenuItem}
                 onDeleteMenuItem={handleDeleteMenuItem}
                 onSaveEmployee={saveEmployee}
                 onDeleteEmployee={deleteEmployee}
@@ -783,6 +793,7 @@ function StaffClubApp() {
           setIsTransferOpen(true);
         }}
         onRemoveOrderItem={role === 'worker' ? undefined : handleRemoveOrderItem}
+        onEditStation={handleEditTable}
       />
 
       {/* Transfer Table Modal */}

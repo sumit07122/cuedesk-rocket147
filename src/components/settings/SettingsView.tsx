@@ -33,7 +33,9 @@ import {
   Clock,
   Eye,
   EyeOff,
-  Database
+  Database,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { TableItem, MenuItem, BusinessConfig, TableType, TopCustomer, SessionHistoryItem, EmployeeUser } from '../../types';
 import { Card } from '../ui/Card';
@@ -41,6 +43,7 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Badge } from '../ui/Badge';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { formatCurrency, formatPerMinuteRate } from '../../utils/formatters';
 import { exportClubBackup, downloadBackupFile, restoreClubBackup, ClubBackupSnapshot } from '../../utils/backupService';
 import { 
@@ -102,6 +105,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onDeleteEmployee,
 }) => {
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('profile');
+  const { isDark, setTheme } = useTheme();
 
   // Business Config Form State
   const [businessForm, setBusinessForm] = useState<BusinessConfig>(config);
@@ -297,6 +301,41 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div>
                 <h3 className="text-base font-extrabold text-neutral-900">Club Identity & Branding</h3>
                 <p className="text-xs text-neutral-500 mt-0.5">Details printed on customer billing receipts and displayed across staff screens.</p>
+              </div>
+
+              {/* Display Theme & Appearance Card */}
+              <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-xs font-black text-neutral-900 uppercase tracking-wider flex items-center gap-1.5">
+                    {isDark ? <Moon className="w-4 h-4 text-amber-400" /> : <Sun className="w-4 h-4 text-amber-500" />}
+                    Display Theme & Appearance
+                  </h4>
+                  <p className="text-[11px] text-neutral-500 mt-0.5">
+                    Switch between Obsidian Dark Mode (recommended for gaming arenas) and Crisp Light Mode.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 p-1 bg-white rounded-xl border border-neutral-200 shadow-2xs self-start sm:self-auto shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setTheme('light')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      !isDark ? 'bg-amber-500 text-black shadow-xs' : 'text-neutral-600 hover:text-black'
+                    }`}
+                  >
+                    <Sun className="w-3.5 h-3.5" />
+                    <span>Light</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTheme('dark')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      isDark ? 'bg-neutral-900 text-white shadow-xs' : 'text-neutral-600 hover:text-black'
+                    }`}
+                  >
+                    <Moon className="w-3.5 h-3.5" />
+                    <span>Dark</span>
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
@@ -613,21 +652,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
               {/* Add / Edit Station Modal */}
               {showAddTable && (
-                <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-                  <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+                <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50">
+                  <div className="bg-white rounded-3xl p-5 sm:p-6 max-w-md w-full mx-2 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
                     <div className="flex items-center justify-between border-b pb-3">
                       <h4 className="font-extrabold text-neutral-900 text-sm">
                         {editingTable ? `Edit Station #${editingTable.number}` : 'Add New Gaming Station'}
                       </h4>
-                      <button onClick={() => setShowAddTable(false)} className="p-1 text-neutral-400 hover:text-black">
+                      <button onClick={() => setShowAddTable(false)} className="p-1 text-neutral-400 hover:text-black cursor-pointer">
                         <X className="w-5 h-5" />
                       </button>
                     </div>
 
-                    <div className="space-y-3 text-xs">
+                    <div className="space-y-3.5 text-xs">
                       <div className="grid grid-cols-3 gap-3">
                         <div className="col-span-1">
-                          <label className="font-bold text-neutral-700 block mb-1">Number</label>
+                          <label className="font-bold text-neutral-700 block mb-1">Station #</label>
                           <Input
                             type="number"
                             min="1"
@@ -672,6 +711,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         </span>
                       </div>
 
+                      <div className="pt-2 border-t border-neutral-100">
+                        <label className="flex items-center gap-2.5 cursor-pointer font-bold text-neutral-800 py-1">
+                          <input
+                            type="checkbox"
+                            checked={newTableMaintenance}
+                            onChange={(e) => setNewTableMaintenance(e.target.checked)}
+                            className="w-4 h-4 rounded text-amber-500 focus:ring-amber-400"
+                          />
+                          <span>Station Under Maintenance</span>
+                        </label>
+                        <p className="text-[10px] text-neutral-400 ml-6">
+                          When checked, station is marked unavailable for new gaming sessions.
+                        </p>
+                      </div>
                     </div>
 
                     <div className="flex justify-end gap-2 pt-3 border-t">
@@ -690,7 +743,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               name: newTableName.trim(),
                               type: newTableType,
                               hourlyRate: newTableRate,
-                              perMinuteRate: Number((newTableRate / 60).toFixed(2))
+                              perMinuteRate: Number((newTableRate / 60).toFixed(2)),
+                              isMaintenance: newTableMaintenance,
+                              status: newTableMaintenance 
+                                ? 'maintenance' 
+                                : (editingTable.status === 'maintenance' ? 'available' : editingTable.status)
                             });
                           } else {
                             onAddTable({
@@ -698,7 +755,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               name: newTableName.trim(),
                               type: newTableType,
                               hourlyRate: newTableRate,
-                              perMinuteRate: Number((newTableRate / 60).toFixed(2))
+                              perMinuteRate: Number((newTableRate / 60).toFixed(2)),
+                              isMaintenance: newTableMaintenance,
                             });
                           }
                           setShowAddTable(false);

@@ -14,12 +14,17 @@ import {
   Sparkles,
   Tag,
   QrCode,
-  Trophy
+  Trophy,
+  Edit3,
+  Save,
+  Check,
+  X
 } from 'lucide-react';
-import { TableItem, SessionData } from '../../types';
+import { TableItem, SessionData, TableType } from '../../types';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
+import { Input } from '../ui/Input';
 import { formatCurrency, formatPerMinuteRate, calculateSessionSeconds, formatTimerString, calculateBillTotals } from '../../utils/formatters';
 
 interface TableDetailsModalProps {
@@ -38,6 +43,7 @@ interface TableDetailsModalProps {
   onOpenTransferTable: (table: TableItem) => void;
   canTransfer?: boolean;
   onRemoveOrderItem?: (tableId: string, orderId: string) => void;
+  onEditStation?: (table: TableItem) => void;
 }
 
 export const TableDetailsModal: React.FC<TableDetailsModalProps> = ({
@@ -56,12 +62,47 @@ export const TableDetailsModal: React.FC<TableDetailsModalProps> = ({
   onOpenTransferTable,
   canTransfer = true,
   onRemoveOrderItem,
+  onEditStation,
 }) => {
   const [now, setNow] = useState(Date.now());
   const [p1Frames, setP1Frames] = useState(0);
   const [p2Frames, setP2Frames] = useState(0);
   const [player1Name, setPlayer1Name] = useState('Player 1');
   const [player2Name, setPlayer2Name] = useState('Player 2');
+
+  // Inline Gaming Station Editor state
+  const [isEditingStation, setIsEditingStation] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editNumber, setEditNumber] = useState(1);
+  const [editRate, setEditRate] = useState(0);
+  const [editType, setEditType] = useState<TableType>('snooker');
+  const [editMaintenance, setEditMaintenance] = useState(false);
+
+  useEffect(() => {
+    if (table) {
+      setEditName(table.name);
+      setEditNumber(table.number);
+      setEditRate(table.hourlyRate);
+      setEditType(table.type);
+      setEditMaintenance(Boolean(table.isMaintenance || table.status === 'maintenance'));
+      setIsEditingStation(false);
+    }
+  }, [table, isOpen]);
+
+  const handleSaveStationEdit = () => {
+    if (!editName.trim() || !onEditStation || !table) return;
+    onEditStation({
+      ...table,
+      name: editName.trim(),
+      number: editNumber,
+      hourlyRate: editRate,
+      perMinuteRate: Number((editRate / 60).toFixed(2)),
+      type: editType,
+      isMaintenance: editMaintenance,
+      status: editMaintenance ? 'maintenance' : (table.status === 'maintenance' ? 'available' : table.status),
+    });
+    setIsEditingStation(false);
+  };
 
   useEffect(() => {
     if (table?.currentSession?.customerName) {
@@ -100,7 +141,7 @@ export const TableDetailsModal: React.FC<TableDetailsModalProps> = ({
     >
       <div className="flex flex-col gap-5 pt-1">
         {/* Status & Rate Bar */}
-        <div className="flex items-center justify-between p-3.5 rounded-2xl bg-neutral-50 border border-neutral-200/80">
+        <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-neutral-50 border border-neutral-200/80">
           <div className="flex items-center gap-2">
             <Badge variant={table.status} />
             <span className="text-xs text-neutral-500 font-medium">
@@ -109,20 +150,97 @@ export const TableDetailsModal: React.FC<TableDetailsModalProps> = ({
             </span>
           </div>
 
-          {!isOccupied && (
-            <Button
-              variant="primary"
-              size="sm"
-              leftIcon={<Play className="w-4 h-4 fill-current text-white" />}
-              onClick={() => {
-                onClose();
-                onStartSession(table);
-              }}
-            >
-              Start Session
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {onEditStation && (
+              <button
+                type="button"
+                onClick={() => setIsEditingStation(!isEditingStation)}
+                title="Edit Station Name, Rate, or Maintenance"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                  isEditingStation
+                    ? 'bg-amber-500 text-black border-amber-600 shadow-xs'
+                    : 'bg-white text-neutral-700 hover:text-black border-neutral-200 hover:bg-neutral-100'
+                }`}
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>{isEditingStation ? 'Close' : 'Edit Station'}</span>
+              </button>
+            )}
+
+            {!isOccupied && (
+              <Button
+                variant="primary"
+                size="sm"
+                leftIcon={<Play className="w-4 h-4 fill-current text-white" />}
+                onClick={() => {
+                  onClose();
+                  onStartSession(table);
+                }}
+              >
+                Start Session
+              </Button>
+            )}
+          </div>
         </div>
+
+        {/* Quick Inline Station Editor */}
+        {isEditingStation && (
+          <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/90 space-y-3 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                Edit Gaming Station #{table.number}
+              </span>
+              <button
+                onClick={() => setIsEditingStation(false)}
+                className="text-neutral-400 hover:text-neutral-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="sm:col-span-2">
+                <label className="font-bold text-neutral-700 block mb-1">Station Name</label>
+                <Input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="Station Name"
+                />
+              </div>
+
+              <div className="sm:col-span-1">
+                <label className="font-bold text-neutral-700 block mb-1">Hourly Rate ({currencySymbol})</label>
+                <Input
+                  type="number"
+                  value={editRate}
+                  onChange={(e) => setEditRate(parseFloat(e.target.value) || 0)}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-amber-200/60">
+              <label className="flex items-center gap-2 text-xs font-bold text-neutral-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editMaintenance}
+                  onChange={(e) => setEditMaintenance(e.target.checked)}
+                  className="w-4 h-4 rounded text-amber-500 focus:ring-amber-400"
+                />
+                <span>Under Maintenance</span>
+              </label>
+
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setIsEditingStation(false)}>
+                  Cancel
+                </Button>
+                <Button variant="primary" size="sm" leftIcon={<Save className="w-3.5 h-3.5" />} onClick={handleSaveStationEdit}>
+                  Save Station
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* OCCUPIED SESSION WORKSPACE */}
         {isOccupied && session ? (

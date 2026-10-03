@@ -87,8 +87,20 @@ import {
 
 export const useRealtimeClubData = (clubId: string, role: UserRole = 'owner') => {
   const [config, setConfig] = useState<BusinessConfig>(initialBusinessConfig);
-  const [tables, setTables] = useState<TableItem[]>(initialTables);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(initialMenuItems);
+  const [tables, setTables] = useState<TableItem[]>(() => {
+    try {
+      const cached = localStorage.getItem(`cuedesk_tables_${clubId}`);
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return initialTables;
+  });
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(() => {
+    try {
+      const cached = localStorage.getItem(`cuedesk_menu_${clubId}`);
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return initialMenuItems;
+  });
   const [history, setHistory] = useState<SessionHistoryItem[]>(initialSessionHistory);
   const [topCustomers, setTopCustomers] = useState<TopCustomer[]>(initialTopCustomers);
   const [sessionRequests, setSessionRequests] = useState<SessionRequest[]>([]);
@@ -114,11 +126,19 @@ export const useRealtimeClubData = (clubId: string, role: UserRole = 'owner') =>
     const unsubTables = subscribeTables(clubId, (data) => {
       if (data && data.length > 0) {
         setTables(data);
+        try {
+          localStorage.setItem(`cuedesk_tables_${clubId}`, JSON.stringify(data));
+        } catch {}
       }
       setIsLoading(false);
     });
     const unsubMenuItems = subscribeMenuItems(clubId, (data) => {
-      if (data && data.length > 0) setMenuItems(data);
+      if (data && data.length > 0) {
+        setMenuItems(data);
+        try {
+          localStorage.setItem(`cuedesk_menu_${clubId}`, JSON.stringify(data));
+        } catch {}
+      }
     });
     const unsubHistory = subscribeHistory(clubId, (data) => {
       if (data) setHistory(data);
@@ -179,13 +199,45 @@ export const useRealtimeClubData = (clubId: string, role: UserRole = 'owner') =>
   };
 
   const handleSaveTable = async (table: TableItem, userEmail: string = 'system') => {
-    await saveTable(clubId, table);
-    await logAuditEvent(clubId, 'SAVE_TABLE', userEmail, `Saved table ${table.name}`);
+    // 1. Optimistically update local state immediately so user sees edits instantly
+    setTables((prev) => {
+      const idx = prev.findIndex((t) => t.id === table.id);
+      let updated: TableItem[];
+      if (idx >= 0) {
+        updated = [...prev];
+        updated[idx] = { ...updated[idx], ...table };
+      } else {
+        updated = [...prev, table];
+      }
+      try {
+        localStorage.setItem(`cuedesk_tables_${clubId}`, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    try {
+      await saveTable(clubId, table);
+      await logAuditEvent(clubId, 'SAVE_TABLE', userEmail, `Saved table #${table.number} ${table.name}`);
+    } catch (err) {
+      console.warn('Note: Table saved locally, pending cloud sync:', err);
+    }
   };
 
   const handleDeleteTable = async (tableId: string, userEmail: string = 'system') => {
-    await deleteTableDoc(clubId, tableId);
-    await logAuditEvent(clubId, 'DELETE_TABLE', userEmail, `Deleted table ID ${tableId}`);
+    setTables((prev) => {
+      const updated = prev.filter((t) => t.id !== tableId);
+      try {
+        localStorage.setItem(`cuedesk_tables_${clubId}`, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    try {
+      await deleteTableDoc(clubId, tableId);
+      await logAuditEvent(clubId, 'DELETE_TABLE', userEmail, `Deleted table ID ${tableId}`);
+    } catch (err) {
+      console.warn('Note: Table removed locally, pending cloud sync:', err);
+    }
   };
 
   const handleStartSession = async (tableId: string, session: SessionData, userEmail: string = 'system') => {
@@ -250,13 +302,44 @@ export const useRealtimeClubData = (clubId: string, role: UserRole = 'owner') =>
   };
 
   const handleSaveMenuItem = async (item: MenuItem, userEmail: string = 'system') => {
-    await saveMenuItem(clubId, item);
-    await logAuditEvent(clubId, 'SAVE_MENU_ITEM', userEmail, `Saved menu item ${item.name}`);
+    setMenuItems((prev) => {
+      const idx = prev.findIndex((m) => m.id === item.id);
+      let updated: MenuItem[];
+      if (idx >= 0) {
+        updated = [...prev];
+        updated[idx] = { ...updated[idx], ...item };
+      } else {
+        updated = [...prev, item];
+      }
+      try {
+        localStorage.setItem(`cuedesk_menu_${clubId}`, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    try {
+      await saveMenuItem(clubId, item);
+      await logAuditEvent(clubId, 'SAVE_MENU_ITEM', userEmail, `Saved menu item ${item.name}`);
+    } catch (err) {
+      console.warn('Note: Menu item saved locally, pending cloud sync:', err);
+    }
   };
 
   const handleDeleteMenuItem = async (itemId: string, userEmail: string = 'system') => {
-    await deleteMenuItemDoc(clubId, itemId);
-    await logAuditEvent(clubId, 'DELETE_MENU_ITEM', userEmail, `Deleted menu item ID ${itemId}`);
+    setMenuItems((prev) => {
+      const updated = prev.filter((m) => m.id !== itemId);
+      try {
+        localStorage.setItem(`cuedesk_menu_${clubId}`, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    try {
+      await deleteMenuItemDoc(clubId, itemId);
+      await logAuditEvent(clubId, 'DELETE_MENU_ITEM', userEmail, `Deleted menu item ID ${itemId}`);
+    } catch (err) {
+      console.warn('Note: Menu item deleted locally, pending cloud sync:', err);
+    }
   };
 
   const handleCustomerSessionRequest = async (tableId: string, name: string, phone: string, count: number = 2) => {
