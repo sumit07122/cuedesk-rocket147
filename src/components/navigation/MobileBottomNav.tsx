@@ -11,6 +11,7 @@ import {
   UserCheck,
   TrendingUp,
   ClipboardList,
+  Camera,
   QrCode,
   X,
   ChevronRight
@@ -37,7 +38,8 @@ const moreItems = [
   { id: 'employees' as PageView, label: 'Staff', icon: UserCheck },
   { id: 'expenses' as PageView, label: 'Expenses & Profit', icon: TrendingUp },
   { id: 'reports' as PageView, label: 'Reports & Analytics', icon: BarChart3 },
-  { id: 'daily-report' as PageView, label: 'Daily Report', icon: ClipboardList },
+  { id: 'daily-report' as PageView, label: 'Day Close & EOD', icon: ClipboardList },
+  { id: 'ai-camera' as PageView, label: 'AI Vision & Cameras', icon: Camera },
   { id: 'settings' as PageView, label: 'Club Settings', icon: Settings },
 ];
 

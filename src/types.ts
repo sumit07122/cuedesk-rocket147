@@ -106,6 +106,7 @@ export type PageView =
   | 'maintenance'
   | 'reports'
   | 'daily-report'
+  | 'ai-camera'
   | 'settings'
   | 'lockers'
   | 'arena'
@@ -635,4 +636,23 @@ export interface DailyLedgerRecord {
     paymentMethod: string;
     paymentStatus: string;
   }[];
+}
+
+export interface CameraConfig {
+  id: string;
+  name: string;
+  type: 'webcam' | 'cpplus_ip' | 'rtsp_proxy' | 'simulation';
+  deviceId?: string;
+  ipAddress?: string;
+  port?: number;
+  channel?: number;
+  username?: string;
+  password?: string;
+  streamUrl?: string;
+  assignedTableId?: string;
+  assignedTableName?: string;
+  detectionEnabled: boolean;
+  sensitivity: number;
+  autoStartEnabled: boolean;
+  status: 'connected' | 'disconnected' | 'streaming';
 }

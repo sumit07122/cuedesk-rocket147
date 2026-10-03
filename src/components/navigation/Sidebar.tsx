@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Camera,
   X
 } from 'lucide-react';
 import { PageView, UserRole } from '../../types';
@@ -158,6 +159,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: ClipboardList, 
           minRole: 'worker',
           tooltip: 'Day closing, cash drawer reconciliation & historical day vault'
+        },
+        { 
+          id: 'ai-camera', 
+          label: 'AI Vision & Cameras', 
+          icon: Camera, 
+          minRole: 'manager',
+          tooltip: 'CP Plus CCTV stream, player motion detection & auto-timers'
         },
         { 
           id: 'settings', 

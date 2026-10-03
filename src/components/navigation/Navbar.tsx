@@ -45,6 +45,7 @@ const pageTitles: Record<PageView, { title: string; subtitle: string }> = {
   maintenance: { title: 'Daily Report', subtitle: 'Daily transactions and audit ledger' },
   reports: { title: 'Reports & Analytics', subtitle: 'Revenue, peak hours & top members' },
   'daily-report': { title: 'Day Management & EOD Vault', subtitle: 'End-of-day closing, cash drawer reconciliation & permanent archives' },
+  'ai-camera': { title: 'AI Camera Vision & Monitoring', subtitle: 'CP Plus CCTV integration, player motion tracking & automated table timers' },
   settings: { title: 'Club Settings', subtitle: 'Pricing, tables, roles & backup' },
   lockers: { title: 'Cue Lockers', subtitle: 'Member locker allocations & cue sticks' },
   arena: { title: 'Gaming Arena', subtitle: 'Arcade, VR & station tracking' },

@@ -27,6 +27,7 @@ import { EmployeeManagementView } from './components/employees/EmployeeManagemen
 import { ExpenseProfitView } from './components/expenses/ExpenseProfitView';
 import { ReportsView } from './components/reports/ReportsView';
 import { DailyReportView } from './components/reports/DailyReportView';
+import { AICameraVisionView } from './components/camera/AICameraVisionView';
 import { SettingsView } from './components/settings/SettingsView';
 import { LoginView } from './components/auth/LoginView';
 import { ToastContainer, ToastMessage } from './components/ui/Toast';
@@ -665,6 +666,21 @@ function StaffClubApp() {
                 tables={tables}
                 currencySymbol={config.currencySymbol}
                 timeZone={businessTimeZone}
+              />
+            </RoleGuard>
+          ) : activePage === 'ai-camera' ? (
+            <RoleGuard requiredPage="ai-camera" onNavigateHome={() => setActivePage('dashboard')}>
+              <AICameraVisionView
+                tables={tables}
+                currencySymbol={config.currencySymbol}
+                onStartSession={async (tableId, customerName, hourlyRate) => {
+                  await startSession(tableId, customerName, hourlyRate);
+                  addToast('success', 'AI Session Auto-Started', `Timer live on table`);
+                }}
+                onStopSession={async (tableId) => {
+                  setSelectedTableId(tableId);
+                  setActivePage('billing');
+                }}
               />
             </RoleGuard>
           ) : activePage === 'settings' ? (
