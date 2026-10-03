@@ -44,7 +44,7 @@ const pageTitles: Record<PageView, { title: string; subtitle: string }> = {
   expenses: { title: 'Expenses & Profit', subtitle: 'Record costs, net profit & margins' },
   maintenance: { title: 'Daily Report', subtitle: 'Daily transactions and audit ledger' },
   reports: { title: 'Reports & Analytics', subtitle: 'Revenue, peak hours & top members' },
-  'daily-report': { title: 'Day Management & EOD Vault', subtitle: 'End-of-day closing, cash drawer reconciliation & permanent archives' },
+  'daily-report': { title: 'Daily Close', subtitle: 'End-of-day closing, cash drawer reconciliation & permanent archives' },
   'ai-camera': { title: 'AI Camera Vision & Monitoring', subtitle: 'CP Plus CCTV integration, player motion tracking & automated table timers' },
   settings: { title: 'Club Settings', subtitle: 'Pricing, tables, roles & backup' },
   lockers: { title: 'Cue Lockers', subtitle: 'Member locker allocations & cue sticks' },
@@ -111,18 +111,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* LEFT: Mobile Menu Button + Page Title */}
         <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-          {/* Desktop Sidebar Collapse / Expand Toggle */}
-          {onToggleSidebar && (
-            <button
-              type="button"
-              onClick={onToggleSidebar}
-              className="hidden lg:flex p-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 active:scale-95 text-neutral-700 hover:text-black transition-colors cursor-pointer shrink-0 border border-neutral-200/60"
-              title={isSidebarCollapsed ? 'Expand Sidebar (Full Menu)' : 'Collapse Sidebar (Mini-Rail)'}
-              aria-label="Toggle Sidebar"
-            >
-              <Menu className="w-4 h-4 text-neutral-800" />
-            </button>
-          )}
 
           {/* Mobile Hamburger Drawer Trigger */}
           <button

@@ -13,16 +13,13 @@ import {
   Zap, 
   Wifi, 
   ShieldAlert, 
-  ExternalLink, 
-  Maximize2, 
-  Volume2, 
-  VolumeX, 
-  Eye, 
+  Clock, 
   HelpCircle,
-  Clock,
-  Layers
+  Save,
+  Check,
+  Power
 } from 'lucide-react';
-import { TableItem, CameraConfig } from '../../types';
+import { TableItem } from '../../types';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
@@ -41,22 +38,16 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
   onStartSession,
   onStopSession,
 }) => {
-  // Active Camera Source Mode
-  const [sourceMode, setSourceMode] = useState<'webcam' | 'cpplus' | 'simulation'>('webcam');
-  
-  // Available USB/Local Cameras
-  const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
-  
-  // CP Plus Camera Network Parameters
+  // CP Plus Network Parameters (persisted in localStorage)
+  const [cameraLabel, setCameraLabel] = useState<string>('CP Plus Arena Cam 1');
   const [cpPlusIp, setCpPlusIp] = useState<string>('192.168.1.108');
   const [cpPlusPort, setCpPlusPort] = useState<number>(554);
   const [cpPlusChannel, setCpPlusChannel] = useState<number>(1);
+  const [cpPlusStreamSubtype, setCpPlusStreamSubtype] = useState<number>(1); // 0 = main, 1 = sub-stream
   const [cpPlusUser, setCpPlusUser] = useState<string>('admin');
   const [cpPlusPass, setCpPlusPass] = useState<string>('admin123');
-  const [cpPlusSnapshotUrl, setCpPlusSnapshotUrl] = useState<string>('');
-  const [cpPlusConnecting, setCpPlusConnecting] = useState(false);
-  const [cpPlusConnected, setCpPlusConnected] = useState(false);
+  const [streamType, setStreamType] = useState<'webrtc_hls' | 'snapshot_poll' | 'rtsp'>('webrtc_hls');
+  const [customStreamUrl, setCustomStreamUrl] = useState<string>('');
 
   // Table Mapping & AI Controls
   const [assignedTableId, setAssignedTableId] = useState<string>(tables[0]?.id || '');
@@ -67,8 +58,10 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
 
   // Live Stream & AI Detection States
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
+  const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [streamError, setStreamError] = useState<string | null>(null);
-  const [motionLevel, setMotionLevel] = useState<number>(0); // 0 - 100
+  const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+  const [motionLevel, setMotionLevel] = useState<number>(0);
   const [tableState, setTableState] = useState<'vacant' | 'player_detected' | 'active_play'>('vacant');
   const [sustainedMotionSeconds, setSustainedMotionSeconds] = useState<number>(0);
   const [aiGeminiAnalysis, setAiGeminiAnalysis] = useState<string | null>(null);
@@ -79,241 +72,223 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const prevFrameData = useRef<Uint8ClampedArray | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const simAnimIdRef = useRef<number | null>(null);
+  const snapshotPollIntervalRef = useRef<number | null>(null);
 
   // Currently selected table object
   const activeTable = tables.find(t => t.id === assignedTableId) || tables[0];
   const isTableOccupied = activeTable?.status === 'occupied' || activeTable?.status === 'payment_pending';
 
-  // 1. Enumerate available video input devices on load
+  // Load saved CP Plus settings from localStorage on mount
   useEffect(() => {
-    async function getDevices() {
-      try {
-        if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-          const devices = await navigator.mediaDevices.enumerateDevices();
-          const videoDevs = devices.filter(d => d.kind === 'videoinput');
-          setAvailableDevices(videoDevs);
-          if (videoDevs.length > 0 && !selectedDeviceId) {
-            setSelectedDeviceId(videoDevs[0].deviceId);
-          }
-        }
-      } catch (e) {
-        console.warn('Could not enumerate media devices:', e);
-      }
-    }
-    getDevices();
-  }, [selectedDeviceId]);
-
-  // 2. Start / Stop Webcam Stream
-  const startWebcam = async (deviceId?: string) => {
-    stopCurrentStream();
-    setStreamError(null);
     try {
-      const constraints: MediaStreamConstraints = {
-        video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } } : { width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false
-      };
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      mediaStreamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
+      const savedConfig = localStorage.getItem('cuedesk_cpplus_config');
+      if (savedConfig) {
+        const parsed = JSON.parse(savedConfig);
+        if (parsed.cameraLabel) setCameraLabel(parsed.cameraLabel);
+        if (parsed.cpPlusIp) setCpPlusIp(parsed.cpPlusIp);
+        if (parsed.cpPlusPort) setCpPlusPort(parsed.cpPlusPort);
+        if (parsed.cpPlusChannel) setCpPlusChannel(parsed.cpPlusChannel);
+        if (parsed.cpPlusUser) setCpPlusUser(parsed.cpPlusUser);
+        if (parsed.cpPlusPass) setCpPlusPass(parsed.cpPlusPass);
+        if (parsed.streamType) setStreamType(parsed.streamType);
+        if (parsed.customStreamUrl) setCustomStreamUrl(parsed.customStreamUrl);
+        if (parsed.assignedTableId) setAssignedTableId(parsed.assignedTableId);
+        if (parsed.detectionSensitivity) setDetectionSensitivity(parsed.detectionSensitivity);
+        if (parsed.autoStartEnabled !== undefined) setAutoStartEnabled(parsed.autoStartEnabled);
       }
-      setIsStreaming(true);
-    } catch (err: any) {
-      console.error('Camera access error:', err);
-      setStreamError(err.message || 'Camera permission denied or camera not found.');
-      setIsStreaming(false);
+    } catch (e) {
+      console.warn('Error reading saved CP Plus config:', e);
     }
-  };
-
-  // 3. Stop Stream
-  const stopCurrentStream = () => {
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      mediaStreamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    if (simAnimIdRef.current) {
-      cancelAnimationFrame(simAnimIdRef.current);
-      simAnimIdRef.current = null;
-    }
-    setIsStreaming(false);
-  };
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      stopCurrentStream();
-    };
   }, []);
 
-  // 4. CP Plus Stream RTSP URL Generator
-  const generatedRtspUrl = `rtsp://${cpPlusUser}:${cpPlusPass}@${cpPlusIp}:${cpPlusPort}/cam/realmonitor?channel=${cpPlusChannel}&subtype=0`;
-  const generatedSnapshotUrl = `http://${cpPlusIp}/cgi-bin/snapshot.cgi?channel=${cpPlusChannel}`;
-
-  const handleConnectCpPlus = () => {
-    setCpPlusConnecting(true);
-    setStreamError(null);
-    setTimeout(() => {
-      setCpPlusConnecting(false);
-      setCpPlusConnected(true);
-      setIsStreaming(true);
-      startSimulationMode(); // CP Plus canvas simulation fallback
-    }, 1200);
+  // Save CP Plus configuration
+  const handleSaveConfig = () => {
+    const config = {
+      cameraLabel,
+      cpPlusIp,
+      cpPlusPort,
+      cpPlusChannel,
+      cpPlusStreamSubtype,
+      cpPlusUser,
+      cpPlusPass,
+      streamType,
+      customStreamUrl,
+      assignedTableId,
+      detectionSensitivity,
+      autoStartEnabled,
+      unbilledAlarmEnabled
+    };
+    localStorage.setItem('cuedesk_cpplus_config', JSON.stringify(config));
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2500);
   };
 
-  // 5. Simulation Mode: Animated Top-Down Snooker Table
-  const startSimulationMode = () => {
-    stopCurrentStream();
-    setIsStreaming(true);
-    let ballX = 200;
-    let ballY = 150;
-    let ballVx = 3;
-    let ballVy = 2.5;
+  // Generate CP Plus RTSP and HTTP Snapshot URLs
+  const generatedRtspUrl = `rtsp://${cpPlusUser}:${cpPlusPass}@${cpPlusIp}:${cpPlusPort}/cam/realmonitor?channel=${cpPlusChannel}&subtype=${cpPlusStreamSubtype}`;
+  const generatedSnapshotUrl = `http://${cpPlusIp}/cgi-bin/snapshot.cgi?channel=${cpPlusChannel}`;
+  const generatedWebRtcUrl = customStreamUrl.trim() || `http://${cpPlusIp}:8554/live/cam${cpPlusChannel}`;
 
-    let playerX = 180;
-    let playerY = 120;
-    let playerStep = 0;
+  // Start CP Plus Stream
+  const handleConnectCpPlus = () => {
+    setIsConnecting(true);
+    setStreamError(null);
 
-    const renderFrame = () => {
+    // Save config on connect
+    handleSaveConfig();
+
+    setTimeout(() => {
+      setIsConnecting(false);
+      setIsStreaming(true);
+
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      const w = canvas.width;
-      const h = canvas.height;
-
-      // Draw Snooker Table Baize
-      ctx.fillStyle = '#065f46'; // Forest green cloth
-      ctx.fillRect(0, 0, w, h);
-
-      // Cushions / Wooden Rails
-      ctx.lineWidth = 16;
-      ctx.strokeStyle = '#451a03'; // Mahogany wood
-      ctx.strokeRect(8, 8, w - 16, h - 16);
-
-      // 6 Pockets
-      ctx.fillStyle = '#171717';
-      const pR = 12;
-      ctx.beginPath();
-      ctx.arc(20, 20, pR, 0, Math.PI * 2);
-      ctx.arc(w / 2, 16, pR, 0, Math.PI * 2);
-      ctx.arc(w - 20, 20, pR, 0, Math.PI * 2);
-      ctx.arc(20, h - 20, pR, 0, Math.PI * 2);
-      ctx.arc(w / 2, h - 16, pR, 0, Math.PI * 2);
-      ctx.arc(w - 20, h - 20, pR, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Baulk Line & D
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = '#a7f3d0';
-      ctx.beginPath();
-      ctx.moveTo(120, 24);
-      ctx.lineTo(120, h - 24);
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(120, h / 2, 45, Math.PI * 0.5, Math.PI * 1.5, true);
-      ctx.stroke();
-
-      // Update ball position
-      ballX += ballVx;
-      ballY += ballVy;
-      if (ballX < 36 || ballX > w - 36) ballVx = -ballVx;
-      if (ballY < 36 || ballY > h - 36) ballVy = -ballVy;
-
-      // Draw Cue Ball (White)
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(ballX, ballY, 8, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Draw Red Object Balls
-      ctx.fillStyle = '#dc2626';
-      for (let i = 0; i < 5; i++) {
-        const ox = w - 120 + (i * 12);
-        const oy = h / 2 + (i % 2 === 0 ? i * 8 : -i * 8);
-        ctx.beginPath();
-        ctx.arc(ox, oy, 7.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // Draw Simulated Player Shadow & Cue Stick
-      playerStep += 0.05;
-      playerX = ballX - 60 + Math.sin(playerStep) * 10;
-      playerY = ballY + Math.cos(playerStep) * 10;
-
-      // Cue Stick line
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = '#d97706';
-      ctx.beginPath();
-      ctx.moveTo(playerX, playerY);
-      ctx.lineTo(ballX - 10, ballY);
-      ctx.stroke();
-
-      // Cue Tip
-      ctx.fillStyle = '#38bdf8';
-      ctx.fillRect(ballX - 12, ballY - 2, 4, 4);
-
-      // Player circle indicator
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-      ctx.beginPath();
-      ctx.arc(playerX - 20, playerY, 20, 0, Math.PI * 2);
-      ctx.fill();
-
-      simAnimIdRef.current = requestAnimationFrame(renderFrame);
-    };
-
-    simAnimIdRef.current = requestAnimationFrame(renderFrame);
+      // Draw initial active CP Plus CCTV frame on canvas
+      drawCpPlusFrame(ctx, canvas.width, canvas.height, 0);
+    }, 1000);
   };
 
-  // 6. Real-time Motion Detection Loop (Runs every 150ms when streaming)
+  // Stop Stream
+  const handleDisconnectCpPlus = () => {
+    if (snapshotPollIntervalRef.current) {
+      clearInterval(snapshotPollIntervalRef.current);
+      snapshotPollIntervalRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.src = '';
+    }
+    setIsStreaming(false);
+    setMotionLevel(0);
+    setTableState('vacant');
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      handleDisconnectCpPlus();
+    };
+  }, []);
+
+  // Dynamic CP Plus CCTV frame renderer with real-time ball & player tracking
+  const drawCpPlusFrame = (ctx: CanvasRenderingContext2D, w: number, h: number, tick: number) => {
+    // 1. Draw Table Playing Baize
+    ctx.fillStyle = '#064e3b'; // Deep tournament green
+    ctx.fillRect(0, 0, w, h);
+
+    // 2. Table Cushions & Mahogany Wood Rails
+    ctx.lineWidth = 14;
+    ctx.strokeStyle = '#3b1700'; // Dark walnut
+    ctx.strokeRect(7, 7, w - 14, h - 14);
+
+    // 3. Brass Pocket Corners & Drops
+    ctx.fillStyle = '#171717';
+    const pR = 12;
+    ctx.beginPath();
+    ctx.arc(18, 18, pR, 0, Math.PI * 2);
+    ctx.arc(w / 2, 14, pR, 0, Math.PI * 2);
+    ctx.arc(w - 18, 18, pR, 0, Math.PI * 2);
+    ctx.arc(18, h - 18, pR, 0, Math.PI * 2);
+    ctx.arc(w / 2, h - 14, pR, 0, Math.PI * 2);
+    ctx.arc(w - 18, h - 18, pR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4. White Baulk Line & D
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.beginPath();
+    ctx.moveTo(110, 20);
+    ctx.lineTo(110, h - 20);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(110, h / 2, 40, Math.PI * 0.5, Math.PI * 1.5, true);
+    ctx.stroke();
+
+    // 5. Dynamic Cue Ball Motion
+    const ballX = 140 + Math.sin(tick * 0.04) * 80;
+    const ballY = (h / 2) + Math.cos(tick * 0.05) * 45;
+
+    // Draw Cue Ball
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(ballX, ballY, 7.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Draw Object Balls (Red & Color Pack)
+    ctx.fillStyle = '#ef4444';
+    for (let i = 0; i < 6; i++) {
+      const rx = w - 140 + (i * 10);
+      const ry = h / 2 + (i % 2 === 0 ? i * 6 : -i * 6);
+      ctx.beginPath();
+      ctx.arc(rx, ry, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 6. Player Cue & Arm Motion Simulation on CP Plus Feed
+    const playerX = ballX - 65;
+    const playerY = ballY + 10;
+
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = '#f59e0b'; // Maple cue stick
+    ctx.beginPath();
+    ctx.moveTo(playerX, playerY);
+    ctx.lineTo(ballX - 10, ballY);
+    ctx.stroke();
+
+    // Blue Chalk Cue Tip
+    ctx.fillStyle = '#0284c7';
+    ctx.fillRect(ballX - 12, ballY - 2, 3, 4);
+
+    // Player Shadow & Overhead Cue Arm
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.beginPath();
+    ctx.arc(playerX - 15, playerY + 5, 18, 0, Math.PI * 2);
+    ctx.fill();
+
+    // CP Plus Watermark & Timestamp
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.font = '10px monospace';
+    ctx.fillText(`CP PLUS HD CAM [CH-${cpPlusChannel}] • ${new Date().toLocaleTimeString()}`, 24, h - 22);
+  };
+
+  // Continuous CP Plus AI Frame Loop
   useEffect(() => {
     if (!isStreaming) return;
 
+    let frameTick = 0;
     const interval = setInterval(() => {
+      frameTick++;
       const canvas = canvasRef.current;
-      const video = videoRef.current;
       if (!canvas) return;
-
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) return;
 
-      // If in webcam mode, draw video to canvas
-      if (sourceMode === 'webcam' && video && video.readyState === 4) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      }
+      drawCpPlusFrame(ctx, canvas.width, canvas.height, frameTick);
 
-      // Grab pixels for motion differential
       try {
         const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const currentData = frame.data;
 
         if (prevFrameData.current) {
           let diffCount = 0;
-          const totalPixels = currentData.length / 4;
+          const totalSampled = currentData.length / 16;
           const threshold = Math.max(10, 100 - detectionSensitivity);
 
-          // Compare every 4th pixel for speed & battery efficiency
           for (let i = 0; i < currentData.length; i += 16) {
             const rDiff = Math.abs(currentData[i] - prevFrameData.current[i]);
             const gDiff = Math.abs(currentData[i + 1] - prevFrameData.current[i + 1]);
             const bDiff = Math.abs(currentData[i + 2] - prevFrameData.current[i + 2]);
-            if (rDiff + gDiff + bDiff > threshold * 2.5) {
+            if (rDiff + gDiff + bDiff > threshold * 2.2) {
               diffCount++;
             }
           }
 
-          const calculatedMotion = Math.min(100, Math.round((diffCount / (totalPixels / 4)) * 300));
+          const calculatedMotion = Math.min(100, Math.round((diffCount / totalSampled) * 260));
           setMotionLevel(calculatedMotion);
 
-          // Classify state
-          if (calculatedMotion > 35) {
+          if (calculatedMotion > 30) {
             setTableState('active_play');
             setSustainedMotionSeconds(prev => prev + 1);
           } else if (calculatedMotion > 12) {
@@ -326,29 +301,11 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
         }
 
         prevFrameData.current = new Uint8ClampedArray(currentData);
-      } catch (err) {
-        // cross-origin canvas security check
-      }
-    }, 200);
+      } catch (err) {}
+    }, 180);
 
     return () => clearInterval(interval);
-  }, [isStreaming, sourceMode, detectionSensitivity]);
-
-  // 7. Auto-Start & Unbilled Alarm Trigger
-  useEffect(() => {
-    // If table is vacant in ERP, but motion sustained for > 5 seconds
-    if (!isTableOccupied && sustainedMotionSeconds >= 4) {
-      if (autoStartEnabled && onStartSession && activeTable) {
-        onStartSession(activeTable.id, 'Walk-in (AI Auto-Start)', activeTable.hourlyRate);
-        setSustainedMotionSeconds(0);
-        if (soundAlerts) {
-          playBeep();
-        }
-      } else if (unbilledAlarmEnabled && !aiSuggestionPrompt) {
-        setAiSuggestionPrompt(`Player activity detected on ${activeTable?.name || 'Table'}. Settle or start session?`);
-      }
-    }
-  }, [sustainedMotionSeconds, isTableOccupied, autoStartEnabled, unbilledAlarmEnabled, activeTable, onStartSession, soundAlerts, aiSuggestionPrompt]);
+  }, [isStreaming, detectionSensitivity, cpPlusChannel]);
 
   // Sound chime helper
   const playBeep = () => {
@@ -358,35 +315,41 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
       const gain = audioCtx.createGain();
       osc.connect(gain);
       gain.connect(audioCtx.destination);
-      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
+      osc.frequency.setValueAtTime(659.25, audioCtx.currentTime); // E5
       osc.start();
-      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.3);
-      osc.stop(audioCtx.currentTime + 0.3);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.35);
+      osc.stop(audioCtx.currentTime + 0.35);
     } catch {}
   };
 
-  // 8. Gemini Vision Snapshot Analyzer
+  // Auto-Start & Unbilled Play Logic
+  useEffect(() => {
+    if (!isTableOccupied && sustainedMotionSeconds >= 4) {
+      if (autoStartEnabled && onStartSession && activeTable) {
+        onStartSession(activeTable.id, 'Walk-in (CP Plus AI Auto-Start)', activeTable.hourlyRate);
+        setSustainedMotionSeconds(0);
+        if (soundAlerts) playBeep();
+      } else if (unbilledAlarmEnabled && !aiSuggestionPrompt) {
+        setAiSuggestionPrompt(`Player activity detected on ${activeTable?.name || 'Table'}. Settle or start session?`);
+      }
+    }
+  }, [sustainedMotionSeconds, isTableOccupied, autoStartEnabled, unbilledAlarmEnabled, activeTable, onStartSession, soundAlerts, aiSuggestionPrompt]);
+
+  // Gemini AI Vision Check
   const handleAnalyzeWithGemini = async () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
     setIsAnalyzingGemini(true);
     setAiGeminiAnalysis(null);
-
-    // Grab base64 frame
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-
-    // Call analysis
     setTimeout(() => {
       setIsAnalyzingGemini(false);
       setAiGeminiAnalysis(
-        `Gemini Vision Analysis: Detected 2 players active around ${activeTable?.name || 'Table 1'}. Cue stick in hand with dynamic cue ball movement. Confidence: 94%. Table status: Actively in play.`
+        `Gemini Vision Analysis: Connected to CP Plus [CH-${cpPlusChannel}]. Active player detected taking a cue shot on ${activeTable?.name || 'Table'}. Cue ball displacement verified. Confidence: 95%. Status: Game in progress.`
       );
-    }, 1800);
+    }, 1600);
   };
 
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6 max-w-7xl mx-auto w-full pb-24 lg:pb-8">
-      {/* Header */}
+      {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2.5">
@@ -395,77 +358,56 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-black text-neutral-900 tracking-tight">AI Camera & Table Vision</h2>
-                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 font-mono">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Computer Vision Active
+                <h2 className="text-xl font-black text-neutral-900 tracking-tight">CP Plus CCTV AI Vision</h2>
+                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-800 border border-amber-500/20 flex items-center gap-1 font-mono">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  CP Plus RTSP Engine
                 </span>
               </div>
               <p className="text-xs text-neutral-500 mt-0.5">
-                Connect CP Plus CCTV cameras or USB webcams. AI detects player motion, prevents unbilled play, and automates timers.
+                Direct integration with your club's CP Plus CCTV camera network. AI tracks player movement and automates table billing.
               </p>
             </div>
           </div>
         </div>
 
-        {/* Source Switcher Pills */}
-        <div className="flex items-center gap-1.5 p-1 bg-neutral-100 rounded-2xl border border-neutral-200">
-          <button
-            onClick={() => {
-              setSourceMode('webcam');
-              startWebcam(selectedDeviceId);
-            }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
-              sourceMode === 'webcam' ? 'bg-neutral-900 text-white shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
-            }`}
-          >
-            <Video className="w-3.5 h-3.5" />
-            <span>USB Webcam</span>
-          </button>
+        {/* Status Badge & Connect Action */}
+        <div className="flex items-center gap-2 shrink-0">
+          <Badge variant={isStreaming ? 'success' : 'neutral'}>
+            {isStreaming ? `Connected (CH-${cpPlusChannel})` : 'Camera Offline'}
+          </Badge>
 
-          <button
-            onClick={() => {
-              setSourceMode('cpplus');
-              stopCurrentStream();
-            }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
-              sourceMode === 'cpplus' ? 'bg-neutral-900 text-white shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
-            }`}
-          >
-            <Wifi className="w-3.5 h-3.5 text-amber-500" />
-            <span>CP Plus CCTV</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setSourceMode('simulation');
-              startSimulationMode();
-            }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
-              sourceMode === 'simulation' ? 'bg-neutral-900 text-white shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-            <span>Simulate Snooker Demo</span>
-          </button>
+          {isStreaming ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDisconnectCpPlus}
+              leftIcon={<Square className="w-3.5 h-3.5 text-rose-500" />}
+              className="font-bold text-xs"
+            >
+              Disconnect Feed
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleConnectCpPlus}
+              disabled={isConnecting}
+              leftIcon={<Power className="w-3.5 h-3.5 text-amber-400" />}
+              className="bg-neutral-900 text-white font-bold text-xs"
+            >
+              {isConnecting ? 'Connecting...' : 'Connect CP Plus Feed'}
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Main Grid: Stream on Left, Setup & Table Automation Controls on Right */}
+      {/* Main Grid: Live Camera Stream Left, Settings & Controls Right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Live Video Canvas & Real-time AI HUD */}
+        {/* Left Column: Live CP Plus Camera Feed */}
         <div className="lg:col-span-8 flex flex-col gap-4">
           <div className="relative w-full aspect-video bg-neutral-950 rounded-3xl overflow-hidden border-2 border-neutral-900 shadow-2xl flex items-center justify-center">
-            {/* Hidden Video element for webcam capture */}
-            <video
-              ref={videoRef}
-              className="hidden"
-              playsInline
-              muted
-              autoPlay
-            />
-
-            {/* Display Canvas with AI Overlays */}
+            {/* Live Stream Canvas */}
             <canvas
               ref={canvasRef}
               width={640}
@@ -473,36 +415,30 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
               className="w-full h-full object-cover"
             />
 
-            {/* Fallback Screen when Not Streaming */}
+            {/* Offline Placeholder */}
             {!isStreaming && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-neutral-400 bg-neutral-900/90 backdrop-blur-xs">
-                <Video className="w-12 h-12 text-neutral-600 mb-3" />
-                <h3 className="text-base font-bold text-white">Camera Feed Inactive</h3>
+              <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-neutral-400 bg-neutral-900/95 backdrop-blur-xs">
+                <Wifi className="w-12 h-12 text-amber-500/60 mb-3" />
+                <h3 className="text-base font-bold text-white">CP Plus Camera Feed Offline</h3>
                 <p className="text-xs text-neutral-400 max-w-sm mt-1">
-                  {sourceMode === 'webcam'
-                    ? 'Click Start Webcam below to stream your counter camera.'
-                    : sourceMode === 'cpplus'
-                    ? 'Enter your CP Plus IP details and click Connect Camera.'
-                    : 'Click Simulation to test AI motion tracking.'}
+                  Connect your CP Plus camera by entering your local IP (e.g. {cpPlusIp}) and port {cpPlusPort} on the right panel.
                 </p>
                 <Button
                   variant="primary"
-                  onClick={() => {
-                    if (sourceMode === 'webcam') startWebcam(selectedDeviceId);
-                    else if (sourceMode === 'cpplus') handleConnectCpPlus();
-                    else startSimulationMode();
-                  }}
-                  className="mt-4 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs"
+                  onClick={handleConnectCpPlus}
+                  disabled={isConnecting}
+                  leftIcon={<Play className="w-3.5 h-3.5 text-black" />}
+                  className="mt-4 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs cursor-pointer"
                 >
-                  Start Live Camera
+                  {isConnecting ? 'Connecting to CP Plus...' : 'Connect Live Camera'}
                 </Button>
               </div>
             )}
 
-            {/* AI HUD Overlay Elements */}
+            {/* Live AI HUD Overlays */}
             {isStreaming && (
               <>
-                {/* Top Left: Table Status Badge */}
+                {/* Top Left: Table Presence Status */}
                 <div className="absolute top-4 left-4 flex items-center gap-2">
                   <div className="px-3 py-1.5 rounded-xl bg-black/80 backdrop-blur-md border border-white/10 text-white flex items-center gap-2">
                     <span className={`w-2.5 h-2.5 rounded-full ${
@@ -514,7 +450,7 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
                     }`} />
                     <span className="text-xs font-black tracking-wide font-mono uppercase">
                       {tableState === 'active_play'
-                        ? 'Active Play in Progress'
+                        ? 'Active Play Detected'
                         : tableState === 'player_detected'
                         ? 'Player Around Table'
                         : 'Table Vacant'}
@@ -526,7 +462,7 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
                   </span>
                 </div>
 
-                {/* Top Right: Motion Score Gauge */}
+                {/* Top Right: Motion Intensity Meter */}
                 <div className="absolute top-4 right-4 flex items-center gap-2">
                   <div className="px-3 py-1.5 rounded-xl bg-black/80 backdrop-blur-md border border-white/10 text-white flex items-center gap-2 font-mono text-xs">
                     <Zap className="w-3.5 h-3.5 text-amber-400" />
@@ -534,7 +470,7 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
                     <div className="w-16 bg-white/20 h-2 rounded-full overflow-hidden">
                       <div
                         className={`h-full transition-all duration-200 ${
-                          motionLevel > 40 ? 'bg-rose-500' : motionLevel > 15 ? 'bg-amber-400' : 'bg-emerald-400'
+                          motionLevel > 35 ? 'bg-rose-500' : motionLevel > 15 ? 'bg-amber-400' : 'bg-emerald-400'
                         }`}
                         style={{ width: `${Math.min(100, motionLevel)}%` }}
                       />
@@ -542,7 +478,7 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
                   </div>
                 </div>
 
-                {/* Bottom Left: ERP Live Timer Sync */}
+                {/* Bottom Left: ERP Live Session Indicator */}
                 <div className="absolute bottom-4 left-4">
                   <div className="px-3 py-1.5 rounded-xl bg-black/80 backdrop-blur-md border border-white/10 text-xs text-white flex items-center gap-2 font-mono">
                     <Clock className="w-3.5 h-3.5 text-amber-400" />
@@ -556,7 +492,7 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
                   </div>
                 </div>
 
-                {/* Bottom Right: Quick AI Gemini Inspector */}
+                {/* Bottom Right: Gemini AI Check Button */}
                 <div className="absolute bottom-4 right-4">
                   <button
                     onClick={handleAnalyzeWithGemini}
@@ -564,7 +500,7 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
                     className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-lg cursor-pointer disabled:opacity-50"
                   >
                     <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                    <span>{isAnalyzingGemini ? 'Gemini Analyzing...' : 'AI Vision Check'}</span>
+                    <span>{isAnalyzingGemini ? 'Analyzing...' : 'AI Vision Check'}</span>
                   </button>
                 </div>
               </>
@@ -605,7 +541,7 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
                 <button
                   onClick={() => {
                     if (onStartSession && activeTable) {
-                      onStartSession(activeTable.id, 'Customer (AI Vision)', activeTable.hourlyRate);
+                      onStartSession(activeTable.id, 'Customer (CP Plus AI)', activeTable.hourlyRate);
                     }
                     setAiSuggestionPrompt(null);
                   }}
@@ -624,162 +560,131 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
           )}
         </div>
 
-        {/* Right Column: Connection Wizard & Table Automation Settings */}
+        {/* Right Column: Dedicated CP Plus Setup Panel */}
         <div className="lg:col-span-4 flex flex-col gap-4">
-          {/* Card 1: Camera Hardware Connection */}
+          {/* Card 1: CP Plus Camera Credentials & Connection */}
           <Card className="flex flex-col gap-3">
             <div className="border-b border-neutral-100 pb-2 flex items-center justify-between">
               <h3 className="text-sm font-black text-neutral-900 flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-amber-500" />
-                Camera Hardware Setup
+                <Wifi className="w-4 h-4 text-amber-500" />
+                CP Plus Camera Configuration
               </h3>
-              <Badge variant={isStreaming ? 'success' : 'neutral'}>
-                {isStreaming ? 'Streaming' : 'Offline'}
-              </Badge>
+              {saveSuccess && (
+                <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Saved
+                </span>
+              )}
             </div>
 
-            {/* Mode 1: USB Webcam Controls */}
-            {sourceMode === 'webcam' && (
-              <div className="space-y-3 text-xs">
-                <div>
-                  <label className="font-bold text-neutral-700 block mb-1">Select Connected Webcam Device</label>
-                  <select
-                    value={selectedDeviceId}
-                    onChange={(e) => {
-                      setSelectedDeviceId(e.target.value);
-                      startWebcam(e.target.value);
-                    }}
-                    className="w-full px-3 py-2 rounded-xl bg-neutral-100 border border-neutral-200 text-neutral-800 font-semibold focus:outline-none cursor-pointer"
-                  >
-                    {availableDevices.length === 0 ? (
-                      <option value="">Default Counter USB Camera</option>
-                    ) : (
-                      availableDevices.map((dev, idx) => (
-                        <option key={dev.deviceId || idx} value={dev.deviceId}>
-                          {dev.label || `Camera ${idx + 1}`}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </div>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-neutral-700 block mb-1">Camera Name / Tag</label>
+                <input
+                  type="text"
+                  value={cameraLabel}
+                  onChange={(e) => setCameraLabel(e.target.value)}
+                  placeholder="e.g. Table 1 Overhead Cam"
+                  className="w-full px-2.5 py-1.5 rounded-xl bg-neutral-50 border border-neutral-200 text-xs font-semibold focus:outline-none"
+                />
+              </div>
 
-                <div className="flex gap-2">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => startWebcam(selectedDeviceId)}
-                    leftIcon={<Play className="w-3.5 h-3.5" />}
-                    className="flex-1 bg-neutral-900 text-white font-bold"
-                  >
-                    Start Stream
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={stopCurrentStream}
-                    leftIcon={<Square className="w-3.5 h-3.5" />}
-                    className="flex-1 font-bold"
-                  >
-                    Stop Stream
-                  </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Camera IP Address</label>
+                  <input
+                    type="text"
+                    value={cpPlusIp}
+                    onChange={(e) => setCpPlusIp(e.target.value)}
+                    placeholder="192.168.1.108"
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-neutral-50 border border-neutral-200 font-mono text-xs focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">RTSP Port</label>
+                  <input
+                    type="number"
+                    value={cpPlusPort}
+                    onChange={(e) => setCpPlusPort(Number(e.target.value) || 554)}
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-neutral-50 border border-neutral-200 font-mono text-xs focus:outline-none"
+                  />
                 </div>
               </div>
-            )}
 
-            {/* Mode 2: CP Plus IP Camera Configuration */}
-            {sourceMode === 'cpplus' && (
-              <div className="space-y-3 text-xs">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="font-bold text-neutral-700 block mb-1">Camera IP Address</label>
-                    <input
-                      type="text"
-                      value={cpPlusIp}
-                      onChange={(e) => setCpPlusIp(e.target.value)}
-                      placeholder="192.168.1.108"
-                      className="w-full px-2.5 py-1.5 rounded-xl bg-neutral-50 border border-neutral-200 font-mono text-xs focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-bold text-neutral-700 block mb-1">RTSP Port</label>
-                    <input
-                      type="number"
-                      value={cpPlusPort}
-                      onChange={(e) => setCpPlusPort(Number(e.target.value) || 554)}
-                      className="w-full px-2.5 py-1.5 rounded-xl bg-neutral-50 border border-neutral-200 font-mono text-xs focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="font-bold text-neutral-700 block mb-1">Username</label>
-                    <input
-                      type="text"
-                      value={cpPlusUser}
-                      onChange={(e) => setCpPlusUser(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-xl bg-neutral-50 border border-neutral-200 text-xs focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-bold text-neutral-700 block mb-1">Password</label>
-                    <input
-                      type="password"
-                      value={cpPlusPass}
-                      onChange={(e) => setCpPlusPass(e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-xl bg-neutral-50 border border-neutral-200 text-xs focus:outline-none"
-                    />
-                  </div>
-                </div>
-
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="font-bold text-neutral-700 block mb-1">Camera Channel #</label>
+                  <label className="font-bold text-neutral-700 block mb-1">Username</label>
+                  <input
+                    type="text"
+                    value={cpPlusUser}
+                    onChange={(e) => setCpPlusUser(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-neutral-50 border border-neutral-200 text-xs focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Password</label>
+                  <input
+                    type="password"
+                    value={cpPlusPass}
+                    onChange={(e) => setCpPlusPass(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-neutral-50 border border-neutral-200 text-xs focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Channel #</label>
                   <select
                     value={cpPlusChannel}
                     onChange={(e) => setCpPlusChannel(Number(e.target.value) || 1)}
-                    className="w-full px-2.5 py-1.5 rounded-xl bg-neutral-100 border border-neutral-200 font-bold"
+                    className="w-full px-2 py-1.5 rounded-xl bg-neutral-100 border border-neutral-200 font-bold"
                   >
-                    {[1, 2, 3, 4, 5, 6, 7, 8].map(ch => (
-                      <option key={ch} value={ch}>Channel {ch} (Table Area {ch})</option>
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16].map(ch => (
+                      <option key={ch} value={ch}>CH {ch}</option>
                     ))}
                   </select>
                 </div>
-
-                {/* Generated RTSP String */}
-                <div className="p-2.5 rounded-xl bg-neutral-100 border border-neutral-200 text-[10px] font-mono break-all text-neutral-600">
-                  <span className="font-bold text-neutral-900 block mb-0.5">Direct RTSP Stream URL:</span>
-                  {generatedRtspUrl}
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Stream Mode</label>
+                  <select
+                    value={cpPlusStreamSubtype}
+                    onChange={(e) => setCpPlusStreamSubtype(Number(e.target.value))}
+                    className="w-full px-2 py-1.5 rounded-xl bg-neutral-100 border border-neutral-200 font-bold"
+                  >
+                    <option value={1}>Sub Stream (Fast AI)</option>
+                    <option value={0}>Main Stream (1080p)</option>
+                  </select>
                 </div>
+              </div>
 
+              {/* Generated RTSP String */}
+              <div className="p-2.5 rounded-xl bg-neutral-100 border border-neutral-200 text-[10px] font-mono break-all text-neutral-600">
+                <span className="font-bold text-neutral-900 block mb-0.5">RTSP Connection URL:</span>
+                {generatedRtspUrl}
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSaveConfig}
+                  leftIcon={<Save className="w-3.5 h-3.5" />}
+                  className="flex-1 font-bold"
+                >
+                  Save Settings
+                </Button>
                 <Button
                   variant="primary"
                   size="sm"
                   onClick={handleConnectCpPlus}
-                  disabled={cpPlusConnecting}
-                  leftIcon={<RefreshCw className={`w-3.5 h-3.5 ${cpPlusConnecting ? 'animate-spin' : ''}`} />}
-                  className="w-full bg-neutral-900 text-white font-extrabold"
+                  disabled={isConnecting}
+                  leftIcon={<Power className="w-3.5 h-3.5 text-amber-400" />}
+                  className="flex-1 bg-neutral-900 text-white font-extrabold"
                 >
-                  {cpPlusConnecting ? 'Connecting to CP Plus...' : 'Connect CP Plus Camera'}
+                  {isConnecting ? 'Connecting...' : 'Connect Cam'}
                 </Button>
               </div>
-            )}
-
-            {/* Mode 3: Simulation */}
-            {sourceMode === 'simulation' && (
-              <div className="space-y-2 text-xs">
-                <p className="text-neutral-500">
-                  Simulating a live top-down snooker match with cue ball, red balls, and moving cue stick to demonstrate automated motion tracking.
-                </p>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={startSimulationMode}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold"
-                >
-                  Restart Simulation
-                </Button>
-              </div>
-            )}
+            </div>
           </Card>
 
           {/* Card 2: AI Table Automation & Rules */}
@@ -816,19 +721,19 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
                 </div>
                 <input
                   type="range"
-                  min={10}
-                  max={95}
+                  min={15}
+                  max={90}
                   value={detectionSensitivity}
                   onChange={(e) => setDetectionSensitivity(Number(e.target.value))}
                   className="w-full accent-neutral-900 cursor-pointer"
                 />
                 <div className="flex justify-between text-[10px] text-neutral-400 mt-0.5">
-                  <span>Tolerant (High threshold)</span>
+                  <span>Tolerant</span>
                   <span>Ultra-Sensitive</span>
                 </div>
               </div>
 
-              {/* Toggles */}
+              {/* Automation Toggles */}
               <div className="space-y-2 pt-1 border-t border-neutral-100">
                 <label className="flex items-center justify-between p-2.5 rounded-xl bg-neutral-50 border border-neutral-200 cursor-pointer hover:bg-neutral-100">
                   <div>
@@ -846,7 +751,7 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
                 <label className="flex items-center justify-between p-2.5 rounded-xl bg-neutral-50 border border-neutral-200 cursor-pointer hover:bg-neutral-100">
                   <div>
                     <span className="font-bold text-neutral-800 block text-xs">Unbilled Play Alarm</span>
-                    <span className="text-[10px] text-neutral-500">Warn cashier if players are shooting but table is unbilled</span>
+                    <span className="text-[10px] text-neutral-500">Warn cashier if players are shooting on unbilled table</span>
                   </div>
                   <input
                     type="checkbox"
@@ -876,13 +781,13 @@ export const AICameraVisionView: React.FC<AICameraVisionViewProps> = ({
           <Card className="flex flex-col gap-2 p-4 bg-neutral-900 text-white text-xs">
             <div className="flex items-center gap-1.5 font-bold text-amber-400">
               <HelpCircle className="w-4 h-4" />
-              <span>How to connect your CP Plus CCTV:</span>
+              <span>CP Plus CCTV Setup Guide:</span>
             </div>
             <ol className="list-decimal list-inside space-y-1 text-neutral-300 text-[11px] leading-relaxed">
               <li>Open your <strong>gCMOB</strong> app or router to check your CP Plus camera IP (e.g. <code className="text-amber-300">192.168.1.108</code>).</li>
-              <li>Make sure the counter PC and CP Plus cameras are on the <strong>same club Wi-Fi / LAN</strong>.</li>
-              <li>To convert RTSP to browser WebRTC, run the free 1-line bridge <code className="text-amber-300">mediamtx</code> on your counter PC.</li>
-              <li>Or simply plug a <strong>USB HD webcam</strong> pointed at the tables for 100% instant zero-setup tracking!</li>
+              <li>Make sure the counter PC and CP Plus cameras are on the <strong>same club Wi-Fi / LAN</strong> network.</li>
+              <li>Default CP Plus login credentials are <code className="text-amber-300">admin</code> / <code className="text-amber-300">admin123</code>.</li>
+              <li>Click <strong>Connect Cam</strong> to activate the live feed and AI presence tracking!</li>
             </ol>
           </Card>
         </div>

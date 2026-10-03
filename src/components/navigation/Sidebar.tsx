@@ -155,10 +155,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         { 
           id: 'daily-report', 
-          label: 'Day Close & Daily Vault', 
+          label: 'Daily Close', 
           icon: ClipboardList, 
           minRole: 'worker',
-          tooltip: 'Day closing, cash drawer reconciliation & historical day vault'
+          tooltip: 'End-of-day register closing, cash drawer reconciliation & vault archives'
         },
         { 
           id: 'ai-camera', 
@@ -387,62 +387,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <LogOut className="w-4 h-4" />
             </button>
-            <button
-              type="button"
-              onClick={toggleCollapsed}
-              title="Expand Sidebar"
-              className="p-1 text-neutral-500 hover:text-amber-400 hover:bg-[#151B28] rounded-lg transition-colors cursor-pointer"
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
           </div>
         ) : (
-          <>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div 
-                  className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 text-black font-black text-xs flex items-center justify-center shrink-0 shadow-[0_2px_8px_rgba(245,158,11,0.25)]"
-                  title={user?.email || 'Logged in user'}
-                >
-                  {role.charAt(0).toUpperCase()}
-                </div>
-                
-                <div className="min-w-0 flex-1">
-                  <h4 className="text-xs font-bold text-neutral-200 truncate leading-tight">
-                    {user?.displayName || 'Club Master'}
-                  </h4>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <span
-                      className={`inline-block text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.2 rounded border ${
-                        roleBadgeStyles[role] || 'bg-neutral-800 text-neutral-300 border-neutral-700'
-                      }`}
-                    >
-                      {role}
-                    </span>
-                  </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div 
+                className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 text-black font-black text-xs flex items-center justify-center shrink-0 shadow-[0_2px_8px_rgba(245,158,11,0.25)]"
+                title={user?.email || 'Logged in user'}
+              >
+                {role.charAt(0).toUpperCase()}
+              </div>
+              
+              <div className="min-w-0 flex-1">
+                <h4 className="text-xs font-bold text-neutral-200 truncate leading-tight">
+                  {user?.displayName || 'Club Master'}
+                </h4>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span
+                    className={`inline-block text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.2 rounded border ${
+                      roleBadgeStyles[role] || 'bg-neutral-800 text-neutral-300 border-neutral-700'
+                    }`}
+                  >
+                    {role}
+                  </span>
                 </div>
               </div>
-
-              <button
-                onClick={onLogout}
-                title="Sign Out to Login Screen"
-                className="p-1.5 text-neutral-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
             </div>
 
-            {/* Quick collapse bar at bottom */}
             <button
-              type="button"
-              onClick={toggleCollapsed}
-              className="w-full py-1.5 px-2 flex items-center justify-center gap-1.5 text-[10px] font-bold text-neutral-400 hover:text-neutral-200 hover:bg-[#141A26] rounded-lg transition-all cursor-pointer border border-[#1A2234]"
-              title="Collapse Sidebar"
+              onClick={onLogout}
+              title="Sign Out to Login Screen"
+              className="p-1.5 text-neutral-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
             >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              <span>Collapse Sidebar</span>
+              <LogOut className="w-4 h-4" />
             </button>
-          </>
+          </div>
         )}
       </div>
     </aside>

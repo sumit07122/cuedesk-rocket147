@@ -56,7 +56,7 @@ interface DailyReportViewProps {
   currentUser?: UserProfile | null;
 }
 
-type SortField = 'time' | 'consumer' | 'amount' | 'duration' | 'table' | 'receipt';
+type SortField = 'priority' | 'time' | 'consumer' | 'amount' | 'duration' | 'table' | 'receipt';
 type SortOrder = 'asc' | 'desc';
 type DateFilterType = 'today' | 'yesterday' | 'week' | 'custom' | 'all';
 type SystemTab = 'live_ledger' | 'day_closing' | 'vault_archives';
@@ -90,7 +90,7 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
   const [selectedTable, setSelectedTable] = useState<string>('all');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [sortField, setSortField] = useState<SortField>('time');
+  const [sortField, setSortField] = useState<SortField>('priority');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
   // Day Closing (EOD) Form States
@@ -141,7 +141,7 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
       setSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortField(field);
-      if (field === 'time' || field === 'amount' || field === 'duration') {
+      if (field === 'priority' || field === 'time' || field === 'amount' || field === 'duration') {
         setSortOrder('desc');
       } else {
         setSortOrder('asc');
@@ -245,6 +245,20 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
     list.sort((a, b) => {
       let comparison = 0;
       switch (sortField) {
+        case 'priority': {
+          const getPriorityScore = (item: SessionHistoryItem) => {
+            const due = Number(item.balanceDue) || 0;
+            const hasDue = due > 0 || item.paymentStatus === 'due_ledger';
+            const isRefunded = item.paymentStatus === 'refunded';
+            const grandTotal = Number(item.grandTotal) || 0;
+            // Unsettled Udhaar / Pending dues have the highest urgency for day close
+            if (hasDue) return 10000000 + due;
+            if (isRefunded) return 5000000 + grandTotal;
+            return grandTotal;
+          };
+          comparison = getPriorityScore(a) - getPriorityScore(b);
+          break;
+        }
         case 'time': {
           const timeA = a.endTime || a.startTime || 0;
           const timeB = b.endTime || b.startTime || 0;
@@ -531,7 +545,7 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-black text-neutral-900 tracking-tight">Day Management & EOD System</h2>
+                <h2 className="text-xl font-black text-neutral-900 tracking-tight">Daily Close</h2>
                 {isTodayClosed ? (
                   <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3" />
@@ -545,7 +559,7 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                 )}
               </div>
               <p className="text-xs text-neutral-500 mt-0.5">
-                Executive day-closing, cash drawer tally reconciliation, immutable daily archives, and session audit.
+                End-of-day register closing, cash drawer reconciliation, archives, and session audit.
               </p>
             </div>
           </div>
@@ -792,13 +806,35 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                   </select>
                 </div>
 
-                {(searchQuery || selectedTable !== 'all' || selectedPaymentMethod !== 'all' || selectedStatus !== 'all') && (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-neutral-500">Sort:</span>
+                  <select
+                    value={sortField}
+                    onChange={(e) => {
+                      const f = e.target.value as SortField;
+                      setSortField(f);
+                      setSortOrder(f === 'consumer' || f === 'table' ? 'asc' : 'desc');
+                    }}
+                    className="bg-amber-500/10 hover:bg-amber-500/20 text-neutral-900 font-extrabold px-2.5 py-1.5 rounded-xl border border-amber-500/30 focus:outline-none cursor-pointer"
+                  >
+                    <option value="priority">⚡ Priority (Dues & Urgent First)</option>
+                    <option value="time">🕒 Date & Time (Newest)</option>
+                    <option value="amount">💰 Amount (High to Low)</option>
+                    <option value="consumer">👤 Consumer Name (A-Z)</option>
+                    <option value="duration">⏱️ Playtime / Duration</option>
+                    <option value="table">🎱 Station / Table</option>
+                  </select>
+                </div>
+
+                {(searchQuery || selectedTable !== 'all' || selectedPaymentMethod !== 'all' || selectedStatus !== 'all' || sortField !== 'priority') && (
                   <button
                     onClick={() => {
                       setSearchQuery('');
                       setSelectedTable('all');
                       setSelectedPaymentMethod('all');
                       setSelectedStatus('all');
+                      setSortField('priority');
+                      setSortOrder('desc');
                     }}
                     className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-neutral-600 hover:bg-neutral-100 font-bold cursor-pointer"
                   >
@@ -811,8 +847,17 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
 
             {/* Quick Sort Shortcuts */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-neutral-100 text-xs text-neutral-500">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="font-bold text-neutral-700">Quick Sort by:</span>
+                <button
+                  onClick={() => handleSort('priority')}
+                  className={`px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer transition-colors ${
+                    sortField === 'priority' ? 'bg-amber-500 text-black shadow-xs font-black' : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+                  }`}
+                >
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  <span>Priority {sortField === 'priority' && (sortOrder === 'asc' ? '↑ Low-High' : '↓ Urgent First')}</span>
+                </button>
                 <button
                   onClick={() => handleSort('time')}
                   className={`px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer transition-colors ${
@@ -866,6 +911,12 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                         {renderSortIndicator('time')}
                       </div>
                     </th>
+                    <th onClick={() => handleSort('priority')} className="p-3.5 cursor-pointer hover:bg-neutral-200/70 transition-colors group">
+                      <div className="flex items-center gap-1.5">
+                        <span>Priority</span>
+                        {renderSortIndicator('priority')}
+                      </div>
+                    </th>
                     <th onClick={() => handleSort('receipt')} className="p-3.5 cursor-pointer hover:bg-neutral-200/70 transition-colors group">
                       <div className="flex items-center gap-1.5">
                         <span>Receipt No</span>
@@ -906,7 +957,7 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                 <tbody className="bg-white divide-y divide-neutral-100">
                   {sortedHistory.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="p-12 text-center text-neutral-400">
+                      <td colSpan={11} className="p-12 text-center text-neutral-400">
                         <div className="flex flex-col items-center justify-center gap-2">
                           <Receipt className="w-10 h-10 text-neutral-300" />
                           <p className="font-bold text-neutral-700 text-sm">No Daily Transactions Found</p>
@@ -934,6 +985,27 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                           <td className="p-3.5 font-medium whitespace-nowrap">
                             <div className="font-bold text-neutral-900">{formatRecordTimeOnly(item.endTime || item.startTime)}</div>
                             <div className="text-[10px] text-neutral-400">{formatRecordDateOnly(item.endTime || item.startTime)}</div>
+                          </td>
+
+                          <td className="p-3.5 whitespace-nowrap">
+                            {hasDue ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-rose-500 text-white animate-pulse shadow-xs">
+                                <AlertTriangle className="w-3 h-3" />
+                                Urgent Due ({formatCurrency(item.balanceDue || 0, currencySymbol)})
+                              </span>
+                            ) : isRefunded ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-neutral-200 text-neutral-700">
+                                Refunded
+                              </span>
+                            ) : (item.grandTotal || 0) >= 500 ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
+                                High Value
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider text-neutral-500 bg-neutral-100 border border-neutral-200">
+                                Standard
+                              </span>
+                            )}
                           </td>
 
                           <td className="p-3.5 whitespace-nowrap">
