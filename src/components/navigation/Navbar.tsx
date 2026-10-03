@@ -29,6 +29,8 @@ interface NavbarProps {
   onResolveNotification?: (id: string) => Promise<void>;
   onDeleteNotification?: (id: string) => Promise<void>;
   onClearAllNotifications?: () => Promise<void>;
+  isSidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 const pageTitles: Record<PageView, { title: string; subtitle: string }> = {
@@ -59,6 +61,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onResolveNotification,
   onDeleteNotification,
   onClearAllNotifications = async () => {},
+  isSidebarCollapsed = false,
+  onToggleSidebar,
 }) => {
   const { user } = useAuth();
   const { isInstallable, isInstalled, isIOS, promptInstall } = usePWAInstall();
@@ -105,6 +109,19 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* LEFT: Mobile Menu Button + Page Title */}
         <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+          {/* Desktop Sidebar Collapse / Expand Toggle */}
+          {onToggleSidebar && (
+            <button
+              type="button"
+              onClick={onToggleSidebar}
+              className="hidden lg:flex p-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 active:scale-95 text-neutral-700 hover:text-black transition-colors cursor-pointer shrink-0 border border-neutral-200/60"
+              title={isSidebarCollapsed ? 'Expand Sidebar (Full Menu)' : 'Collapse Sidebar (Mini-Rail)'}
+              aria-label="Toggle Sidebar"
+            >
+              <Menu className="w-4 h-4 text-neutral-800" />
+            </button>
+          )}
+
           {/* Mobile Hamburger Drawer Trigger */}
           <button
             type="button"

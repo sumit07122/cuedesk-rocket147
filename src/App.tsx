@@ -101,6 +101,23 @@ function StaffClubApp() {
   // View state
   const [activePage, setActivePage] = useState<PageView>('dashboard');
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('cuedesk_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSidebarCollapsed = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('cuedesk_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // Daily Background Auto-Snapshot Trigger
   React.useEffect(() => {
@@ -452,6 +469,8 @@ function StaffClubApp() {
         clubName={config.clubName}
         isMobileOpen={isMobileDrawerOpen}
         onCloseMobile={() => setIsMobileDrawerOpen(false)}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapsed={toggleSidebarCollapsed}
         onLogout={() => {
           signOutUser();
           addToast('info', 'Signed Out', 'You have been signed out to the login screen.');
@@ -466,6 +485,8 @@ function StaffClubApp() {
           setActivePage={setActivePage}
           notifications={notifications}
           onOpenMobileMenu={() => setIsMobileDrawerOpen(true)}
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebar={toggleSidebarCollapsed}
           onMarkNotificationRead={async (id) => markNotificationRead(id)}
           onResolveNotification={async (id) => resolveNotification(id)}
           onDeleteNotification={async (id) => deleteNotification(id)}
@@ -669,10 +690,6 @@ function StaffClubApp() {
                 onDeleteMenuItem={handleDeleteMenuItem}
                 onSaveEmployee={saveEmployee}
                 onDeleteEmployee={deleteEmployee}
-                onResetClubData={async () => {
-                  await resetClubData();
-                  addToast('success', 'Club Reset Complete', 'All club stations and catalog have been reset.');
-                }}
               />
             </RoleGuard>
           ) : (

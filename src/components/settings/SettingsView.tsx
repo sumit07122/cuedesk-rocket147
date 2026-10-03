@@ -74,7 +74,6 @@ interface SettingsViewProps {
   history?: SessionHistoryItem[];
   customers?: TopCustomer[];
   onUpdateConfig: (newConfig: BusinessConfig) => void | Promise<void>;
-  onResetClubData?: () => void | Promise<void>;
   onAddTable: (table: Omit<TableItem, 'id' | 'status'>) => void;
   onEditTable?: (table: TableItem) => void;
   onDeleteTable: (tableId: string) => void;
@@ -93,7 +92,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   history = [],
   customers = [],
   onUpdateConfig,
-  onResetClubData,
   onAddTable,
   onEditTable,
   onDeleteTable,
@@ -114,26 +112,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [showAddTable, setShowAddTable] = useState(false);
   const [editingTable, setEditingTable] = useState<TableItem | null>(null);
   const [newTableName, setNewTableName] = useState('');
+  const [newTableNumber, setNewTableNumber] = useState<number>(1);
   const [newTableType, setNewTableType] = useState<TableType>('snooker');
   const [newTableRate, setNewTableRate] = useState<number>(config.defaultHourlyRate || 180);
+  const [newTableMaintenance, setNewTableMaintenance] = useState<boolean>(false);
 
   // Menu State
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [editingMenuItem, setEditingMenuItem] = useState<MenuItem | null>(null);
   const [newMenuName, setNewMenuName] = useState('');
-  const [newMenuCat, setNewMenuCat] = useState<'drinks' | 'snacks' | 'food' | 'tea_coffee' | 'cold_drinks' | 'instant_food' | 'accessories'>('cold_drinks');
+  const [newMenuCat, setNewMenuCat] = useState<string>('cold_drinks');
   const [newMenuPrice, setNewMenuPrice] = useState<number>(120.00);
   const [newMenuCost, setNewMenuCost] = useState<number>(60.00);
   const [newMenuStock, setNewMenuStock] = useState<number>(50);
+  const [newMenuLowStock, setNewMenuLowStock] = useState<number>(5);
+  const [newMenuAvailable, setNewMenuAvailable] = useState<boolean>(true);
 
   const { user, updateUserPassword, sendPasswordReset } = useAuth();
 
   // Staff State
   const [showAddStaff, setShowAddStaff] = useState(false);
+  const [editingStaff, setEditingStaff] = useState<EmployeeUser | null>(null);
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
   const [newStaffPhone, setNewStaffPhone] = useState('');
-  const [newStaffRole, setNewStaffRole] = useState<'owner' | 'manager'>('manager');
+  const [newStaffRole, setNewStaffRole] = useState<'owner' | 'manager' | 'worker'>('manager');
+  const [newStaffStatus, setNewStaffStatus] = useState<'active' | 'suspended'>('active');
 
   // Staff Password Change Modal State
   const [passwordModalEmp, setPasswordModalEmp] = useState<EmployeeUser | null>(null);
@@ -206,11 +210,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     { id: 'profile', label: 'Club Profile', icon: Building2 },
     { id: 'stations', label: 'Gaming Stations', icon: Grid2X2, badge: `${tables.length}` },
     { id: 'menu', label: 'Menu & Food', icon: Utensils, badge: `${menuItems.length}` },
+    { id: 'staff', label: 'Staff & Roles', icon: Users, badge: `${employees.length}` },
+    { id: 'notifications', label: 'Alerts & Rules', icon: Bell },
     { id: 'reports', label: 'Reports & Export', icon: BarChart3 },
     { id: 'backup', label: 'Backup & Restore', icon: HardDrive },
-    { id: 'firebase', label: 'Firebase Cloud DB', icon: Database },
     { id: 'security', label: 'Security & Audit', icon: ShieldCheck },
     { id: 'health', label: 'System Health', icon: Activity },
+    { id: 'firebase', label: 'Cloud Database', icon: Database },
   ];
 
   return (
@@ -416,7 +422,49 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                 </div>
 
-                {/* Dedicated Club Defaults & Fresh Data Reset Actions */}
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Bill Total Rounding Rule</label>
+                  <select
+                    value={businessForm.roundingRule || 'nearest_1'}
+                    onChange={(e) => setBusinessForm({ ...businessForm, roundingRule: e.target.value as any })}
+                    className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-xs font-bold text-neutral-800"
+                  >
+                    <option value="nearest_1">Round to Nearest ₹1 (Recommended)</option>
+                    <option value="round_up">Always Round Up to Next ₹1</option>
+                    <option value="nearest_5">Round to Nearest ₹5</option>
+                    <option value="none">Exact Decimal (Paise)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-neutral-700 block mb-1">Tax / GST Configuration</label>
+                  <div className="flex items-center gap-4 bg-neutral-50 p-3 rounded-xl border border-neutral-200">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-neutral-800">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(businessForm.enableTax)}
+                        onChange={(e) => setBusinessForm({ ...businessForm, enableTax: e.target.checked })}
+                        className="w-4 h-4 rounded text-neutral-900 accent-neutral-900"
+                      />
+                      <span>Enable Tax on Invoices</span>
+                    </label>
+                    {businessForm.enableTax && (
+                      <div className="flex items-center gap-1.5 ml-auto">
+                        <span className="text-xs font-medium text-neutral-600">Rate (%):</span>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={businessForm.taxRatePercent || 0}
+                          onChange={(e) => setBusinessForm({ ...businessForm, taxRatePercent: Number(e.target.value) })}
+                          className="w-20 font-bold text-center"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Dedicated Club Defaults */}
                 <div className="pt-4 border-t border-neutral-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div>
                     <h4 className="font-extrabold text-neutral-900 text-xs flex items-center gap-1.5">
@@ -449,29 +497,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           receiptFooterMsg: 'Thank you for playing at One Shot Gaming Club! Visit again.',
                           operatingHours: '10:00 AM – 11:30 PM',
                           timeZone: 'Asia/Kolkata',
+                          enableTax: false,
+                          taxRatePercent: 0,
+                          roundingRule: 'nearest_1',
                         });
                         alert('Official One Shot Gaming Club defaults loaded! Click "Save Changes" to save to database.');
                       }}
                       className="text-xs font-bold"
                     >
                       Load One Shot Defaults
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        if (confirm('Reset all club data to fresh initial state? All tables will be set to available and test sessions cleared.')) {
-                          if (onResetClubData) {
-                            await onResetClubData();
-                            alert('One Shot Gaming Club data has been reset to fresh pristine state!');
-                          }
-                        }
-                      }}
-                      className="text-xs font-bold border-rose-300 text-rose-700 hover:bg-rose-50"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 mr-1" />
-                      Reset to Fresh Data
                     </Button>
                   </div>
                 </div>
@@ -496,7 +530,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   onClick={() => {
                     setEditingTable(null);
                     setNewTableName(`Table 0${tables.length + 1}`);
+                    setNewTableNumber(tables.length + 1);
+                    setNewTableType('snooker');
                     setNewTableRate(config.defaultHourlyRate || 180);
+                    setNewTableMaintenance(false);
                     setShowAddTable(true);
                   }}
                 >
@@ -517,12 +554,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           <span className="font-mono font-bold text-sm text-neutral-900">#{tbl.number}</span>
                           <span className="font-bold text-xs text-neutral-800">{tbl.name}</span>
                         </div>
-                        <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-white text-neutral-600 border border-neutral-200">
-                          {tbl.type.replace('_', ' ')}
-                        </span>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-white text-neutral-600 border border-neutral-200">
+                            {tbl.type.replace('_', ' ')}
+                          </span>
+                          {(tbl.isMaintenance || tbl.status === 'maintenance') && (
+                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                              Maintenance
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <Badge variant={tbl.status === 'occupied' ? 'danger' : 'success'}>
-                        {tbl.status === 'occupied' ? 'Active Session' : 'Ready'}
+                      <Badge variant={tbl.status === 'occupied' ? 'danger' : tbl.status === 'maintenance' ? 'warning' : 'success'}>
+                        {tbl.status === 'occupied' ? 'Active Session' : tbl.status === 'maintenance' ? 'Maintenance' : 'Ready'}
                       </Badge>
                     </div>
 
@@ -541,22 +585,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           onClick={() => {
                             setEditingTable(tbl);
                             setNewTableName(tbl.name);
+                            setNewTableNumber(tbl.number);
                             setNewTableType(tbl.type);
                             setNewTableRate(tbl.hourlyRate);
+                            setNewTableMaintenance(Boolean(tbl.isMaintenance || tbl.status === 'maintenance'));
                             setShowAddTable(true);
                           }}
-                          className="p-1.5 text-neutral-500 hover:text-neutral-900 rounded-lg hover:bg-neutral-200/60 cursor-pointer"
+                          className="p-1.5 text-neutral-600 hover:text-neutral-900 rounded-lg hover:bg-neutral-200/60 cursor-pointer transition-colors"
                           title="Edit Station"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => {
-                            if (confirm(`Remove station "${tbl.name}"?`)) {
+                            if (tbl.status === 'occupied') {
+                              alert('Cannot remove a station while an active gaming session is running.');
+                              return;
+                            }
+                            if (confirm(`Remove station #${tbl.number} "${tbl.name}"?`)) {
                               onDeleteTable(tbl.id);
                             }
                           }}
-                          className="p-1.5 text-rose-500 hover:text-rose-700 rounded-lg hover:bg-rose-50 cursor-pointer"
+                          className="p-1.5 text-rose-500 hover:text-rose-700 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors"
                           title="Delete Station"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -573,7 +623,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
                     <div className="flex items-center justify-between border-b pb-3">
                       <h4 className="font-extrabold text-neutral-900 text-sm">
-                        {editingTable ? 'Edit Station' : 'Add New Gaming Station'}
+                        {editingTable ? `Edit Station #${editingTable.number}` : 'Add New Gaming Station'}
                       </h4>
                       <button onClick={() => setShowAddTable(false)} className="p-1 text-neutral-400 hover:text-black">
                         <X className="w-5 h-5" />
@@ -581,13 +631,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
 
                     <div className="space-y-3 text-xs">
-                      <div>
-                        <label className="font-bold text-neutral-700 block mb-1">Station Name</label>
-                        <Input
-                          value={newTableName}
-                          onChange={(e) => setNewTableName(e.target.value)}
-                          placeholder="e.g. Snooker Match Star 03"
-                        />
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="col-span-1">
+                          <label className="font-bold text-neutral-700 block mb-1">Number</label>
+                          <Input
+                            type="number"
+                            min="1"
+                            value={newTableNumber}
+                            onChange={(e) => setNewTableNumber(parseInt(e.target.value) || 1)}
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="font-bold text-neutral-700 block mb-1">Station Name</label>
+                          <Input
+                            value={newTableName}
+                            onChange={(e) => setNewTableName(e.target.value)}
+                            placeholder="e.g. Snooker Match Star 03"
+                          />
+                        </div>
                       </div>
 
                       <div>
@@ -616,6 +677,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           Calculates to exact {formatPerMinuteRate(newTableRate, config.currencySymbol)}
                         </span>
                       </div>
+
+                      <div className="pt-2">
+                        <label className="flex items-center gap-2 cursor-pointer p-2.5 rounded-xl bg-neutral-50 border border-neutral-200">
+                          <input
+                            type="checkbox"
+                            checked={newTableMaintenance}
+                            onChange={(e) => setNewTableMaintenance(e.target.checked)}
+                            className="w-4 h-4 rounded text-neutral-900 accent-neutral-900"
+                          />
+                          <div>
+                            <span className="font-bold text-neutral-800 block text-xs">Flag as Under Maintenance</span>
+                            <span className="text-[10px] text-neutral-500 block">Blocks new sessions from starting until repair is resolved</span>
+                          </div>
+                        </label>
+                      </div>
                     </div>
 
                     <div className="flex justify-end gap-2 pt-3 border-t">
@@ -630,19 +706,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           if (editingTable && onEditTable) {
                             onEditTable({
                               ...editingTable,
-                              name: newTableName.trim(),
-                              type: newTableType,
-                              hourlyRate: newTableRate,
-                              perMinuteRate: Number((newTableRate / 60).toFixed(2))
-                            });
-                          } else {
-                            onAddTable({
-                              number: tables.length + 1,
+                              number: newTableNumber,
                               name: newTableName.trim(),
                               type: newTableType,
                               hourlyRate: newTableRate,
                               perMinuteRate: Number((newTableRate / 60).toFixed(2)),
-                              isMaintenance: false
+                              isMaintenance: newTableMaintenance,
+                              status: newTableMaintenance ? 'maintenance' : (editingTable.status === 'maintenance' ? 'available' : editingTable.status)
+                            });
+                          } else {
+                            onAddTable({
+                              number: newTableNumber,
+                              name: newTableName.trim(),
+                              type: newTableType,
+                              hourlyRate: newTableRate,
+                              perMinuteRate: Number((newTableRate / 60).toFixed(2)),
+                              isMaintenance: newTableMaintenance
                             });
                           }
                           setShowAddTable(false);
@@ -671,7 +750,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   variant="primary"
                   size="sm"
                   leftIcon={<Plus className="w-4 h-4" />}
-                  onClick={() => setShowAddStaff(true)}
+                  onClick={() => {
+                    setEditingStaff(null);
+                    setNewStaffName('');
+                    setNewStaffEmail('');
+                    setNewStaffPhone('');
+                    setNewStaffRole('manager');
+                    setNewStaffStatus('active');
+                    setShowAddStaff(true);
+                  }}
                 >
                   Add Staff Member
                 </Button>
@@ -696,11 +783,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             {emp.role === 'worker' ? 'Worker' : emp.role}
                           </span>
                         </div>
-                        <p className="text-[11px] text-neutral-500 font-mono mt-0.5 truncate">{emp.email}</p>
+                        <p className="text-[11px] text-neutral-500 font-mono mt-0.5 truncate">
+                          {emp.email} {emp.phone ? `• ${emp.phone}` : ''}
+                        </p>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        leftIcon={<Edit3 className="w-3.5 h-3.5" />}
+                        onClick={() => {
+                          setEditingStaff(emp);
+                          setNewStaffName(emp.name);
+                          setNewStaffEmail(emp.email);
+                          setNewStaffPhone(emp.phone || '');
+                          setNewStaffRole(emp.role as any);
+                          setNewStaffStatus((emp.status as any) || 'active');
+                          setShowAddStaff(true);
+                        }}
+                        className="text-[11px] h-8 px-2.5 bg-white hover:bg-neutral-50 border-neutral-300 text-neutral-800 font-bold"
+                      >
+                        Edit
+                      </Button>
+
                       <Button
                         variant="secondary"
                         size="sm"
@@ -725,7 +832,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               if (onDeleteEmployee) onDeleteEmployee(emp.id);
                             }
                           }}
-                          className="p-1 text-neutral-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
+                          className="p-1.5 text-neutral-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors"
+                          title="Delete Staff"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -745,12 +853,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </ul>
               </div>
 
-              {/* Add Staff Modal */}
+              {/* Add / Edit Staff Modal */}
               {showAddStaff && (
                 <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
                   <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
                     <div className="flex items-center justify-between border-b pb-3">
-                      <h4 className="font-extrabold text-neutral-900 text-sm">Add Staff Account</h4>
+                      <h4 className="font-extrabold text-neutral-900 text-sm">
+                        {editingStaff ? `Edit Staff Member (${editingStaff.name})` : 'Add Staff Account'}
+                      </h4>
                       <button onClick={() => setShowAddStaff(false)} className="p-1 text-neutral-400 hover:text-black">
                         <X className="w-5 h-5" />
                       </button>
@@ -767,13 +877,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </div>
 
                       <div>
-                        <label className="font-bold text-neutral-700 block mb-1">Email Address</label>
+                        <label className="font-bold text-neutral-700 block mb-1">Email Address (Login Username)</label>
                         <Input
                           type="email"
+                          disabled={Boolean(editingStaff)}
                           value={newStaffEmail}
                           onChange={(e) => setNewStaffEmail(e.target.value)}
                           placeholder="staff@oneshotsnooker.com"
                         />
+                        {editingStaff && (
+                          <span className="text-[10px] text-neutral-400 mt-0.5 block">Email cannot be changed after account creation.</span>
+                        )}
                       </div>
 
                       <div>
@@ -785,17 +899,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         />
                       </div>
 
-                      <div>
-                        <label className="font-bold text-neutral-700 block mb-1">Assigned Role</label>
-                        <select
-                          value={newStaffRole}
-                          onChange={(e) => setNewStaffRole(e.target.value as any)}
-                          className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-xs font-bold"
-                        >
-                          <option value="worker">Club Worker</option>
-                          <option value="manager">Club Manager</option>
-                          <option value="owner">Club Owner</option>
-                        </select>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="font-bold text-neutral-700 block mb-1">Assigned Role</label>
+                          <select
+                            value={newStaffRole}
+                            onChange={(e) => setNewStaffRole(e.target.value as any)}
+                            className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-xs font-bold"
+                          >
+                            <option value="worker">Club Worker</option>
+                            <option value="manager">Club Manager</option>
+                            <option value="owner">Club Owner</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="font-bold text-neutral-700 block mb-1">Account Status</label>
+                          <select
+                            value={newStaffStatus}
+                            onChange={(e) => setNewStaffStatus(e.target.value as any)}
+                            className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-xs font-bold"
+                          >
+                            <option value="active">Active</option>
+                            <option value="suspended">Suspended</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
 
@@ -806,7 +933,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         size="sm"
                         onClick={() => {
                           if (!newStaffName.trim() || !newStaffEmail.trim()) return;
-                          if (onSaveEmployee) {
+                          if (editingStaff && onSaveEmployee) {
+                            onSaveEmployee({
+                              ...editingStaff,
+                              name: newStaffName.trim(),
+                              phone: newStaffPhone.trim(),
+                              role: newStaffRole,
+                              status: newStaffStatus
+                            });
+                          } else if (onSaveEmployee) {
                             onSaveEmployee({
                               id: `emp-${Date.now()}`,
                               clubId: config.id,
@@ -814,14 +949,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               email: newStaffEmail.trim(),
                               phone: newStaffPhone.trim(),
                               role: newStaffRole,
-                              joiningDate: new Date().toISOString().split('T')[0],
-                              status: 'active'
+                              status: newStaffStatus,
+                              joiningDate: new Date().toISOString().split('T')[0]
                             });
                           }
                           setShowAddStaff(false);
+                          setEditingStaff(null);
                         }}
                       >
-                        Create Account
+                        {editingStaff ? 'Save Changes' : 'Create Account'}
                       </Button>
                     </div>
                   </div>
@@ -985,7 +1121,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   onClick={() => {
                     setEditingMenuItem(null);
                     setNewMenuName('');
+                    setNewMenuCat('cold_drinks');
                     setNewMenuPrice(120.00);
+                    setNewMenuCost(60.00);
+                    setNewMenuStock(50);
+                    setNewMenuLowStock(5);
+                    setNewMenuAvailable(true);
                     setShowAddMenu(true);
                   }}
                 >
@@ -1000,25 +1141,89 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     className="p-3.5 rounded-2xl bg-neutral-50 border border-neutral-200/80 flex items-center justify-between gap-3 shadow-2xs"
                   >
                     <div className="min-w-0">
-                      <h5 className="font-bold text-xs text-neutral-900 truncate">{item.name}</h5>
+                      <div className="flex items-center gap-2">
+                        <h5 className="font-bold text-xs text-neutral-900 truncate">{item.name}</h5>
+                        {item.available === false && (
+                          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200">
+                            Unavailable
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2 mt-1 text-[10px] text-neutral-500 font-medium">
                         <span className="capitalize">{item.category.replace('_', ' ')}</span>
                         <span>•</span>
-                        <span>Stock: {item.stockQuantity} units</span>
+                        <span>Cost: {formatCurrency(item.costPrice || 0, config.currencySymbol)}</span>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      {/* Quick Stock Controls */}
+                      <div className="flex items-center gap-1 bg-white border border-neutral-200 rounded-lg p-0.5 shadow-2xs">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onEditMenuItem) {
+                              const nextStock = Math.max(0, (item.stockQuantity ?? 0) - 1);
+                              onEditMenuItem({ ...item, stockQuantity: nextStock });
+                            }
+                          }}
+                          className="w-5 h-5 flex items-center justify-center text-neutral-500 hover:text-black hover:bg-neutral-100 rounded text-xs font-bold transition-colors cursor-pointer"
+                          title="Decrease Stock"
+                        >
+                          -
+                        </button>
+                        <span className={`text-[11px] font-mono font-bold px-1.5 ${(item.stockQuantity ?? 0) <= (item.lowStockThreshold || 5) ? 'text-amber-600' : 'text-neutral-800'}`}>
+                          {item.stockQuantity ?? 0}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onEditMenuItem) {
+                              const nextStock = (item.stockQuantity ?? 0) + 1;
+                              onEditMenuItem({ ...item, stockQuantity: nextStock });
+                            }
+                          }}
+                          className="w-5 h-5 flex items-center justify-center text-neutral-500 hover:text-black hover:bg-neutral-100 rounded text-xs font-bold transition-colors cursor-pointer"
+                          title="Increase Stock"
+                        >
+                          +
+                        </button>
+                      </div>
+
                       <span className="font-extrabold text-xs text-neutral-900 font-mono">
                         {formatCurrency(item.price, config.currencySymbol)}
                       </span>
+
+                      {/* Edit Button */}
                       <button
+                        type="button"
+                        onClick={() => {
+                          setEditingMenuItem(item);
+                          setNewMenuName(item.name);
+                          setNewMenuCat(item.category);
+                          setNewMenuPrice(item.price);
+                          setNewMenuCost(item.costPrice || 0);
+                          setNewMenuStock(item.stockQuantity ?? 0);
+                          setNewMenuLowStock(item.lowStockThreshold || 5);
+                          setNewMenuAvailable(item.available !== false);
+                          setShowAddMenu(true);
+                        }}
+                        className="p-1.5 text-neutral-500 hover:text-neutral-900 rounded-lg hover:bg-neutral-200/60 cursor-pointer transition-colors"
+                        title="Edit Item"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Delete Button */}
+                      <button
+                        type="button"
                         onClick={() => {
                           if (confirm(`Delete menu item "${item.name}"?`)) {
                             onDeleteMenuItem(item.id);
                           }
                         }}
-                        className="p-1 text-neutral-400 hover:text-rose-600 rounded-lg cursor-pointer"
+                        className="p-1.5 text-rose-500 hover:text-rose-700 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors"
+                        title="Delete Item"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -1027,12 +1232,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 ))}
               </div>
 
-              {/* Add Menu Item Modal */}
+              {/* Add / Edit Menu Item Modal */}
               {showAddMenu && (
                 <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
                   <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
                     <div className="flex items-center justify-between border-b pb-3">
-                      <h4 className="font-extrabold text-neutral-900 text-sm">Add Menu Item</h4>
+                      <h4 className="font-extrabold text-neutral-900 text-sm">
+                        {editingMenuItem ? `Edit "${editingMenuItem.name}"` : 'Add Menu Item'}
+                      </h4>
                       <button onClick={() => setShowAddMenu(false)} className="p-1 text-neutral-400 hover:text-black">
                         <X className="w-5 h-5" />
                       </button>
@@ -1060,6 +1267,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           <option value="snacks">Snacks & Sandwiches</option>
                           <option value="instant_food">Instant Cup Noodles</option>
                           <option value="accessories">Cue Accessories & Chalk</option>
+                          <option value="desserts">Desserts & Ice Cream</option>
+                          <option value="food">Kitchen Food</option>
+                          <option value="other">Other Merchandise</option>
                         </select>
                       </div>
 
@@ -1068,18 +1278,58 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           <label className="font-bold text-neutral-700 block mb-1">Selling Price ({config.currencySymbol})</label>
                           <Input
                             type="number"
+                            min="0"
+                            step="1"
                             value={newMenuPrice}
                             onChange={(e) => setNewMenuPrice(parseFloat(e.target.value) || 0)}
                           />
                         </div>
                         <div>
+                          <label className="font-bold text-neutral-700 block mb-1">Purchase Cost ({config.currencySymbol})</label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={newMenuCost}
+                            onChange={(e) => setNewMenuCost(parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
                           <label className="font-bold text-neutral-700 block mb-1">Stock Quantity</label>
                           <Input
                             type="number"
+                            min="0"
                             value={newMenuStock}
                             onChange={(e) => setNewMenuStock(parseInt(e.target.value) || 0)}
                           />
                         </div>
+                        <div>
+                          <label className="font-bold text-neutral-700 block mb-1">Low Stock Alert Level</label>
+                          <Input
+                            type="number"
+                            min="1"
+                            value={newMenuLowStock}
+                            onChange={(e) => setNewMenuLowStock(parseInt(e.target.value) || 5)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="pt-2">
+                        <label className="flex items-center gap-2 cursor-pointer p-2.5 rounded-xl bg-neutral-50 border border-neutral-200">
+                          <input
+                            type="checkbox"
+                            checked={newMenuAvailable}
+                            onChange={(e) => setNewMenuAvailable(e.target.checked)}
+                            className="w-4 h-4 rounded text-neutral-900 accent-neutral-900"
+                          />
+                          <div>
+                            <span className="font-bold text-neutral-800 block text-xs">Available for Sale</span>
+                            <span className="text-[10px] text-neutral-500 block">Show in table order lists and cashier menus</span>
+                          </div>
+                        </label>
                       </div>
                     </div>
 
@@ -1090,19 +1340,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         size="sm"
                         onClick={() => {
                           if (!newMenuName.trim()) return;
-                          onAddMenuItem({
-                            name: newMenuName.trim(),
-                            category: newMenuCat,
-                            price: newMenuPrice,
-                            costPrice: newMenuCost,
-                            stockQuantity: newMenuStock,
-                            lowStockThreshold: 5,
-                            available: true
-                          });
+                          if (editingMenuItem && onEditMenuItem) {
+                            onEditMenuItem({
+                              ...editingMenuItem,
+                              name: newMenuName.trim(),
+                              category: newMenuCat,
+                              price: newMenuPrice,
+                              costPrice: newMenuCost,
+                              stockQuantity: newMenuStock,
+                              lowStockThreshold: newMenuLowStock,
+                              available: newMenuAvailable
+                            });
+                          } else {
+                            onAddMenuItem({
+                              name: newMenuName.trim(),
+                              category: newMenuCat,
+                              price: newMenuPrice,
+                              costPrice: newMenuCost,
+                              stockQuantity: newMenuStock,
+                              lowStockThreshold: newMenuLowStock,
+                              available: newMenuAvailable
+                            });
+                          }
                           setShowAddMenu(false);
+                          setEditingMenuItem(null);
                         }}
                       >
-                        Save Item
+                        {editingMenuItem ? 'Save Changes' : 'Create Item'}
                       </Button>
                     </div>
                   </div>
@@ -1321,33 +1585,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     Staff Roster
                   </Button>
                 </div>
-              </div>
-
-              {/* Reset Club Data Card */}
-              <div className="pt-6 border-t border-rose-200 bg-rose-50/60 p-5 rounded-2xl border border-rose-200/90 space-y-3">
-                <div className="flex items-center gap-2 text-rose-800 font-extrabold text-sm">
-                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
-                  <span>Reset Club Data to Clean Initial Slate</span>
-                </div>
-                <p className="text-xs text-rose-800/80 leading-relaxed">
-                  Reset all tables to free/available, restore default snooker & pool tables, re-seed fresh cafe snacks, and clear any test sessions. Perfect if your test sessions got stuck or for starting fresh.
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-rose-300 text-rose-700 hover:bg-rose-100 hover:text-rose-900 cursor-pointer font-bold bg-white"
-                  onClick={async () => {
-                    if (confirm('Are you sure you want to reset all club data to clean defaults? All tables will be set to available and test sessions cleared.')) {
-                      if (onResetClubData) {
-                        await onResetClubData();
-                        alert('Club data has been reset to clean default state!');
-                      }
-                    }
-                  }}
-                >
-                  <RotateCcw className="w-4 h-4 mr-1.5" />
-                  Reset Club Data to Clean Defaults
-                </Button>
               </div>
             </Card>
           )}

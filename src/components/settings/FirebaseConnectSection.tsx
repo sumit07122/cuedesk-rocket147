@@ -46,7 +46,6 @@ export const FirebaseConnectSection: React.FC<{ currentClubId?: string }> = ({ c
 
   const [isSeeding, setIsSeeding] = useState(false);
   const [seedSuccess, setSeedSuccess] = useState<string | null>(null);
-  const [copiedDomain, setCopiedDomain] = useState(false);
 
   // Auto-parse when user pastes into raw snippet textarea
   const handleSnippetChange = (text: string) => {
@@ -179,14 +178,6 @@ export const FirebaseConnectSection: React.FC<{ currentClubId?: string }> = ({ c
     }
   };
 
-  // Reset back to bundled default
-  const handleResetToDefault = () => {
-    if (confirm('Reset to the bundled default Firebase database? This will clear client database credentials from this browser.')) {
-      clearCustomFirebaseConfig();
-      window.location.reload();
-    }
-  };
-
   // Seed data to current database
   const handleSeedDatabase = async () => {
     setIsSeeding(true);
@@ -199,14 +190,6 @@ export const FirebaseConnectSection: React.FC<{ currentClubId?: string }> = ({ c
     } finally {
       setIsSeeding(false);
     }
-  };
-
-  const currentDomain = typeof window !== 'undefined' ? window.location.hostname : '';
-
-  const copyAuthorizedDomain = () => {
-    navigator.clipboard.writeText(currentDomain);
-    setCopiedDomain(true);
-    setTimeout(() => setCopiedDomain(false), 2000);
   };
 
   return (
@@ -241,15 +224,6 @@ export const FirebaseConnectSection: React.FC<{ currentClubId?: string }> = ({ c
         </div>
 
         <div className="flex items-center gap-3 z-10 shrink-0 w-full md:w-auto">
-          {isCustom && (
-            <button
-              onClick={handleResetToDefault}
-              className="flex-1 md:flex-initial px-4 py-2.5 rounded-xl border border-neutral-700 hover:border-neutral-500 text-xs font-bold text-neutral-300 hover:text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-              <span>Reset to Default</span>
-            </button>
-          )}
 
           <button
             onClick={handleSeedDatabase}
@@ -270,10 +244,7 @@ export const FirebaseConnectSection: React.FC<{ currentClubId?: string }> = ({ c
       )}
 
       {/* 2. Direct Connection Form */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Left Column: Easy Paste & Manual Inputs */}
-        <div className="lg:col-span-8 bg-white rounded-3xl border border-neutral-200/80 p-6 shadow-2xs flex flex-col gap-6">
+      <div className="w-full bg-white rounded-3xl border border-neutral-200/80 p-6 shadow-2xs flex flex-col gap-6">
           <div className="border-b border-neutral-100 pb-4">
             <h4 className="text-sm font-black text-neutral-900 flex items-center gap-2">
               <Sliders className="w-4 h-4 text-amber-500" />
@@ -418,66 +389,6 @@ export const FirebaseConnectSection: React.FC<{ currentClubId?: string }> = ({ c
             </button>
           </div>
         </div>
-
-        {/* Right Column: Required Setup Checklist & Domain Guide */}
-        <div className="lg:col-span-4 flex flex-col gap-5">
-          
-          {/* Vercel / Domain Whitelist Helper */}
-          <div className="bg-amber-50/60 rounded-3xl border border-amber-200/80 p-5 shadow-2xs flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0" />
-              <h5 className="text-xs font-extrabold text-amber-950">Firebase Authorized Domains</h5>
-            </div>
-            <p className="text-[11px] text-amber-900/80 leading-relaxed">
-              When deployed to Vercel, Firebase requires your domain to be whitelisted under:
-              <br />
-              <strong>Firebase Console &gt; Authentication &gt; Settings &gt; Authorized Domains</strong>.
-            </p>
-            
-            <div className="flex items-center gap-2 bg-white/80 p-2.5 rounded-xl border border-amber-300/60 text-xs font-mono text-neutral-800 justify-between">
-              <span className="truncate">{currentDomain}</span>
-              <button
-                type="button"
-                onClick={copyAuthorizedDomain}
-                className="p-1 hover:bg-neutral-100 rounded text-neutral-600 transition-colors shrink-0"
-                title="Copy Domain"
-              >
-                {copiedDomain ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-          </div>
-
-          {/* Architecture Concept: Multi-Tenant vs Dedicated */}
-          <div className="bg-white rounded-3xl border border-neutral-200/80 p-5 shadow-2xs flex flex-col gap-3.5">
-            <div className="flex items-center gap-2">
-              <HelpCircle className="w-4 h-4 text-neutral-600 shrink-0" />
-              <h5 className="text-xs font-black text-neutral-900">Recommended SaaS Architecture</h5>
-            </div>
-            <div className="space-y-3 text-[11px] text-neutral-600 leading-relaxed">
-              <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/70">
-                <p className="font-extrabold text-emerald-950 mb-1">
-                  Option A: Multi-Tenant (Recommended — Zero Hassle)
-                </p>
-                <p className="text-emerald-900/80">
-                  You keep <strong>one master Firebase instance</strong>. Each client simply gets a unique Workspace ID (e.g. <code className="bg-white px-1 py-0.5 rounded text-[10px]">club-client-name</code>). All their tables, bills, and orders are isolated by club ID. The client never touches Firebase!
-                </p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200/80">
-                <p className="font-extrabold text-neutral-900 mb-1">
-                  Option B: Bring-Your-Own-Database (Dedicated)
-                </p>
-                <p className="text-neutral-500">
-                  For enterprise clients who legally require their data in their own Google Cloud project. They provide their config snippet above, and CueDesk runs entirely on their own Firestore.
-                </p>
-              </div>
-            </div>
-          </div>
-
-        </div>
-
       </div>
-
-    </div>
-  );
-};
+    );
+  };

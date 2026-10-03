@@ -134,9 +134,9 @@ export const formatAuthError = (error: any): string => {
 
   switch (code) {
     case 'auth/unauthorized-domain':
-      return `Domain '${currentDomain}' is not authorized in Firebase Console. Please add '${currentDomain}' under Firebase Console -> Authentication -> Settings -> Authorized Domains.`;
+      return 'Access domain not recognized. Please sign in through the official One Shot application.';
     case 'auth/operation-not-allowed':
-      return 'Email/password sign-in is disabled in Firebase Console. Please enable Email/Password provider.';
+      return 'Sign-in method is temporarily unavailable. Please try again or contact administrator.';
     case 'auth/invalid-credential':
     case 'auth/wrong-password':
     case 'auth/user-not-found':

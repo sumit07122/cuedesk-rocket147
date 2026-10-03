@@ -28,6 +28,8 @@ interface SidebarProps {
   clubName?: string;
   isMobileOpen?: boolean;
   onCloseMobile?: () => void;
+  isCollapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }
 
 interface NavItem {
@@ -54,11 +56,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   clubName = 'One Shot Gaming Club',
   isMobileOpen = false,
   onCloseMobile,
+  isCollapsed: propIsCollapsed,
+  onToggleCollapsed,
 }) => {
   const { user, currentClubId, role, hasPermission, switchRole, isReviewMode } = useAuth();
 
   // Collapsible mini-rail state persisted in localStorage
-  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+  const [internalCollapsed, setInternalCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem('cuedesk_sidebar_collapsed') === 'true';
     } catch {
@@ -66,14 +70,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   });
 
+  const isCollapsed = propIsCollapsed !== undefined ? propIsCollapsed : internalCollapsed;
+
   const toggleCollapsed = () => {
-    setIsCollapsed((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('cuedesk_sidebar_collapsed', String(next));
-      } catch {}
-      return next;
-    });
+    if (onToggleCollapsed) {
+      onToggleCollapsed();
+    } else {
+      setInternalCollapsed((prev) => {
+        const next = !prev;
+        try {
+          localStorage.setItem('cuedesk_sidebar_collapsed', String(next));
+        } catch {}
+        return next;
+      });
+    }
   };
 
   // Structured, categorized navigation groups
@@ -170,20 +180,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <>
       <aside 
         className={`hidden lg:flex flex-col bg-[#0B0F17] border-r border-[#1C2333] h-screen sticky top-0 shrink-0 select-none z-30 transition-all duration-300 ease-in-out ${
-        isCollapsed ? 'w-[72px]' : 'w-64'
+        isCollapsed ? 'w-20' : 'w-64'
       }`}
     >
       {/* ─── Top Brand Header ─── */}
-      <div className={`p-3.5 border-b border-[#1C2333] flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
-        <div 
-          onClick={() => setActivePage('dashboard')}
-          className="flex items-center gap-3 cursor-pointer group min-w-0"
-          title="CueDesk Gaming OS"
-        >
-          <div className="relative shrink-0">
+      {isCollapsed ? (
+        <div className="py-3 px-2 border-b border-[#1C2333] flex flex-col items-center gap-2.5">
+          <div 
+            onClick={() => setActivePage('dashboard')}
+            className="relative cursor-pointer group shrink-0"
+            title="One Shot Gaming Club ERP - Click for Dashboard"
+          >
             <img
               src="/logo.png"
-              alt="CueDesk"
+              alt="One Shot"
               className="w-10 h-10 rounded-xl object-cover ring-1 ring-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.2)] group-hover:ring-amber-400 transition-all"
             />
             {occupiedCount > 0 && (
@@ -191,7 +201,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </div>
 
-          {!isCollapsed && (
+          {/* Recollapse / Expand Toggle Button */}
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            title="Expand Sidebar (Full Menu)"
+            className="w-9 h-8 flex items-center justify-center text-amber-400 hover:text-white bg-[#141A26] hover:bg-[#1E2638] rounded-xl transition-all cursor-pointer border border-[#1E2638] shadow-xs active:scale-95"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      ) : (
+        <div className="p-3.5 border-b border-[#1C2333] flex items-center justify-between">
+          <div 
+            onClick={() => setActivePage('dashboard')}
+            className="flex items-center gap-3 cursor-pointer group min-w-0"
+            title="One Shot Gaming Club ERP"
+          >
+            <div className="relative shrink-0">
+              <img
+                src="/logo.png"
+                alt="CueDesk"
+                className="w-10 h-10 rounded-xl object-cover ring-1 ring-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.2)] group-hover:ring-amber-400 transition-all"
+              />
+              {occupiedCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 border-2 border-[#0B0F17] rounded-full animate-pulse" />
+              )}
+            </div>
+
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <h1 className="text-sm font-black text-white tracking-tight leading-none uppercase">One Shot</h1>
@@ -203,19 +240,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 Gaming Club
               </p>
             </div>
-          )}
-        </div>
+          </div>
 
-        {/* Collapse Toggle Button */}
-        <button
-          type="button"
-          onClick={toggleCollapsed}
-          title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-          className="p-1.5 text-neutral-400 hover:text-neutral-100 hover:bg-[#151B28] rounded-lg transition-colors cursor-pointer"
-        >
-          {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-        </button>
-      </div>
+          {/* Collapse Toggle Button */}
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            title="Collapse Sidebar (Mini-Rail)"
+            className="p-1.5 text-neutral-400 hover:text-white hover:bg-[#151B28] rounded-lg transition-colors cursor-pointer border border-[#1E2638] shrink-0"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* ─── Club Live Status Pill (Expanded Only) ─── */}
       {!isCollapsed && (
@@ -326,35 +363,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       {/* ─── Footer: User Profile & Role Selector ─── */}
-      <div className="p-3 border-t border-[#1C2333] flex flex-col gap-2.5 bg-[#090C13]">
-        <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
-          <div className="flex items-center gap-2.5 min-w-0">
+      <div className="p-3 border-t border-[#1C2333] flex flex-col gap-2 bg-[#090C13]">
+        {isCollapsed ? (
+          <div className="flex flex-col items-center gap-2">
             <div 
               className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 text-black font-black text-xs flex items-center justify-center shrink-0 shadow-[0_2px_8px_rgba(245,158,11,0.25)]"
-              title={user?.email || 'Logged in user'}
+              title={`${user?.displayName || 'User'} (${role})`}
             >
               {role.charAt(0).toUpperCase()}
             </div>
-            
-            {!isCollapsed && (
-              <div className="min-w-0 flex-1">
-                <h4 className="text-xs font-bold text-neutral-200 truncate leading-tight">
-                  {user?.displayName || 'Club Master'}
-                </h4>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span
-                    className={`inline-block text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.2 rounded border ${
-                      roleBadgeStyles[role] || 'bg-neutral-800 text-neutral-300 border-neutral-700'
-                    }`}
-                  >
-                    {role}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {!isCollapsed && (
             <button
               onClick={onLogout}
               title="Sign Out to Login Screen"
@@ -362,8 +379,63 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <LogOut className="w-4 h-4" />
             </button>
-          )}
-        </div>
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              title="Expand Sidebar"
+              className="p-1 text-neutral-500 hover:text-amber-400 hover:bg-[#151B28] rounded-lg transition-colors cursor-pointer"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div 
+                  className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 text-black font-black text-xs flex items-center justify-center shrink-0 shadow-[0_2px_8px_rgba(245,158,11,0.25)]"
+                  title={user?.email || 'Logged in user'}
+                >
+                  {role.charAt(0).toUpperCase()}
+                </div>
+                
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-xs font-bold text-neutral-200 truncate leading-tight">
+                    {user?.displayName || 'Club Master'}
+                  </h4>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span
+                      className={`inline-block text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.2 rounded border ${
+                        roleBadgeStyles[role] || 'bg-neutral-800 text-neutral-300 border-neutral-700'
+                      }`}
+                    >
+                      {role}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={onLogout}
+                title="Sign Out to Login Screen"
+                className="p-1.5 text-neutral-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick collapse bar at bottom */}
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              className="w-full py-1.5 px-2 flex items-center justify-center gap-1.5 text-[10px] font-bold text-neutral-400 hover:text-neutral-200 hover:bg-[#141A26] rounded-lg transition-all cursor-pointer border border-[#1A2234]"
+              title="Collapse Sidebar"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Collapse Sidebar</span>
+            </button>
+          </>
+        )}
       </div>
     </aside>
 
