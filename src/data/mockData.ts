@@ -95,112 +95,9 @@ export const initialTables: TableItem[] = [
 
 const now = Date.now();
 
-export const initialSessionHistory: SessionHistoryItem[] = [
-  {
-    id: 'hist-1',
-    clubId: 'club-royal-cue',
-    tableId: 'tbl-1',
-    tableName: 'Snooker Table 01 — Riley Match Star',
-    customerName: 'Rahul Sharma',
-    customerPhone: '+91 98765 11223',
-    startTime: now - 3600000 * 3,
-    endTime: now - 3600000 * 2,
-    durationSeconds: 3600,
-    tableFee: 240,
-    foodFee: 140,
-    taxAmount: 0,
-    discountAmount: 0,
-    grandTotal: 380,
-    amountPaid: 380,
-    balanceDue: 0,
-    paymentMethod: 'upi',
-    paymentStatus: 'paid',
-    receiptNo: 'OSG-REC-00101',
-    timestamp: new Date(now - 3600000 * 2).toISOString(),
-    foodOrders: [
-      { id: 'o-1', menuId: 'm2', name: 'Cold Coffee Frappe', price: 140, quantity: 1, category: 'cold_drinks', addedAt: new Date(now - 3600000 * 2.5).toISOString() }
-    ],
-  },
-  {
-    id: 'hist-2',
-    clubId: 'club-royal-cue',
-    tableId: 'tbl-4',
-    tableName: 'Pool Table 01 — 9ft English Pool',
-    customerName: 'Amit Verma',
-    customerPhone: '+91 98765 22334',
-    startTime: now - 3600000 * 2,
-    endTime: now - 3600000 * 1,
-    durationSeconds: 3600,
-    tableFee: 150,
-    foodFee: 100,
-    taxAmount: 0,
-    discountAmount: 0,
-    grandTotal: 250,
-    amountPaid: 250,
-    balanceDue: 0,
-    paymentMethod: 'cash',
-    paymentStatus: 'paid',
-    receiptNo: 'OSG-REC-00102',
-    timestamp: new Date(now - 3600000 * 1).toISOString(),
-    foodOrders: [
-      { id: 'o-2', menuId: 'm1', name: 'Kadak Masala Chai', price: 50, quantity: 2, category: 'tea_coffee', addedAt: new Date(now - 3600000 * 1.5).toISOString() }
-    ],
-  }
-];
+export const initialSessionHistory: SessionHistoryItem[] = [];
 
-export const initialTopCustomers: TopCustomer[] = [
-  {
-    id: 'cust-1',
-    clubId: 'club-royal-cue',
-    customerNumber: 'OSG-CUST-1001',
-    name: 'Rahul Sharma',
-    phone: '+91 98765 11223',
-    totalSpent: 5400,
-    sessionsCount: 18,
-    totalHoursPlayed: 21,
-    lastVisit: 'Today',
-    customDiscountPercent: 10,
-    membershipStatus: 'VIP',
-    tier: 'platinum',
-    outstandingDue: 0,
-    creditLimit: 3000,
-    preferredGame: 'Snooker',
-  },
-  {
-    id: 'cust-2',
-    clubId: 'club-royal-cue',
-    customerNumber: 'OSG-CUST-1002',
-    name: 'Amit Verma',
-    phone: '+91 98765 22334',
-    totalSpent: 3200,
-    sessionsCount: 12,
-    totalHoursPlayed: 14,
-    lastVisit: 'Today',
-    customDiscountPercent: 5,
-    membershipStatus: 'Gold',
-    tier: 'gold',
-    outstandingDue: 350,
-    creditLimit: 2000,
-    preferredGame: 'Pool',
-  },
-  {
-    id: 'cust-3',
-    clubId: 'club-royal-cue',
-    customerNumber: 'OSG-CUST-1003',
-    name: 'Vikram Singh',
-    phone: '+91 98765 33445',
-    totalSpent: 1900,
-    sessionsCount: 7,
-    totalHoursPlayed: 8,
-    lastVisit: 'Yesterday',
-    customDiscountPercent: 0,
-    membershipStatus: 'Silver',
-    tier: 'silver',
-    outstandingDue: 0,
-    creditLimit: 1000,
-    preferredGame: 'Snooker',
-  }
-];
+export const initialTopCustomers: TopCustomer[] = [];
 
 // Strictly 2 roles: Owner and Manager
 export const initialEmployees: EmployeeUser[] = [
@@ -230,61 +127,40 @@ export const initialEmployees: EmployeeUser[] = [
 
 export const initialAttendance: AttendanceRecord[] = [];
 
-export const initialExpenses: ExpenseRecord[] = [
-  {
-    id: 'exp-1',
-    clubId: 'club-royal-cue',
-    category: 'Cafe Supplies',
-    amount: 450,
-    notes: 'Fresh milk & chai spices for cafe',
-    recordedBy: 'Vikram Malhotra',
-    timestamp: now - 3600000 * 4,
-    date: new Date().toISOString().split('T')[0]
-  },
-  {
-    id: 'exp-2',
-    clubId: 'club-royal-cue',
-    category: 'Table Maintenance',
-    amount: 350,
-    notes: 'Snooker table cloth cleaner spray',
-    recordedBy: 'One Shot Owner',
-    timestamp: now - 3600000 * 5,
-    date: new Date().toISOString().split('T')[0]
-  }
-];
+export const initialExpenses: ExpenseRecord[] = [];
 
 export const initialMaintenanceRecords: MaintenanceRecord[] = [];
 
 export const initialNotifications: NotificationItem[] = [];
 
 export const hourlyOccupancyData = [
-  { time: '10 AM', occupied: 1, revenue: 240 },
-  { time: '12 PM', occupied: 2, revenue: 480 },
-  { time: '02 PM', occupied: 3, revenue: 750 },
-  { time: '04 PM', occupied: 4, revenue: 1100 },
-  { time: '06 PM', occupied: 5, revenue: 1650 },
-  { time: '08 PM', occupied: 6, revenue: 2300 },
-  { time: '10 PM', occupied: 4, revenue: 1400 },
+  { time: '10 AM', occupied: 0, revenue: 0 },
+  { time: '12 PM', occupied: 0, revenue: 0 },
+  { time: '02 PM', occupied: 0, revenue: 0 },
+  { time: '04 PM', occupied: 0, revenue: 0 },
+  { time: '06 PM', occupied: 0, revenue: 0 },
+  { time: '08 PM', occupied: 0, revenue: 0 },
+  { time: '10 PM', occupied: 0, revenue: 0 },
 ];
 
 export const categorySalesData = [
-  { name: 'Table Hours', value: 390, color: '#000000' },
-  { name: 'Beverages', value: 140, color: '#404040' },
-  { name: 'Snacks & Food', value: 100, color: '#737373' },
+  { name: 'Table Hours', value: 0, color: '#000000' },
+  { name: 'Beverages', value: 0, color: '#404040' },
+  { name: 'Snacks & Food', value: 0, color: '#737373' },
   { name: 'Accessories', value: 0, color: '#a3a3a3' },
 ];
 
 export const weeklyRevenueData = [
-  { day: 'Mon', revenue: 4200 },
-  { day: 'Tue', revenue: 4800 },
-  { day: 'Wed', revenue: 5400 },
-  { day: 'Thu', revenue: 6100 },
-  { day: 'Fri', revenue: 8900 },
-  { day: 'Sat', revenue: 12400 },
-  { day: 'Sun', revenue: 11200 },
+  { day: 'Mon', revenue: 0 },
+  { day: 'Tue', revenue: 0 },
+  { day: 'Wed', revenue: 0 },
+  { day: 'Thu', revenue: 0 },
+  { day: 'Fri', revenue: 0 },
+  { day: 'Sat', revenue: 0 },
+  { day: 'Sun', revenue: 0 },
 ];
 
 export const paymentMethodsData = [
-  { name: 'UPI / QR', value: 65, color: '#171717' },
-  { name: 'Cash', value: 35, color: '#525252' },
+  { name: 'UPI / QR', value: 0, color: '#171717' },
+  { name: 'Cash', value: 0, color: '#525252' },
 ];

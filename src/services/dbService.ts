@@ -178,7 +178,7 @@ export const resetClubToDefault = async (clubId: string = DEFAULT_CLUB_ID): Prom
     const configRef = doc(db, 'clubs', clubId, 'config', 'settings');
     batch.set(configRef, { ...initialBusinessConfig, id: clubId }, { merge: true });
 
-    // 2. Reset Tables to initial clean available states
+    // 2. Reset Tables to initial clean available states (all sessions cleared)
     initialTables.forEach((tbl) => {
       const tblRef = doc(db, 'clubs', clubId, 'tables', tbl.id);
       batch.set(tblRef, {
@@ -195,22 +195,30 @@ export const resetClubToDefault = async (clubId: string = DEFAULT_CLUB_ID): Prom
       batch.set(itemRef, { ...item, clubId });
     });
 
-    // 4. Reset Top Customers
-    initialTopCustomers.forEach((cust) => {
-      const custRef = doc(db, 'clubs', clubId, 'customers', cust.id);
-      batch.set(custRef, { ...cust, clubId });
-    });
-
-    // 5. Reset Session History
-    initialSessionHistory.forEach((hist) => {
-      const histRef = doc(db, 'clubs', clubId, 'history', hist.id);
-      batch.set(histRef, { ...hist, clubId });
-    });
-
     await batch.commit();
+
+    // 4. Wipe history, customers, expenses, orders from Firestore
+    try {
+      const [histSnap, custSnap, expSnap, ordersSnap] = await Promise.all([
+        getDocs(collection(db, 'clubs', clubId, 'history')),
+        getDocs(collection(db, 'clubs', clubId, 'customers')),
+        getDocs(collection(db, 'clubs', clubId, 'expenses')),
+        getDocs(collection(db, 'clubs', clubId, 'foodOrders'))
+      ]);
+
+      const wipeBatch = writeBatch(db);
+      histSnap.forEach((d) => wipeBatch.delete(d.ref));
+      custSnap.forEach((d) => wipeBatch.delete(d.ref));
+      expSnap.forEach((d) => wipeBatch.delete(d.ref));
+      ordersSnap.forEach((d) => wipeBatch.delete(d.ref));
+      await wipeBatch.commit();
+    } catch (e) {
+      console.warn('Note wiping collections in Firestore:', e);
+    }
+
     console.log(`Successfully reset Firestore club data to clean defaults for: ${clubId}`);
   } catch (error) {
-    console.warn(`Firestore reset error for ${clubId} (likely offline or rules):`, error);
+    console.warn(`Firestore reset error for ${clubId}:`, error);
   }
 };
 
@@ -697,6 +705,7 @@ export const subscribeHistory = (
   return onSnapshot(historyRef, (snapshot) => {
     const list: SessionHistoryItem[] = [];
     snapshot.forEach((docSnap) => {
+      if (docSnap.id === 'hist-1' || docSnap.id === 'hist-2') return;
       list.push({ id: docSnap.id, ...docSnap.data() } as SessionHistoryItem);
     });
     list.sort((a, b) => {
@@ -718,6 +727,7 @@ export const subscribeTopCustomers = (
   return onSnapshot(custRef, (snapshot) => {
     const list: TopCustomer[] = [];
     snapshot.forEach((docSnap) => {
+      if (docSnap.id === 'cust-1' || docSnap.id === 'cust-2' || docSnap.id === 'cust-3') return;
       const customer = { id: docSnap.id, ...docSnap.data() } as TopCustomer;
       if (!customer.archived) list.push(customer);
     });
@@ -1097,6 +1107,7 @@ export const subscribeExpenses = (
   return onSnapshot(q, (snapshot) => {
     const list: ExpenseRecord[] = [];
     snapshot.forEach((docSnap) => {
+      if (docSnap.id === 'exp-1' || docSnap.id === 'exp-2') return;
       list.push({ id: docSnap.id, ...docSnap.data() } as ExpenseRecord);
     });
     callback(list);
